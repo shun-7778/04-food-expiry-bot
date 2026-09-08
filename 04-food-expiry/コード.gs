@@ -273,7 +273,7 @@ var HELP_MESSAGE = [
   '「買い物リストに牛乳と卵を追加」',
   '「牛乳買った」… リストから外す',
   '「買い物リスト」… 一覧をボタン付きで表示',
-  '　各行の「買った」、または「全部買った」を押すと',
+  '　各行の「削除」、または「全て削除」を押すと',
   '　その場でリストから外れます（発言は残りません）',
   '「買い物リストを全部削除」… 空にする',
   '',
@@ -2553,8 +2553,8 @@ function buildShopListBubble_(todo) {
   var rows = [];
   todo.forEach(function (t, i) {
     if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleActionRow_(t.name, '買った',
-      { type: 'postback', label: '買った', data: shopBoughtPostbackData_(t.id) }));
+    rows.push(bubbleActionRow_(t.name, '削除',
+      { type: 'postback', label: '削除', data: shopBoughtPostbackData_(t.id) }));
   });
 
   return {
@@ -2570,7 +2570,7 @@ function buildShopListBubble_(todo) {
       spacing: 'none',
       contents: [
         { type: 'separator', color: SHOP_LINE },
-        bubbleWideButton_('全部買った', { type: 'postback', label: '全部買った', data: SHOP_POSTBACK_ALL })
+        bubbleWideButton_('全て削除', { type: 'postback', label: '全て削除', data: SHOP_POSTBACK_ALL })
       ]
     }
   };
@@ -2646,7 +2646,7 @@ function buildShopAllBoughtBubble_(todo) {
       paddingAll: '14px',
       spacing: 'sm',
       contents: [
-        { type: 'text', text: '買い物リストを全部買いました（' + todo.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true },
+        { type: 'text', text: '買い物リストを全て削除しました（' + todo.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true },
         { type: 'text', text: todo.map(function (t) { return t.name; }).join('、'), color: SHOP_GRAY, size: 'sm', wrap: true }
       ]
     }
@@ -2869,7 +2869,7 @@ function handlePostback_(event) {
       return;
     }
     replyFlexMessage_(event.replyToken, '買い物リスト', buildShopAllBoughtBubble_(clear.todo));
-    commitOrNotify_(function () { shopClearCommit_(clear); }, '買い物リストの全件購入');
+    commitOrNotify_(function () { shopClearCommit_(clear); }, '買い物リストの全件削除');
     return;
   }
 
@@ -2882,7 +2882,7 @@ function handlePostback_(event) {
     return;
   }
   if (plan.already) {
-    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_(plan.name + ' はすでに購入済みです', SHOP_GRAY));
+    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_(plan.name + ' はすでに削除済みです', SHOP_GRAY));
     return;
   }
 
@@ -2891,7 +2891,7 @@ function handlePostback_(event) {
     ? buildShopEmptyBubble_()
     : buildShopCheckBubble_(plan.name));
 
-  commitOrNotify_(function () { shopBoughtCommit_(plan); }, plan.name + ' の購入');
+  commitOrNotify_(function () { shopBoughtCommit_(plan); }, plan.name + ' の削除');
 }
 
 /** 返信後の書き込み。失敗したら push で知らせる（返信は取り消せないため） */
