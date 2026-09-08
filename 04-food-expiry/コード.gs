@@ -85,8 +85,24 @@ var NOTIFY_1W_DAYS = 7;
 
 // ---------------------------------------------------------------- 設定読み出し
 
+/**
+ * 設定値は1回の webhook で3〜4回読むが、1件ずつ取ると読んだ回数だけ往復する。
+ * 実行中に書き換わらないものだけ最初の1回でまとめて読み、あとは使い回す。
+ * LAST_OP / PENDING / SHOP_NEXT_ID / RECIPE_SETS は実行中に書き換えるので
+ * ここには入れないこと（毎回そのまま読む）。
+ */
+var PROP_FIXED_KEYS_ = ['SPREADSHEET_ID', 'LINE_CHANNEL_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'ALLOWED_USER_ID'];
+var PROP_CACHE_ = null;
+
 function prop_(key, required) {
-  var v = PropertiesService.getScriptProperties().getProperty(key);
+  var v;
+  if (PROP_FIXED_KEYS_.indexOf(key) >= 0) {
+    if (!PROP_CACHE_) PROP_CACHE_ = PropertiesService.getScriptProperties().getProperties();
+    v = PROP_CACHE_[key];
+  } else {
+    v = PropertiesService.getScriptProperties().getProperty(key);
+  }
+
   if (required && !v) {
     throw new Error('スクリプトプロパティ ' + key + ' が未設定です');
   }
@@ -1042,6 +1058,7 @@ function setupSpreadsheet() {
   sh.getRange(2, COL.REG_TIME, sh.getMaxRows() - 1, 1).setNumberFormat('@');
 
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
+  PROP_CACHE_ = null;   // 設定値の控えを捨てて、次の prop_ で読み直させる
   console.log('作成しました: ' + ss.getUrl());
 }
 
@@ -2182,59 +2199,76 @@ function shopMaxId_() {
  * 戻り値は { added, dup }（どちらも品名の配列）。返信の組み立ては呼び出し側に任せる
  * ので、テキスト返信（shopAdd_）とバブル返信（材料確認）の両方から使える。
  */
-function shopAddCore_(items) {
+function shopAddPlan_(items) {
   var clean = items
     .map(function (it) {
       return { name: String((it && it.name) || '').trim(), category: (it && it.category) || '' };
     })
     .filter(function (it) { return it.name; });
-  if (!clean.length) return { added: [], dup: [] };
+  if (!clean.length) return { add: [], dup: [] };
 
   var sh = shopSheet_();
-  var todo = shopTodoRows_(sh);
+  var last = sh.getLastRow();
   var known = {};
-  todo.forEach(function (t) { known[normalizeName_(t.name)] = t.name; });
+  if (last >= 2) {
+    var data = sh.getRange(2, 1, last - 1, SHOP_COL_COUNT).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (data[i][SHOP_COL.STATUS - 1] !== SHOP_STATUS.TODO) continue;
+      var name = data[i][SHOP_COL.NAME - 1];
+      known[normalizeName_(name)] = name;
+    }
+  }
 
-  var added = [];
+  var add = [];
   var dup = [];
   clean.forEach(function (it) {
     var key = normalizeName_(it.name);
     if (known[key]) { dup.push(known[key]); return; }
     known[key] = it.name;   // 同じ発話の中での重複も防ぐ
-    added.push(it);
+    add.push(it);
   });
 
-  if (added.length) {
-    var startRow = sh.getLastRow() + 1;
-    var stamp = nowStamp_();
-    var ids = shopReserveIds_(added.length);
-    var values = added.map(function (it, i) {
-      var row = new Array(SHOP_COL_COUNT).fill('');
-      row[SHOP_COL.ID - 1] = ids[i];
-      row[SHOP_COL.ADDED - 1] = todayStamp_();
-      row[SHOP_COL.NAME - 1] = it.name;
-      row[SHOP_COL.CATEGORY - 1] = it.category;
-      row[SHOP_COL.STATUS - 1] = SHOP_STATUS.TODO;
-      row[SHOP_COL.UPDATED - 1] = stamp;
-      return row;
-    });
-    sh.getRange(startRow, 1, values.length, SHOP_COL_COUNT).setValues(values);
+  return { sheet: sh, startRow: last + 1, add: add, dup: dup };
+}
 
-    setLastOp_({
-      type: 'shop_add',
-      sheet: 'shopping',
-      rows: values.map(function (_, i) { return startRow + i; })
-    });
-  }
+/** shopAddPlan_ が仕分けた分を書き込む。ID採番と追記と取消用の記録をここでまとめて行う */
+function shopAddCommit_(plan) {
+  if (!plan.add.length) return;
 
-  return { added: added.map(function (it) { return it.name; }), dup: dup };
+  var stamp = nowStamp_();
+  var today = todayStamp_();
+  var ids = shopReserveIds_(plan.add.length);
+  var values = plan.add.map(function (it, i) {
+    var row = new Array(SHOP_COL_COUNT).fill('');
+    row[SHOP_COL.ID - 1] = ids[i];
+    row[SHOP_COL.ADDED - 1] = today;
+    row[SHOP_COL.NAME - 1] = it.name;
+    row[SHOP_COL.CATEGORY - 1] = it.category;
+    row[SHOP_COL.STATUS - 1] = SHOP_STATUS.TODO;
+    row[SHOP_COL.UPDATED - 1] = stamp;
+    return row;
+  });
+  plan.sheet.getRange(plan.startRow, 1, values.length, SHOP_COL_COUNT).setValues(values);
+
+  setLastOp_({
+    type: 'shop_add',
+    sheet: 'shopping',
+    rows: values.map(function (_, i) { return plan.startRow + i; })
+  });
+}
+
+/** 追加した品名の配列。返信の組み立てに使う */
+function shopAddedNames_(plan) {
+  return plan.add.map(function (it) { return it.name; });
 }
 
 /** 買い物リストに品名を追加し、テキストで結果を返す */
 function shopAdd_(items) {
-  var r = shopAddCore_(items);
-  var added = r.added;
-  var dup = r.dup;
+  var plan = shopAddPlan_(items);
+  shopAddCommit_(plan);
+
+  var added = shopAddedNames_(plan);
+  var dup = plan.dup;
   if (!added.length && !dup.length) return '追加するものを読み取れませんでした。';
 
   var lines = [];
@@ -2778,10 +2812,13 @@ function handleRecipeAdd_(replyToken, data) {
     return;
   }
 
-  var r = shopAddCore_([item]);
-  replyFlexMessage_(replyToken, '買い物リスト', r.added.length
-    ? buildShopCheckBubble_(r.added[0])
+  // 「買った」と同じく、仕分けが決まった時点で先に返信し、書き込みは後に回す
+  var plan = shopAddPlan_([item]);
+  replyFlexMessage_(replyToken, '買い物リスト', plan.add.length
+    ? buildShopCheckBubble_(plan.add[0].name)
     : buildShopNoteBubble_(item.name + ' はすでにリストにあります', SHOP_GRAY));
+
+  commitOrNotify_(function () { shopAddCommit_(plan); }, item.name + ' の追加');
 }
 
 /** 材料確認のバブルから「買うべきもの」をまとめて買い物リストに入れる */
@@ -2799,8 +2836,10 @@ function handleRecipeAddAll_(replyToken, token) {
     return;
   }
 
-  var r = shopAddCore_(items);
-  replyFlexMessage_(replyToken, '買い物リスト', buildShopAddedBubble_(r.added, r.dup));
+  var plan = shopAddPlan_(items);
+  replyFlexMessage_(replyToken, '買い物リスト', buildShopAddedBubble_(shopAddedNames_(plan), plan.dup));
+
+  commitOrNotify_(function () { shopAddCommit_(plan); }, '買い物リストへの追加');
 }
 
 /**
