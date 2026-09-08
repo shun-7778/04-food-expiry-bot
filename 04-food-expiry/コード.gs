@@ -2485,6 +2485,27 @@ function buildShopListBubble_(todo) {
  * （size:'md'）と同じ大きさに揃えるため deca を使う。高さは1行ぶんで収まる。
  */
 function buildShopNoteBubble_(text, color) {
+  return shopNoteShell_({ type: 'text', text: text, color: color || SHOP_TEXT, size: 'md', wrap: true });
+}
+
+/**
+ * 「買った」を押したときの確認。チェックだけ緑にして、品名は
+ * トークの文字と同じ白で出す（span で1行の中の色を分けている）
+ */
+function buildShopBoughtBubble_(name) {
+  return shopNoteShell_({
+    type: 'text',
+    size: 'md',
+    wrap: true,
+    contents: [
+      { type: 'span', text: '✓ ', color: SHOP_GREEN },
+      { type: 'span', text: String(name), color: SHOP_TEXT }
+    ]
+  });
+}
+
+/** 1行バブルの外枠。中身のテキスト部品だけ差し替えて使う */
+function shopNoteShell_(textComponent) {
   return {
     type: 'bubble',
     size: 'deca',
@@ -2496,9 +2517,7 @@ function buildShopNoteBubble_(text, color) {
       paddingEnd: '14px',
       paddingTop: '12px',
       paddingBottom: '12px',
-      contents: [
-        { type: 'text', text: text, color: color || SHOP_TEXT, size: 'md', wrap: true }
-      ]
+      contents: [textComponent]
     }
   };
 }
@@ -2592,7 +2611,7 @@ function handleShopPostback_(event) {
   // 最後の1件だけは「空になった」ことを伝える。それ以外は品名だけ返す
   replyFlexMessage_(event.replyToken, '買い物リスト', plan.remaining === 0
     ? buildShopEmptyBubble_()
-    : buildShopNoteBubble_('✓ ' + plan.name, SHOP_GREEN));
+    : buildShopBoughtBubble_(plan.name));
 
   commitOrNotify_(function () { shopBoughtCommit_(plan); }, plan.name + ' の購入');
 }
