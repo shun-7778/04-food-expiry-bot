@@ -2577,17 +2577,6 @@ function buildShopListBubble_(todo) {
 }
 
 /**
- * 押した後の確認用の1行バブル。
- * micro / nano は中の文字が自動で小さく描画されてしまうので、LINE の通常文字
- * （size:'md'）と同じ大きさに揃えるため deca を使う。高さは1行ぶんで収まる。
- * 文字は白。暗い背景ではグレーだと沈んで読みにくいので、本文には使わない
- * （グレーはヘッダー右の件数や、セクション見出しのような補助的な表示だけ）。
- */
-function buildShopNoteBubble_(text) {
-  return shopNoteShell_({ type: 'text', text: text, color: SHOP_TEXT, size: 'md', wrap: true });
-}
-
-/**
  * 「買った」「追加」を押したときの確認。チェックだけ緑にして、品名は
  * トークの文字と同じ白で出す（span で1行の中の色を分けている）
  */
@@ -2686,6 +2675,8 @@ var RECIPE_ADD_ALL_PREFIX = 'recipe_add_all:';
 var RECIPE_SET_KEY = 'RECIPE_SETS';
 var RECIPE_SET_KEEP = 3;
 
+var RECIPE_STALE_MESSAGE = 'この材料確認は古くなりました。\n写真を送り直してください。';
+
 function loadRecipeSets_() {
   try {
     return JSON.parse(PropertiesService.getScriptProperties().getProperty(RECIPE_SET_KEY) || '[]');
@@ -2731,8 +2722,8 @@ function buildRecipeBubble_(missing, have, token) {
       rows.push(recipeItemRow_(e, token, i));
     });
     rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleWideButton_('全部追加（' + missing.length + '件）',
-      { type: 'postback', label: '全部追加', data: RECIPE_ADD_ALL_PREFIX + token }));
+    rows.push(bubbleWideButton_('全て追加（' + missing.length + '件）',
+      { type: 'postback', label: '全て追加', data: RECIPE_ADD_ALL_PREFIX + token }));
   }
 
   if (have.length) {
@@ -2803,22 +2794,23 @@ function handleRecipeAdd_(replyToken, data) {
   var m = /^(\d+):(\d+)$/.exec(data);
   var set = m && findRecipeSet_(m[1]);
   if (!set) {
-    replyFlexMessage_(replyToken, '材料確認',
-      buildShopNoteBubble_('この材料確認は古くなりました。写真を送り直してください'));
+    replyText_(replyToken, RECIPE_STALE_MESSAGE);
     return;
   }
 
   var item = set.items[Number(m[2])];
   if (!item) {
-    replyFlexMessage_(replyToken, '材料確認', buildShopNoteBubble_('この項目は見つかりませんでした'));
+    replyText_(replyToken, 'この項目は見つかりませんでした。');
     return;
   }
 
   // 「買った」と同じく、仕分けが決まった時点で先に返信し、書き込みは後に回す
   var plan = shopAddPlan_([item]);
-  replyFlexMessage_(replyToken, '買い物リスト', plan.add.length
-    ? buildShopCheckBubble_(plan.add[0].name)
-    : buildShopNoteBubble_(item.name + ' はすでにリストにあります'));
+  if (plan.add.length) {
+    replyFlexMessage_(replyToken, '買い物リスト', buildShopCheckBubble_(plan.add[0].name));
+  } else {
+    replyText_(replyToken, item.name + ' はすでにリストにあります。');
+  }
 
   commitOrNotify_(function () { shopAddCommit_(plan); }, item.name + ' の追加');
 }
@@ -2827,14 +2819,13 @@ function handleRecipeAdd_(replyToken, data) {
 function handleRecipeAddAll_(replyToken, token) {
   var set = findRecipeSet_(token);
   if (!set) {
-    replyFlexMessage_(replyToken, '材料確認',
-      buildShopNoteBubble_('この材料確認は古くなりました。写真を送り直してください'));
+    replyText_(replyToken, RECIPE_STALE_MESSAGE);
     return;
   }
 
   var items = set.items.slice(0, set.missingCount);
   if (!items.length) {
-    replyFlexMessage_(replyToken, '材料確認', buildShopNoteBubble_('買うべきものはありません'));
+    replyText_(replyToken, '買うべきものはありません。');
     return;
   }
 
@@ -2867,7 +2858,7 @@ function handlePostback_(event) {
   if (data === SHOP_POSTBACK_ALL) {
     var clear = shopClearPlan_();
     if (!clear) {
-      replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_('買い物リストはすでに空です'));
+      replyText_(event.replyToken, '買い物リストはすでに空です。');
       return;
     }
     replyFlexMessage_(event.replyToken, '買い物リスト', buildShopAllBoughtBubble_(clear.todo));
@@ -2880,11 +2871,11 @@ function handlePostback_(event) {
 
   var plan = shopBoughtPlan_(m[1]);
   if (plan.notFound) {
-    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_('この項目は見つかりませんでした'));
+    replyText_(event.replyToken, 'この項目は見つかりませんでした。');
     return;
   }
   if (plan.already) {
-    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_(plan.name + ' はすでに削除済みです'));
+    replyText_(event.replyToken, plan.name + ' はすでに削除済みです。');
     return;
   }
 
