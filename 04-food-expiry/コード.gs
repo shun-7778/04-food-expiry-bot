@@ -271,6 +271,8 @@ var HELP_MESSAGE = [
   '',
   '■ 買い物リスト',
   '「買い物リストに牛乳と卵を追加」',
+  '　追加した分を削除ボタン付きで返すので、品名を',
+  '　取り違えたときはその場で消せます。',
   '「牛乳買った」… リストから外す',
   '「買い物リスト」… 一覧をボタン付きで表示',
   '　各行の「削除」、または「全て削除」を押すと',
@@ -343,14 +345,16 @@ function parseCommand_(text) {
   return { action: action, rest: (m[2] || '').trim() };
 }
 
-/** 買い物リストの品名を Claude に特定させ、追加または削除する */
+/**
+ * 買い物リストから外す品名を Claude に特定させて削除する。
+ * 追加のほうは削除ボタン付きのバブルで返すため、この経路には乗せていない
+ * （replyShopAdd_ が返信まで受け持つ）
+ */
 function runShopCommand_(action, text) {
   var items = parseItemNames_(text);
   if (!items.length) return '品名を読み取れませんでした。';
 
-  if (action === 'shop_add') return shopAdd_(items);
-  var names = items.map(function (it) { return it.name; });
-  return shopBought_(names);
+  return shopBought_(items.map(function (it) { return it.name; }));
 }
 
 /** 在庫から消す食材を Claude に特定させ、消費として記録する */
@@ -436,7 +440,12 @@ function handleText_(event, text) {
   var cmd = parseCommand_(text);
   if (cmd) {
     try {
-      replyText_(event.replyToken, prefixReply_(note, runCommand_(cmd)));
+      // 追加だけは削除ボタン付きのバブルで返すので、文字列を組み立てる経路には乗せない
+      if (cmd.action === 'shop_add' && cmd.rest) {
+        replyShopAdd_(event.replyToken, note, parseItemNames_(cmd.rest));
+      } else {
+        replyText_(event.replyToken, prefixReply_(note, runCommand_(cmd)));
+      }
     } catch (err) {
       console.error('接頭辞コマンドの処理に失敗: ' + err.stack);
       replyText_(event.replyToken, note + '処理に失敗しました。\n' + err.message);
@@ -457,7 +466,7 @@ function handleText_(event, text) {
   var shopAdd = parseShopAddFast_(text);
   if (shopAdd) {
     try {
-      replyText_(event.replyToken, prefixReply_(note, runShopCommand_('shop_add', shopAdd)));
+      replyShopAdd_(event.replyToken, note, parseItemNames_(shopAdd));
     } catch (err) {
       console.error('買い物リストへの追加に失敗: ' + err.stack);
       replyText_(event.replyToken, note + '処理に失敗しました。\n' + err.message);
@@ -509,7 +518,7 @@ function handleText_(event, text) {
       var shopItems = items
         .filter(function (it) { return it.item_name; })
         .map(function (it) { return { name: it.item_name, category: it.category }; });
-      replyText_(event.replyToken, note + shopAdd_(shopItems));
+      replyShopAdd_(event.replyToken, note, shopItems);
       return;
     }
     if (intent === 'shop_bought' && names.length) {
@@ -2228,19 +2237,20 @@ function shopAddPlan_(items) {
     add.push(it);
   });
 
-  return { sheet: sh, startRow: last + 1, add: add, dup: dup };
+  // IDは書き込み前にここで確保しておく。返信のバブルに付ける削除ボタンが
+  // IDを必要とし、その返信を書き込みより先に送っているため
+  return { sheet: sh, startRow: last + 1, add: add, dup: dup, ids: add.length ? shopReserveIds_(add.length) : [] };
 }
 
-/** shopAddPlan_ が仕分けた分を書き込む。ID採番と追記と取消用の記録をここでまとめて行う */
+/** shopAddPlan_ が仕分けた分を書き込む。追記と取消用の記録をまとめて行う */
 function shopAddCommit_(plan) {
   if (!plan.add.length) return;
 
   var stamp = nowStamp_();
   var today = todayStamp_();
-  var ids = shopReserveIds_(plan.add.length);
   var values = plan.add.map(function (it, i) {
     var row = new Array(SHOP_COL_COUNT).fill('');
-    row[SHOP_COL.ID - 1] = ids[i];
+    row[SHOP_COL.ID - 1] = plan.ids[i];
     row[SHOP_COL.ADDED - 1] = today;
     row[SHOP_COL.NAME - 1] = it.name;
     row[SHOP_COL.CATEGORY - 1] = it.category;
@@ -2257,33 +2267,6 @@ function shopAddCommit_(plan) {
   });
 }
 
-/** 追加した品名の配列。返信の組み立てに使う */
-function shopAddedNames_(plan) {
-  return plan.add.map(function (it) { return it.name; });
-}
-
-/** 買い物リストに品名を追加し、テキストで結果を返す */
-function shopAdd_(items) {
-  var plan = shopAddPlan_(items);
-  shopAddCommit_(plan);
-
-  var added = shopAddedNames_(plan);
-  var dup = plan.dup;
-  if (!added.length && !dup.length) return '追加するものを読み取れませんでした。';
-
-  var lines = [];
-  if (added.length) {
-    lines.push('買い物リストに追加しました（' + added.length + '件）');
-    lines.push('');
-    added.forEach(function (n, i) { lines.push((i + 1) + '. ' + n); });
-  }
-
-  if (dup.length) {
-    if (lines.length) lines.push('');
-    lines.push('※ すでにリストにあります: ' + dup.join('、'));
-  }
-  return lines.join('\n');
-}
 
 /**
  * 指定した行をまとめて購入済にする。行が飛び飛びでも、状態・更新日時の
@@ -2764,29 +2747,59 @@ function recipeItemRow_(entry, token, index) {
     { type: 'postback', label: '追加', data: RECIPE_ADD_PREFIX + token + ':' + index });
 }
 
-/** 「全部追加」を押したときのまとめ返信 */
-function buildShopAddedBubble_(added, dup) {
-  var contents = [];
-  if (added.length) {
-    contents.push({ type: 'text', text: '買い物リストに追加しました（' + added.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true });
-    contents.push({ type: 'text', text: added.join('、'), color: SHOP_TEXT, size: 'md', wrap: true });
-  }
-  if (dup.length) {
-    contents.push({ type: 'text', text: '※ すでにリストにあります: ' + dup.join('、'), color: SHOP_TEXT, size: 'md', wrap: true });
-  }
+/**
+ * 追加した分だけを並べたバブル。買い物リスト表示と同じ形で、各行に削除ボタンを付ける。
+ * 品名を取り違えたときにその場で消せるようにするためで、リスト全件は出さない
+ * （追加のたびに全件返すと、件数が増えたときトークが埋まるため）。
+ */
+function buildShopAddedListBubble_(plan) {
+  var rows = [];
+  plan.add.forEach(function (it, i) {
+    if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push(bubbleActionRow_(it.name, '削除',
+      { type: 'postback', label: '削除', data: shopBoughtPostbackData_(plan.ids[i]) }));
+  });
 
   return {
     type: 'bubble',
-    size: 'kilo',
-    body: {
-      type: 'box',
-      layout: 'vertical',
-      backgroundColor: SHOP_BG,
-      paddingAll: '14px',
-      spacing: 'sm',
-      contents: contents
-    }
+    size: 'mega',
+    header: bubbleHeader_('買い物リストに追加', plan.add.length + '件'),
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
+}
+
+/**
+ * 買い物リストへの追加の返信。追加した分のバブルを返し、すでに載っていたものが
+ * あればテキストで添える。「買った」と同じく、仕分けが決まった時点で先に返信し、
+ * 書き込みは後に回す。
+ */
+function replyShopAdd_(replyToken, note, items) {
+  if (!items || !items.length) {
+    replyText_(replyToken, (note || '') + '品名を読み取れませんでした。');
+    return;
+  }
+
+  var plan = shopAddPlan_(items);
+  if (!plan.add.length) {
+    replyText_(replyToken, (note || '') + (plan.dup.length
+      ? 'すでにリストにあります: ' + plan.dup.join('、')
+      : '追加するものを読み取れませんでした。'));
+    return;
+  }
+
+  var messages = [];
+  if (note) messages.push({ type: 'text', text: note.replace(/\n+$/, '') });
+  messages.push({
+    type: 'flex',
+    altText: '買い物リストに追加 ' + plan.add.length + '件',
+    contents: buildShopAddedListBubble_(plan)
+  });
+  if (plan.dup.length) {
+    messages.push({ type: 'text', text: 'すでにリストにあります: ' + plan.dup.join('、') });
+  }
+  replyMessages_(replyToken, messages);
+
+  commitOrNotify_(function () { shopAddCommit_(plan); }, '買い物リストへの追加');
 }
 
 /** 材料確認のバブルから1件だけ買い物リストに入れる */
@@ -2829,10 +2842,7 @@ function handleRecipeAddAll_(replyToken, token) {
     return;
   }
 
-  var plan = shopAddPlan_(items);
-  replyFlexMessage_(replyToken, '買い物リスト', buildShopAddedBubble_(shopAddedNames_(plan), plan.dup));
-
-  commitOrNotify_(function () { shopAddCommit_(plan); }, '買い物リストへの追加');
+  replyShopAdd_(replyToken, '', items);
 }
 
 /**
