@@ -62,16 +62,20 @@ var CATEGORIES = ['野菜・フルーツ', '肉・魚介', '卵・乳製品', '�
 
 var SHOP_SHEET_NAME = '買い物リスト';
 
+// STATUS と UPDATED は隣り合わせのままにすること。
+// shopBoughtCommit_ / shopClearCommit_ が「押してから返信までを速くする」ために、この2列を
+// 1回の setValues でまとめて書いている（離すと書き込みが2往復に戻る）
 var SHOP_COL = {
-  ADDED: 1,    // 追加日 (YYYY-MM-DD)
-  NAME: 2,     // 品名
-  CATEGORY: 3, // 区分（CATEGORIES のいずれか）
-  STATUS: 4,   // 未購入 / 購入済 / 取消
-  UPDATED: 5   // 状態を最後に変えた日時
+  ID: 1,       // 連番ID。postback の data はこれで品目を指す（行番号は編集でズレるため使わない）
+  ADDED: 2,    // 追加日 (YYYY-MM-DD)
+  NAME: 3,     // 品名
+  CATEGORY: 4, // 区分（CATEGORIES のいずれか）
+  STATUS: 5,   // 未購入 / 購入済 / 取消
+  UPDATED: 6   // 状態を最後に変えた日時
 };
-var SHOP_COL_COUNT = 5;
+var SHOP_COL_COUNT = 6;
 
-var SHOP_HEADERS = ['追加日', '品名', '区分', '状態', '更新日時'];
+var SHOP_HEADERS = ['ID', '追加日', '品名', '区分', '状態', '更新日時'];
 
 var SHOP_STATUS = { TODO: '未購入', DONE: '購入済', CANCELED: '取消' };
 
@@ -130,10 +134,15 @@ function isAllowedSender_(event) {
 }
 
 function handleEvent_(event) {
-  if (event.type !== 'message') return;
+  if (event.type !== 'message' && event.type !== 'postback') return;
 
   if (!isAllowedSender_(event)) {
     console.warn('許可外のユーザーからの投稿を無視: ' + (event.source && event.source.userId));
+    return;
+  }
+
+  if (event.type === 'postback') {
+    handleShopPostback_(event);
     return;
   }
 
@@ -244,7 +253,9 @@ var HELP_MESSAGE = [
   '■ 買い物リスト',
   '「買い物リストに牛乳と卵を追加」',
   '「牛乳買った」… リストから外す',
-  '「買い物リスト」… 一覧',
+  '「買い物リスト」… 一覧をボタン付きで表示',
+  '　各行の「買った」、または「全部買った」を押すと',
+  '　その場でリストから外れます（発言は残りません）',
   '「買い物リストを全部削除」… 空にする',
   '',
   '■ コマンド',
@@ -417,7 +428,7 @@ function handleText_(event, text) {
   // 買い物リストの操作は言い回しが定型なので、種別の判定は API を使わずに済む。
   // 品名の特定だけ Claude に任せる（runShopCommand_）
   if (SHOP_LIST_CMD.test(text)) {
-    replyText_(event.replyToken, note + shopList_());
+    replyShopList_(event.replyToken, note);
     return;
   }
   if (SHOP_CLEAR_CMD.test(text)) {
@@ -468,7 +479,7 @@ function handleText_(event, text) {
       .filter(function (n) { return n; });
 
     if (intent === 'shop_list') {
-      replyText_(event.replyToken, note + shopList_());
+      replyShopList_(event.replyToken, note);
       return;
     }
     if (intent === 'shop_clear') {
@@ -580,6 +591,17 @@ function replyText_(replyToken, reply) {
   if (r.labels && r.labels.length) {
     message.quickReply = buildQuickReply_(r.labels);
   }
+  replyMessages_(replyToken, [message]);
+}
+
+/** Flex メッセージ1件で返信する。altText は通知やトーク一覧に出る代替テキスト */
+function replyFlexMessage_(replyToken, altText, contents) {
+  replyMessages_(replyToken, [{ type: 'flex', altText: String(altText).substring(0, 400), contents: contents }]);
+}
+
+/** reply API の共通呼び出し。messages は1〜5件の LINE メッセージオブジェクト */
+function replyMessages_(replyToken, messages) {
+  if (!replyToken || !messages || !messages.length) return;
 
   var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
     method: 'post',
@@ -587,7 +609,7 @@ function replyText_(replyToken, reply) {
     headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
     payload: JSON.stringify({
       replyToken: replyToken,
-      messages: [message]
+      messages: messages
     }),
     muteHttpExceptions: true
   });
@@ -968,14 +990,26 @@ function formatItem_(it, prefix) {
 
 // ---------------------------------------------------------------- スプレッドシート操作
 
+/**
+ * openById は1回あたり数百ミリ秒かかる。同じ実行の中で何度も開くと
+ * そのぶん返信が遅れるので、開いたシートは使い回す。
+ * GAS のグローバル変数は実行ごとに作り直されるため、古い参照は残らない。
+ */
+var SHEET_CACHE_ = null;
+var SHOP_SHEET_CACHE_ = null;
+
 /** 在庫シートを返す。未設定なら手順を添えて落とす */
 function sheet_() {
+  if (SHEET_CACHE_) return SHEET_CACHE_;
+
   var id = prop_('SPREADSHEET_ID', false);
   if (!id) {
     throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
   }
   var sh = SpreadsheetApp.openById(id).getSheetByName(SHEET_NAME);
   if (!sh) throw new Error('シート「' + SHEET_NAME + '」が見つかりません');
+
+  SHEET_CACHE_ = sh;
   return sh;
 }
 
@@ -1029,6 +1063,26 @@ function migrateAddShopCategoryColumn() {
   sh.insertColumnAfter(2);
   sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
   console.log('買い物リストに区分列を追加しました。');
+}
+
+/**
+ * 買い物リストの先頭に「ID」列を追加する一度きりの移行処理。
+ * postback（買った/全部買ったボタン）が行番号ではなく ID で品目を指すようにするため、
+ * 既存行にも上から順に連番を振る。エディタから1回だけ実行する。
+ */
+function migrateAddShopIdColumn() {
+  var sh = shopSheet_();
+  sh.insertColumnBefore(1);
+  sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
+
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    var ids = [];
+    for (var i = 0; i < last - 1; i++) ids.push([i + 1]);
+    sh.getRange(2, SHOP_COL.ID, ids.length, 1).setValues(ids);
+    PropertiesService.getScriptProperties().setProperty('SHOP_NEXT_ID', String(ids.length + 1));
+  }
+  console.log('買い物リストにID列を追加しました。');
 }
 
 /** Date でも文字列でも 'YYYY-MM-DD' に揃える */
@@ -1557,11 +1611,13 @@ function consumeItems_(items) {
   return finishSession_(sh, session);
 }
 
-/** 対象行を消費済みにして、返信用の1行を積む */
+/**
+ * 対象行を消費済みにして、返信用の1行を積む。
+ * 状態と更新日時は隣り合う列なので、1回の setValues でまとめて書く
+ * （別々に setValue すると書き込みが2往復になり、そのぶん返信が遅れる）
+ */
 function markRow_(sh, choice, session) {
-  sh.getRange(choice.row, COL.STATUS)
-    .setValue(STATUS.USED);
-  sh.getRange(choice.row, COL.UPDATED).setValue(nowStamp_());
+  sh.getRange(choice.row, COL.STATUS, 1, 2).setValues([[STATUS.USED, nowStamp_()]]);
   session.changed.push(choice.row);
   session.done.push(choice.name);
 }
@@ -1840,22 +1896,35 @@ function undoLast_() {
   if (op.sheet === 'shopping') return undoShopping_(op);
 
   var sh = sheet_();
+  var last = sh.getLastRow();
+  if (last < 2) {
+    PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
+    return '取り消せる操作がありません。';
+  }
+
+  // 1行ずつ getValue / setValue すると件数ぶん往復して遅い。
+  // 全体を1回読み、状態・更新日時の2列を1回で書き戻す
+  var data = sh.getRange(2, 1, last - 1, COL_COUNT).getValues();
   var stamp = nowStamp_();
+  var back = op.type === 'register' ? STATUS.CANCELED : STATUS.STOCK;
   var names = [];
+  var cells = data.map(function (r) { return [r[COL.STATUS - 1], r[COL.UPDATED - 1]]; });
 
   op.rows.forEach(function (row) {
-    if (row > sh.getLastRow()) return;
-    var name = sh.getRange(row, COL.NAME).getValue();
+    var i = row - 2;
+    if (i < 0 || i >= data.length) return;
+    var name = data[i][COL.NAME - 1];
     // 登録の取り消しは期限を添えて何を取り消したか分かるようにする。
     // 消費の取り消し（在庫に戻す）は期限を出さない。
     names.push(op.type === 'register'
-      ? withDate_(name, normalizeYmd_(sh.getRange(row, COL.DATE).getValue()),
-          sh.getRange(row, COL.LABEL).getValue())
+      ? withDate_(name, normalizeYmd_(data[i][COL.DATE - 1]), data[i][COL.LABEL - 1])
       : name);
-    sh.getRange(row, COL.STATUS)
-      .setValue(op.type === 'register' ? STATUS.CANCELED : STATUS.STOCK);
-    sh.getRange(row, COL.UPDATED).setValue(stamp);
+    cells[i] = [back, stamp];
   });
+
+  if (names.length) {
+    sh.getRange(2, COL.STATUS, cells.length, 2).setValues(cells);
+  }
 
   PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
 
@@ -1873,16 +1942,29 @@ function undoLast_() {
 /** 買い物リスト側の取り消し。追加は取消印、購入済は未購入に戻す */
 function undoShopping_(op) {
   var sh = shopSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) {
+    PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
+    return '取り消せる操作がありません。';
+  }
+
+  // 在庫側の取り消しと同じく、読み1回・書き1回にまとめる
+  var data = sh.getRange(2, 1, last - 1, SHOP_COL_COUNT).getValues();
   var stamp = nowStamp_();
   var back = op.type === 'shop_add' ? SHOP_STATUS.CANCELED : SHOP_STATUS.TODO;
   var names = [];
+  var cells = data.map(function (r) { return [r[SHOP_COL.STATUS - 1], r[SHOP_COL.UPDATED - 1]]; });
 
   op.rows.forEach(function (row) {
-    if (row > sh.getLastRow()) return;
-    names.push(sh.getRange(row, SHOP_COL.NAME).getValue());
-    sh.getRange(row, SHOP_COL.STATUS).setValue(back);
-    sh.getRange(row, SHOP_COL.UPDATED).setValue(stamp);
+    var i = row - 2;
+    if (i < 0 || i >= data.length) return;
+    names.push(data[i][SHOP_COL.NAME - 1]);
+    cells[i] = [back, stamp];
   });
+
+  if (names.length) {
+    sh.getRange(2, SHOP_COL.STATUS, cells.length, 2).setValues(cells);
+  }
 
   PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
   if (!names.length) return '取り消せる操作がありません。';
@@ -2003,6 +2085,8 @@ function setupWeeklyTrigger() {
  * （手動で空のシートだけ作ってある状態でもそのまま使えるようにしている）
  */
 function shopSheet_() {
+  if (SHOP_SHEET_CACHE_) return SHOP_SHEET_CACHE_;
+
   var id = prop_('SPREADSHEET_ID', false);
   if (!id) {
     throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
@@ -2015,10 +2099,12 @@ function shopSheet_() {
     sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
   }
+
+  SHOP_SHEET_CACHE_ = sh;
   return sh;
 }
 
-/** 未購入の行を {row, name} で返す */
+/** 未購入の行を {row, id, name} で返す */
 function shopTodoRows_(sh) {
   var last = sh.getLastRow();
   if (last < 2) return [];
@@ -2027,9 +2113,38 @@ function shopTodoRows_(sh) {
   var out = [];
   for (var i = 0; i < data.length; i++) {
     if (data[i][SHOP_COL.STATUS - 1] !== SHOP_STATUS.TODO) continue;
-    out.push({ row: i + 2, name: data[i][SHOP_COL.NAME - 1] });
+    out.push({ row: i + 2, id: data[i][SHOP_COL.ID - 1], name: data[i][SHOP_COL.NAME - 1] });
   }
   return out;
+}
+
+/**
+ * 買い物リストの品目に振る連番を n 個まとめて確保する。
+ * スクリプトプロパティで採番するので、行の並び替えや削除の影響を受けない。
+ * 1品ずつ採番するとプロパティの読み書きが件数ぶん発生するため、まとめて取る。
+ */
+function shopReserveIds_(n) {
+  var props = PropertiesService.getScriptProperties();
+  var next = Number(props.getProperty('SHOP_NEXT_ID')) || (shopMaxId_() + 1);
+  props.setProperty('SHOP_NEXT_ID', String(next + n));
+
+  var ids = [];
+  for (var i = 0; i < n; i++) ids.push(next + i);
+  return ids;
+}
+
+function shopMaxId_() {
+  var sh = shopSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+
+  var ids = sh.getRange(2, SHOP_COL.ID, last - 1, 1).getValues();
+  var max = 0;
+  ids.forEach(function (r) {
+    var n = Number(r[0]);
+    if (n > max) max = n;
+  });
+  return max;
 }
 
 /** 買い物リストに品名を追加する。すでに未購入で載っているものは足さない */
@@ -2059,8 +2174,10 @@ function shopAdd_(items) {
   if (added.length) {
     var startRow = sh.getLastRow() + 1;
     var stamp = nowStamp_();
-    var values = added.map(function (it) {
+    var ids = shopReserveIds_(added.length);
+    var values = added.map(function (it, i) {
       var row = new Array(SHOP_COL_COUNT).fill('');
+      row[SHOP_COL.ID - 1] = ids[i];
       row[SHOP_COL.ADDED - 1] = todayStamp_();
       row[SHOP_COL.NAME - 1] = it.name;
       row[SHOP_COL.CATEGORY - 1] = it.category;
@@ -2088,6 +2205,23 @@ function shopAdd_(items) {
   return lines.join('\n');
 }
 
+/**
+ * 指定した行をまとめて購入済にする。行が飛び飛びでも、状態・更新日時の
+ * 2列を1回読んで1回書き戻すだけで済ませる（1行ずつだと件数ぶん往復する）
+ */
+function markShopRowsDone_(sh, rows, stamp) {
+  var last = sh.getLastRow();
+  if (last < 2 || !rows.length) return;
+
+  var range = sh.getRange(2, SHOP_COL.STATUS, last - 1, 2);
+  var cells = range.getValues();
+  rows.forEach(function (row) {
+    var i = row - 2;
+    if (i >= 0 && i < cells.length) cells[i] = [SHOP_STATUS.DONE, stamp];
+  });
+  range.setValues(cells);
+}
+
 /** 買ったものをリストから外す（購入済にする） */
 function shopBought_(names) {
   var sh = shopSheet_();
@@ -2100,9 +2234,8 @@ function shopBought_(names) {
   var changed = [];
   var unresolved = [];
 
+  // ここでは対象を控えるだけ。シートへの書き込みは最後に1回でまとめて行う
   function take(hit) {
-    sh.getRange(hit.row, SHOP_COL.STATUS).setValue(SHOP_STATUS.DONE);
-    sh.getRange(hit.row, SHOP_COL.UPDATED).setValue(stamp);
     changed.push(hit.row);
     done.push(hit.name);
   }
@@ -2143,6 +2276,7 @@ function shopBought_(names) {
   }
 
   if (changed.length) {
+    markShopRowsDone_(sh, changed, stamp);
     setLastOp_({ type: 'shop_bought', sheet: 'shopping', rows: changed });
   }
 
@@ -2159,36 +2293,323 @@ function shopBought_(names) {
   return lines.length ? lines.join('\n') : '対象を読み取れませんでした。';
 }
 
-/** 未購入をすべて購入済にする。行は消さないので「取消」で戻せる */
-function shopClear_() {
+/**
+ * 未購入をすべて購入済にする。行は消さないので「取消」で戻せる。
+ * 返すのは変更した行の一覧（{row, id, name}）。空なら null（テキスト版・Flex版で
+ * 「すでに空です」の文言が違うため、ここでは判定だけ済ませて呼び出し側に委ねる）
+ */
+function shopClearPlan_() {
   var sh = shopSheet_();
-  var todo = shopTodoRows_(sh);
-  if (!todo.length) return '買い物リストはすでに空です。';
+  var last = sh.getLastRow();
+  if (last < 2) return null;
 
+  // 1件ずつ setValue すると件数ぶん往復して遅いので、状態・更新日時の2列を
+  // まとめて1回で書き戻す。未購入以外の行は読んだ値をそのまま入れ直すだけ
+  var data = sh.getRange(2, 1, last - 1, SHOP_COL_COUNT).getValues();
   var stamp = nowStamp_();
-  todo.forEach(function (t) {
-    sh.getRange(t.row, SHOP_COL.STATUS).setValue(SHOP_STATUS.DONE);
-    sh.getRange(t.row, SHOP_COL.UPDATED).setValue(stamp);
-  });
+  var todo = [];
+  var cells = [];
+  for (var i = 0; i < data.length; i++) {
+    var status = data[i][SHOP_COL.STATUS - 1];
+    var updated = data[i][SHOP_COL.UPDATED - 1];
+    if (status === SHOP_STATUS.TODO) {
+      todo.push({ row: i + 2, id: data[i][SHOP_COL.ID - 1], name: data[i][SHOP_COL.NAME - 1] });
+      status = SHOP_STATUS.DONE;
+      updated = stamp;
+    }
+    cells.push([status, updated]);
+  }
+  if (!todo.length) return null;
 
+  return { sheet: sh, cells: cells, todo: todo };
+}
+
+/** shopClearPlan_ が組み立てた内容を書き込む */
+function shopClearCommit_(plan) {
+  plan.sheet.getRange(2, SHOP_COL.STATUS, plan.cells.length, 2).setValues(plan.cells);
   setLastOp_({
     type: 'shop_clear',
     sheet: 'shopping',
-    rows: todo.map(function (t) { return t.row; })
+    rows: plan.todo.map(function (t) { return t.row; })
   });
+}
+
+function shopClearInternal_() {
+  var plan = shopClearPlan_();
+  if (!plan) return null;
+
+  shopClearCommit_(plan);
+  return plan.todo;
+}
+
+/** 未購入をすべて購入済にする（テキスト版の文言） */
+function shopClear_() {
+  var todo = shopClearInternal_();
+  if (!todo) return '買い物リストはすでに空です。';
 
   return '買い物リストを空にしました（' + todo.length + '件）\n'
     + todo.map(function (t) { return t.name; }).join('、')
     + '\n\n戻す場合は「取消」と送ってください。';
 }
 
-/** 未購入の一覧 */
-function shopList_() {
-  var todo = shopTodoRows_(shopSheet_());
-  if (!todo.length) return '買い物リストは空です。';
+/**
+ * postback「買った」ボタン用。押された1件をシートから読んで、何を返すかだけ決める。
+ * まだ書き込みはしない（handleShopPostback_ が返信を先に送ってから commit する）。
+ * 戻り値: { sheet, row, name, remaining } / { already, name }（二度押し）/ { notFound }
+ *
+ * 押してから返信が届くまでを短くしたいので、シートへの往復を最小にしている。
+ * 対象の行と残りの未購入件数は、同じ1回の getValues から数える。
+ * remaining は「空になったか」の判定にだけ使い、件数自体は返信に出さない。
+ */
+function shopBoughtPlan_(id) {
+  var sh = shopSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return { notFound: true };
 
-  return '買い物リスト ' + todo.length + '件\n\n'
-    + todo.map(function (t, i) { return (i + 1) + '. ' + t.name; }).join('\n');
+  var data = sh.getRange(2, 1, last - 1, SHOP_COL_COUNT).getValues();
+  var hit = null;
+  var remaining = 0;
+  for (var i = 0; i < data.length; i++) {
+    var status = data[i][SHOP_COL.STATUS - 1];
+    if (String(data[i][SHOP_COL.ID - 1]) === String(id)) {
+      hit = { row: i + 2, name: data[i][SHOP_COL.NAME - 1], status: status };
+    } else if (status === SHOP_STATUS.TODO) {
+      remaining++;   // 押した1件を除いた未購入の数
+    }
+  }
+
+  if (!hit) return { notFound: true };
+  if (hit.status !== SHOP_STATUS.TODO) return { already: true, name: hit.name };
+
+  return { sheet: sh, row: hit.row, name: hit.name, remaining: remaining };
+}
+
+/** shopBoughtPlan_ が決めた1件を実際に購入済にする。状態と更新日時を1回で書く */
+function shopBoughtCommit_(plan) {
+  plan.sheet.getRange(plan.row, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.DONE, nowStamp_()]]);
+  setLastOp_({ type: 'shop_bought', sheet: 'shopping', rows: [plan.row] });
+}
+
+// ---------------------------------------------------------------- 買い物リスト（Flexバブル）
+
+/**
+ * 「買い物リスト表示」の返信バブル。品名の右に「買った」ボタン（postback）が
+ * 1つずつ付き、押しても入力欄に文字は入らず自分の発言も残らない。
+ * 押した後の反応は handleShopPostback_ 側で個別に返す（このバブル自体は編集できない）。
+ */
+var SHOP_BG = '#1e2127';
+var SHOP_GREEN = '#4ADE80';
+var SHOP_GRAY = '#9CA3AF';
+var SHOP_TEXT = '#F3F4F6';
+var SHOP_LINE = '#33363c';
+var SHOP_POSTBACK_ALL = 'shop_bought_all';
+
+function shopBoughtPostbackData_(id) { return 'shop_bought:' + id; }
+
+function buildShopListBubble_(todo) {
+  var rows = [];
+  todo.forEach(function (t, i) {
+    if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push({
+      type: 'box',
+      layout: 'horizontal',
+      paddingStart: '14px',
+      paddingEnd: '4px',
+      alignItems: 'center',
+      contents: [
+        // size:'md'（16px）が LINE の通常のトーク文字と同じ大きさ。太さは既定（regular）のまま
+        { type: 'text', text: String(t.name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: true, gravity: 'center' },
+        // button コンポーネントは height:'sm' でも約40pxの固定高がある。
+        // 行を詰めたいので、余白を自前で持たせた box に action を付けて代用する
+        // （見た目は同じ緑文字のまま、タップ領域も指の届く高さを保てる）
+        {
+          type: 'box',
+          layout: 'vertical',
+          flex: 0,
+          paddingStart: '16px',
+          paddingEnd: '10px',
+          paddingTop: '8px',
+          paddingBottom: '8px',
+          action: { type: 'postback', label: '買った', data: shopBoughtPostbackData_(t.id) },
+          contents: [
+            { type: 'text', text: '買った', color: SHOP_GREEN, size: 'md', align: 'end' }
+          ]
+        }
+      ]
+    });
+  });
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'horizontal',
+      backgroundColor: SHOP_BG,
+      paddingStart: '14px',
+      paddingEnd: '14px',
+      paddingTop: '12px',
+      paddingBottom: '12px',
+      contents: [
+        { type: 'text', text: '買い物リスト', weight: 'bold', size: 'md', color: SHOP_GREEN, flex: 1 },
+        { type: 'text', text: '残り' + todo.length + '件', size: 'sm', color: SHOP_GRAY, align: 'end', gravity: 'center' }
+      ]
+    },
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: SHOP_BG,
+      paddingAll: '0px',
+      spacing: 'none',
+      contents: [
+        { type: 'separator', color: SHOP_LINE },
+        {
+          type: 'box',
+          layout: 'vertical',
+          paddingTop: '11px',
+          paddingBottom: '11px',
+          action: { type: 'postback', label: '全部買った', data: SHOP_POSTBACK_ALL },
+          contents: [
+            { type: 'text', text: '全部買った', color: SHOP_GREEN, size: 'md', align: 'center' }
+          ]
+        }
+      ]
+    }
+  };
+}
+
+/**
+ * 押した後の確認用の1行バブル。
+ * micro / nano は中の文字が自動で小さく描画されてしまうので、LINE の通常文字
+ * （size:'md'）と同じ大きさに揃えるため deca を使う。高さは1行ぶんで収まる。
+ */
+function buildShopNoteBubble_(text, color) {
+  return {
+    type: 'bubble',
+    size: 'deca',
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: SHOP_BG,
+      paddingStart: '14px',
+      paddingEnd: '14px',
+      paddingTop: '12px',
+      paddingBottom: '12px',
+      contents: [
+        { type: 'text', text: text, color: color || SHOP_TEXT, size: 'md', wrap: true }
+      ]
+    }
+  };
+}
+
+function buildShopEmptyBubble_() {
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: SHOP_BG,
+      paddingAll: '14px',
+      contents: [
+        { type: 'text', text: '買い物リストが空になりました', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true }
+      ]
+    }
+  };
+}
+
+function buildShopAllBoughtBubble_(todo) {
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: SHOP_BG,
+      paddingAll: '14px',
+      spacing: 'sm',
+      contents: [
+        { type: 'text', text: '買い物リストを全部買いました（' + todo.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true },
+        { type: 'text', text: todo.map(function (t) { return t.name; }).join('、'), color: SHOP_GRAY, size: 'sm', wrap: true }
+      ]
+    }
+  };
+}
+
+/**
+ * 買い物リスト表示の返信本体。note（先ほどの質問を打ち切った旨など）があれば
+ * テキストメッセージとして先に添え、その後にリスト（空ならテキスト、あればFlex）を返す。
+ */
+function replyShopList_(replyToken, note) {
+  var todo = shopTodoRows_(shopSheet_());
+  var messages = [];
+  if (note) messages.push({ type: 'text', text: note.replace(/\n+$/, '') });
+
+  if (!todo.length) {
+    messages.push({ type: 'text', text: '買い物リストは空です。' });
+  } else {
+    messages.push({ type: 'flex', altText: '買い物リスト ' + todo.length + '件', contents: buildShopListBubble_(todo) });
+  }
+  replyMessages_(replyToken, messages);
+}
+
+/**
+ * 買い物リストの postback（買った／全部買った）を処理する。
+ *
+ * 押してから吹き出しが出るまでを短くしたいので、シートを読んで内容が決まった時点で
+ * 先に返信し、シートへの書き込みはその後に回している。
+ * 書き込みに失敗すると「返したのに記録されていない」状態になるので、
+ * そのときだけ push で知らせる（黙って消えないようにする）。
+ */
+function handleShopPostback_(event) {
+  var data = (event.postback && event.postback.data) || '';
+
+  if (data === SHOP_POSTBACK_ALL) {
+    var clear = shopClearPlan_();
+    if (!clear) {
+      replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_('買い物リストはすでに空です', SHOP_GRAY));
+      return;
+    }
+    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopAllBoughtBubble_(clear.todo));
+    commitOrNotify_(function () { shopClearCommit_(clear); }, '買い物リストの全件購入');
+    return;
+  }
+
+  var m = /^shop_bought:(.+)$/.exec(data);
+  if (!m) return; // リッチメニューの 'fill' など、買い物リスト以外の postback は無視
+
+  var plan = shopBoughtPlan_(m[1]);
+  if (plan.notFound) {
+    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_('この項目は見つかりませんでした', SHOP_GRAY));
+    return;
+  }
+  if (plan.already) {
+    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopNoteBubble_(plan.name + ' はすでに購入済みです', SHOP_GRAY));
+    return;
+  }
+
+  // 最後の1件だけは「空になった」ことを伝える。それ以外は品名だけ返す
+  replyFlexMessage_(event.replyToken, '買い物リスト', plan.remaining === 0
+    ? buildShopEmptyBubble_()
+    : buildShopNoteBubble_('✓ ' + plan.name, SHOP_GREEN));
+
+  commitOrNotify_(function () { shopBoughtCommit_(plan); }, plan.name + ' の購入');
+}
+
+/** 返信後の書き込み。失敗したら push で知らせる（返信は取り消せないため） */
+function commitOrNotify_(commit, label) {
+  try {
+    commit();
+  } catch (err) {
+    console.error('返信後の書き込みに失敗: ' + err.stack);
+    try {
+      pushText_('※ ' + label + 'を記録できませんでした。\n'
+        + 'もう一度ボタンを押すか、時間をおいて試してください。\n' + err.message);
+    } catch (pushErr) {
+      console.error('失敗通知の push にも失敗: ' + pushErr.stack);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- リッチメニュー
