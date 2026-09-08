@@ -20,7 +20,6 @@ BG = (18, 20, 23)            # 画像全体の下地
 TILE = (32, 36, 41)          # タイルの面
 TILE_EDGE = (52, 58, 65)     # タイルの縁。面との差は小さく、輪郭だけ分かる程度
 TEXT = (243, 244, 246)
-TEXT_DIM = (156, 163, 175)   # 取消だけ控えめにする
 
 GREEN = (74, 222, 128)
 PALE_BLUE = (147, 197, 253)  # 左列。買い物リストと材料確認をひとまとまりに見せる
@@ -30,7 +29,7 @@ MARGIN = 26                  # タイルどうしの隙間
 RADIUS = 34
 
 FONT = "C:/Windows/Fonts/YuGothB.ttc"
-label_font = ImageFont.truetype(FONT, 88, index=0)
+label_font = ImageFont.truetype(FONT, 96, index=0)
 
 img = Image.new("RGB", (W, H), BG)
 d = ImageDraw.Draw(img)
@@ -125,11 +124,20 @@ def icon_trash(cx, cy, s, c, lw):
         d.line([(x0 + w * fx, y0 + h * 0.22), (x0 + w * fx, y0 + h * 0.80)], fill=c, width=lw)
 
 
-def icon_close(cx, cy, s, c, lw):
-    """×＝取消"""
-    a = s * 0.38
-    d.line([(cx - a, cy - a), (cx + a, cy + a)], fill=c, width=lw)
-    d.line([(cx + a, cy - a), (cx - a, cy + a)], fill=c, width=lw)
+def icon_undo(cx, cy, s, c, lw):
+    """左へ戻る円形の矢印＝取消"""
+    r = s * 0.42
+    # PIL の角度は 0=右, 90=下, 270=上。上を開けた円弧にする
+    # （300°から600°=240°まで、右回りに描く）
+    d.arc([cx - r, cy - r, cx + r, cy + r], start=300, end=600, fill=c, width=lw)
+
+    # 円弧の左上の端に矢じりを置く
+    px = cx + r * math.cos(math.radians(240))
+    py = cy + r * math.sin(math.radians(240))
+    a = s * 0.20
+    d.polygon([(px - a * 1.05, py - a * 0.10),
+               (px + a * 0.35, py - a * 1.00),
+               (px + a * 0.55, py + a * 0.70)], fill=c)
 
 
 # ---------------------------------------------------------------- 配置
@@ -146,8 +154,8 @@ CELLS = [
     (1, 0, "在庫確認",       icon_box,           GREEN,     TEXT),
     (1, 1, "期限登録",       icon_calendar_plus, GREEN,     TEXT),
     (1, 2, "使用済",         icon_check_circle,  GREEN,     TEXT),
-    # 取消は押し間違えたときの操作なので、色も文字も他より控えめにする
-    (1, 3, "取消",           icon_close,         GRAY,      TEXT_DIM),
+    # 取消は在庫にも買い物リストにも属さないので、アイコンだけ中間色にする
+    (1, 3, "取消",           icon_undo,          GRAY,      TEXT),
 ]
 
 CELL_W = W // COLS
