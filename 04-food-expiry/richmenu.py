@@ -4,11 +4,9 @@
 2列×4行のダーク基調。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
 トークのバブル（買い物リスト・材料確認）と同じ暗い配色に合わせてある。
 色の役割は次のとおり。
-  緑系   … 在庫まわり（材料確認・在庫確認・期限登録・使用済）
-  青緑   … 買い物リストの表示
-  紫     … 買い物リストへの追加
-  赤     … 買い物リストからの削除
-  グレー … 取消（在庫にも買い物リストにも属さないので中間色）
+  ペールブルー … 左列（材料確認・買い物リスト表示／追加／削除）
+  緑           … 右列の在庫まわり（在庫確認・期限登録・使用済）
+  グレー       … 取消（在庫にも買い物リストにも属さないので中間色）
 """
 import math
 
@@ -25,17 +23,14 @@ TEXT = (243, 244, 246)
 TEXT_DIM = (156, 163, 175)   # 取消だけ控えめにする
 
 GREEN = (74, 222, 128)
-TEAL = (45, 212, 191)
-MINT = (110, 231, 183)
-PURPLE = (167, 139, 250)
-RED = (248, 113, 113)
+PALE_BLUE = (147, 197, 253)  # 左列。買い物リストと材料確認をひとまとまりに見せる
 GRAY = (156, 163, 175)
 
 MARGIN = 26                  # タイルどうしの隙間
 RADIUS = 34
 
 FONT = "C:/Windows/Fonts/YuGothB.ttc"
-label_font = ImageFont.truetype(FONT, 76, index=0)
+label_font = ImageFont.truetype(FONT, 88, index=0)
 
 img = Image.new("RGB", (W, H), BG)
 d = ImageDraw.Draw(img)
@@ -144,15 +139,15 @@ def icon_close(cx, cy, s, c, lw):
 # (col, row, 見出し, アイコン, 色, 文字色)
 
 CELLS = [
-    (0, 0, "材料確認",       icon_camera,        TEAL,   TEXT),
-    (0, 1, "買い物リスト表示", icon_list,          MINT,   TEXT),
-    (0, 2, "買い物リスト追加", icon_plus_circle,   PURPLE, TEXT),
-    (0, 3, "買い物リスト削除", icon_trash,         RED,    TEXT),
-    (1, 0, "在庫確認",       icon_box,           GREEN,  TEXT),
-    (1, 1, "期限登録",       icon_calendar_plus, GREEN,  TEXT),
-    (1, 2, "使用済",         icon_check_circle,  GREEN,  TEXT),
+    (0, 0, "材料確認",       icon_camera,        PALE_BLUE, TEXT),
+    (0, 1, "買い物リスト表示", icon_list,          PALE_BLUE, TEXT),
+    (0, 2, "買い物リスト追加", icon_plus_circle,   PALE_BLUE, TEXT),
+    (0, 3, "買い物リスト削除", icon_trash,         PALE_BLUE, TEXT),
+    (1, 0, "在庫確認",       icon_box,           GREEN,     TEXT),
+    (1, 1, "期限登録",       icon_calendar_plus, GREEN,     TEXT),
+    (1, 2, "使用済",         icon_check_circle,  GREEN,     TEXT),
     # 取消は押し間違えたときの操作なので、色も文字も他より控えめにする
-    (1, 3, "取消",           icon_close,         GRAY,   TEXT_DIM),
+    (1, 3, "取消",           icon_close,         GRAY,      TEXT_DIM),
 ]
 
 CELL_W = W // COLS
@@ -174,6 +169,13 @@ for col, row, title, icon, color, text_color in CELLS:
     tx = x0 + h * 0.84
     l, t, r, b = d.textbbox((0, 0), title, font=label_font)
     d.text((tx - l, (y0 + y1) / 2 - (b - t) / 2 - t), title, font=label_font, fill=text_color)
+
+    # 文字を大きくしたときに端が切れていないか見張る。
+    # 見た目では気づきにくく、リッチメニューは実機に出すまで確認しづらいため
+    right_edge = tx + (r - l)
+    if right_edge > x1 - MARGIN:
+        print("*** はみ出し: %s が %dpx 超過（文字を小さくすること）"
+              % (title, right_edge - (x1 - MARGIN)))
 
 # ---------------------------------------------------------------- 出力
 
