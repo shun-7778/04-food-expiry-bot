@@ -271,8 +271,8 @@ var HELP_MESSAGE = [
   '',
   '■ 買い物リスト',
   '「買い物リストに牛乳と卵を追加」',
-  '　追加した分を削除ボタン付きで返すので、品名を',
-  '　取り違えたときはその場で消せます。',
+  '　追加した分を「取消」ボタン付きで返すので、品名を',
+  '　取り違えたときはその場で取り消せます。',
   '「牛乳買った」… リストから外す',
   '「買い物リスト」… 一覧をボタン付きで表示',
   '　各行の「削除」、または「全て削除」を押すと',
@@ -2362,12 +2362,30 @@ function shopBought_(names) {
  * 「すでに空です」の文言が違うため、ここでは判定だけ済ませて呼び出し側に委ねる）
  */
 function shopClearPlan_() {
+  return shopBulkDonePlan_(null, null, 'shop_clear');
+}
+
+/**
+ * ID が first〜last の未購入だけを購入済にする下ごしらえ。
+ * 追加バブルの「全て削除」用。IDはまとめて確保するので必ず連番になり、
+ * postback の data には範囲（例 12-14）だけ入れれば足りる。
+ */
+function shopRangePlan_(first, last) {
+  return shopBulkDonePlan_(first, last, 'shop_bought');
+}
+
+/**
+ * 未購入を購入済にする下ごしらえ。first/last が null なら全件が対象。
+ * 行は消さないので「取消」で戻せる。対象が無ければ null を返し、
+ * 文言は呼び出し側に委ねる（「すでに空です」など場面で異なるため）。
+ */
+function shopBulkDonePlan_(firstId, lastId, opType) {
   var sh = shopSheet_();
   var last = sh.getLastRow();
   if (last < 2) return null;
 
   // 1件ずつ setValue すると件数ぶん往復して遅いので、状態・更新日時の2列を
-  // まとめて1回で書き戻す。未購入以外の行は読んだ値をそのまま入れ直すだけ
+  // まとめて1回で書き戻す。対象外の行は読んだ値をそのまま入れ直すだけ
   var data = sh.getRange(2, 1, last - 1, SHOP_COL_COUNT).getValues();
   var stamp = nowStamp_();
   var todo = [];
@@ -2375,8 +2393,11 @@ function shopClearPlan_() {
   for (var i = 0; i < data.length; i++) {
     var status = data[i][SHOP_COL.STATUS - 1];
     var updated = data[i][SHOP_COL.UPDATED - 1];
-    if (status === SHOP_STATUS.TODO) {
-      todo.push({ row: i + 2, id: data[i][SHOP_COL.ID - 1], name: data[i][SHOP_COL.NAME - 1] });
+    var id = Number(data[i][SHOP_COL.ID - 1]);
+    var inRange = firstId === null || (id >= firstId && id <= lastId);
+
+    if (status === SHOP_STATUS.TODO && inRange) {
+      todo.push({ row: i + 2, id: id, name: data[i][SHOP_COL.NAME - 1] });
       status = SHOP_STATUS.DONE;
       updated = stamp;
     }
@@ -2384,14 +2405,14 @@ function shopClearPlan_() {
   }
   if (!todo.length) return null;
 
-  return { sheet: sh, cells: cells, todo: todo };
+  return { sheet: sh, cells: cells, todo: todo, opType: opType };
 }
 
-/** shopClearPlan_ が組み立てた内容を書き込む */
-function shopClearCommit_(plan) {
+/** shopBulkDonePlan_ が組み立てた内容を書き込む */
+function shopBulkDoneCommit_(plan) {
   plan.sheet.getRange(2, SHOP_COL.STATUS, plan.cells.length, 2).setValues(plan.cells);
   setLastOp_({
-    type: 'shop_clear',
+    type: plan.opType,
     sheet: 'shopping',
     rows: plan.todo.map(function (t) { return t.row; })
   });
@@ -2401,7 +2422,7 @@ function shopClearInternal_() {
   var plan = shopClearPlan_();
   if (!plan) return null;
 
-  shopClearCommit_(plan);
+  shopBulkDoneCommit_(plan);
   return plan.todo;
 }
 
@@ -2466,6 +2487,8 @@ var SHOP_GRAY = '#9CA3AF';
 var SHOP_TEXT = '#F3F4F6';
 var SHOP_LINE = '#33363c';
 var SHOP_POSTBACK_ALL = 'shop_bought_all';
+// 追加バブルの「全て削除」。消すのはそのバブルに並んでいる分だけで、ID の範囲で指す
+var SHOP_POSTBACK_RANGE = 'shop_bought_ids:';
 
 function shopBoughtPostbackData_(id) { return 'shop_bought:' + id; }
 
@@ -2609,7 +2632,7 @@ function buildShopEmptyBubble_() {
   };
 }
 
-function buildShopAllBoughtBubble_(todo) {
+function buildShopRemovedBubble_(title, todo) {
   return {
     type: 'bubble',
     size: 'kilo',
@@ -2620,7 +2643,7 @@ function buildShopAllBoughtBubble_(todo) {
       paddingAll: '14px',
       spacing: 'sm',
       contents: [
-        { type: 'text', text: '買い物リストを全て削除しました（' + todo.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true },
+        { type: 'text', text: title + '（' + todo.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true },
         { type: 'text', text: todo.map(function (t) { return t.name; }).join('、'), color: SHOP_TEXT, size: 'md', wrap: true }
       ]
     }
@@ -2753,18 +2776,35 @@ function recipeItemRow_(entry, token, index) {
  * （追加のたびに全件返すと、件数が増えたときトークが埋まるため）。
  */
 function buildShopAddedListBubble_(plan) {
+  // 今入れた分を取り下げる操作なので、買い物リスト表示の「削除」ではなく「取消」にする
   var rows = [];
   plan.add.forEach(function (it, i) {
     if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleActionRow_(it.name, '削除',
-      { type: 'postback', label: '削除', data: shopBoughtPostbackData_(plan.ids[i]) }));
+    rows.push(bubbleActionRow_(it.name, '取消',
+      { type: 'postback', label: '取消', data: shopBoughtPostbackData_(plan.ids[i]) }));
   });
+
+  // 「全て取消」が消すのは、このバブルに並んでいる分だけ（買い物リスト全体ではない）。
+  // IDはまとめて確保していて必ず連番なので、範囲だけ渡せば足りる
+  var range = plan.ids[0] + '-' + plan.ids[plan.ids.length - 1];
 
   return {
     type: 'bubble',
     size: 'mega',
     header: bubbleHeader_('買い物リストに追加', plan.add.length + '件'),
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: SHOP_BG,
+      paddingAll: '0px',
+      spacing: 'none',
+      contents: [
+        { type: 'separator', color: SHOP_LINE },
+        bubbleWideButton_('全て取消',
+          { type: 'postback', label: '全て取消', data: SHOP_POSTBACK_RANGE + range })
+      ]
+    }
   };
 }
 
@@ -2871,8 +2911,23 @@ function handlePostback_(event) {
       replyText_(event.replyToken, '買い物リストはすでに空です。');
       return;
     }
-    replyFlexMessage_(event.replyToken, '買い物リスト', buildShopAllBoughtBubble_(clear.todo));
-    commitOrNotify_(function () { shopClearCommit_(clear); }, '買い物リストの全件削除');
+    replyFlexMessage_(event.replyToken, '買い物リスト',
+      buildShopRemovedBubble_('買い物リストを全て削除しました', clear.todo));
+    commitOrNotify_(function () { shopBulkDoneCommit_(clear); }, '買い物リストの全件削除');
+    return;
+  }
+
+  // 追加バブルの「全て取消」。そのバブルに並んでいた分（IDの範囲）だけを消す
+  if (data.indexOf(SHOP_POSTBACK_RANGE) === 0) {
+    var range = /^(\d+)-(\d+)$/.exec(data.substring(SHOP_POSTBACK_RANGE.length));
+    var part = range && shopRangePlan_(Number(range[1]), Number(range[2]));
+    if (!part) {
+      replyText_(event.replyToken, 'この追加はすでに取り消し済みです。');
+      return;
+    }
+    replyFlexMessage_(event.replyToken, '買い物リスト',
+      buildShopRemovedBubble_('追加を取り消しました', part.todo));
+    commitOrNotify_(function () { shopBulkDoneCommit_(part); }, '追加の取り消し');
     return;
   }
 
