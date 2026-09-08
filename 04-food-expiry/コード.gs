@@ -142,7 +142,7 @@ function handleEvent_(event) {
   }
 
   if (event.type === 'postback') {
-    handleShopPostback_(event);
+    handlePostback_(event);
     return;
   }
 
@@ -200,7 +200,7 @@ function handleRecipeImages_(events) {
       return;
     }
 
-    replyText_(replyToken, matchRecipeToStock_(items));
+    replyRecipeMatch_(replyToken, items);
   } catch (err) {
     console.error('レシピ照合に失敗: ' + err.stack);
     replyText_(replyToken, '読み取りに失敗しました。\n' + err.message);
@@ -235,10 +235,13 @@ var HELP_MESSAGE = [
   '「在庫確認 醤油、みりん」のように送ると、それぞれ',
   '在庫にあるかどうかを期限・登録日つきで返します。',
   '',
-  '■ レシピ照合',
+  '■ 材料確認（レシピ照合）',
   'レシピの写真を送ると、材料を在庫と突き合わせて',
-  '「買うべきもの」「家にあるもの」を期限・登録日つきで',
-  '返します。複数枚まとめて送ると1回の照合にまとめます。',
+  '「買うべきもの」「家にあるもの」に分けて返します。',
+  '各行の「追加」を押すとその場で買い物リストに入り、',
+  '「全部追加」で買うべきものをまとめて入れられます。',
+  '期限を見たいときは在庫確認を使ってください。',
+  '複数枚まとめて送ると1回の照合にまとめます。',
   '',
   '■ 使ったとき',
   '「牛乳使った」「ヨーグルト食べた」「豆腐捨てた」',
@@ -624,10 +627,13 @@ var RECIPE_ITEM_SCHEMA = {
   type: 'object',
   properties: {
     item_name: { type: 'string', description: '材料名。分量や下ごしらえの指示は含めない。書かれたままの表記でよい（変換しない）。読み取れなければ空文字' },
+    // 材料確認のバブルから買い物リストに入れられるようにしたので、区分もここで判定させる
+    // （あとから分類し直すと、ボタンを押してから返信までが遅くなる）
+    category: { type: 'string', description: '区分。次のいずれか1つ: ' + CATEGORIES.join(' / ') },
     confidence: { type: 'string', description: '"high" | "medium" | "low"' },
     note: { type: 'string', description: '判断に迷った点があれば日本語で1文。なければ空文字' }
   },
-  required: ['item_name', 'confidence', 'note'],
+  required: ['item_name', 'category', 'confidence', 'note'],
   additionalProperties: false
 };
 
@@ -782,6 +788,8 @@ function buildRecipePrompt_() {
     '- 「みじん切り」「薄切り」「常温に戻す」などの下ごしらえの指示は含めないでください。',
     '- 「A」「合わせ調味料」のようなグループ見出し自体は無視し、その中身の食材だけを列挙してください。',
     '- 表記はレシピに書かれたままにしてください（かなを漢字にするなどの変換はしない）。',
+    '',
+    '区分（category）は ' + CATEGORIES.join(' / ') + ' から1つ選んでください。',
     '',
     '確信が持てない場合:',
     '- 手書き文字がかすれている、印刷が不鮮明、複数の候補が考えられるなどで自信が持てない場合は',
@@ -1445,10 +1453,14 @@ function currentStockRows_() {
   return stock;
 }
 
-/** 一致した在庫行の期限・登録日を、元のアイテムに付け足す */
+/**
+ * 一致した在庫行の期限・登録日を、元のアイテムに付け足す。
+ * 区分は材料確認のバブルから買い物リストに入れるときに使うので落とさない
+ */
 function withStockInfo_(it, stockRow) {
   return {
     item_name: it.item_name,
+    category: it.category || '',
     confidence: it.confidence,
     date: stockRow.date,
     label: stockRow.label,
@@ -1529,13 +1541,31 @@ function joinBlocks_(blocks) {
   return blocks.filter(function (b) { return b; }).join('\n\n') || '該当するものがありません。';
 }
 
-/** レシピの材料が在庫にあるかどうかで「買うべきもの」「家にあるもの」に振り分けて返信する */
-function matchRecipeToStock_(items) {
+/**
+ * レシピの材料を「買うべきもの」「家にあるもの」に振り分け、バブルで返信する。
+ * どちらの行にも買い物リストへの「追加」ボタンを付ける（家にあっても買い足したい
+ * ことがあるため）。期限・登録日は出さない。期限を見たいときは在庫確認を使う。
+ */
+function replyRecipeMatch_(replyToken, items) {
   var r = matchNamesToStock_(items);
-  return joinBlocks_([
-    resultBlock_('■ 買うべきもの', r.missing, missingLine_),
-    resultBlock_('■ 家にあるので買わなくてよいもの', r.have, withStockLines_)
-  ]);
+  var missing = r.missing.map(recipeEntry_);
+  var have = r.have.map(recipeEntry_);
+
+  // ボタンの postback には並び順の番号だけを入れ、品名と区分は控えのほうから引く。
+  // postback の data は300文字までで、材料が多いと品名を並べきれないため
+  var token = saveRecipeSet_(missing.concat(have), missing.length);
+
+  replyFlexMessage_(replyToken, '材料確認 買うべきもの' + missing.length + '件',
+    buildRecipeBubble_(missing, have, token));
+}
+
+/** バブルとその控えで使う1件ぶん。表示に要るのは名前だけ、追加には区分も要る */
+function recipeEntry_(it) {
+  return {
+    name: it.item_name,
+    category: it.category || '',
+    low: !!(it.confidence && it.confidence !== 'high')
+  };
 }
 
 /** 在庫確認: 品名が在庫にあるかどうかを返信する */
@@ -2147,14 +2177,18 @@ function shopMaxId_() {
   return max;
 }
 
-/** 買い物リストに品名を追加する。すでに未購入で載っているものは足さない */
-function shopAdd_(items) {
+/**
+ * 買い物リストに品名を追加する本体。すでに未購入で載っているものは足さない。
+ * 戻り値は { added, dup }（どちらも品名の配列）。返信の組み立ては呼び出し側に任せる
+ * ので、テキスト返信（shopAdd_）とバブル返信（材料確認）の両方から使える。
+ */
+function shopAddCore_(items) {
   var clean = items
     .map(function (it) {
       return { name: String((it && it.name) || '').trim(), category: (it && it.category) || '' };
     })
     .filter(function (it) { return it.name; });
-  if (!clean.length) return '追加するものを読み取れませんでした。';
+  if (!clean.length) return { added: [], dup: [] };
 
   var sh = shopSheet_();
   var todo = shopTodoRows_(sh);
@@ -2170,7 +2204,6 @@ function shopAdd_(items) {
     added.push(it);
   });
 
-  var lines = [];
   if (added.length) {
     var startRow = sh.getLastRow() + 1;
     var stamp = nowStamp_();
@@ -2192,10 +2225,23 @@ function shopAdd_(items) {
       sheet: 'shopping',
       rows: values.map(function (_, i) { return startRow + i; })
     });
+  }
 
+  return { added: added.map(function (it) { return it.name; }), dup: dup };
+}
+
+/** 買い物リストに品名を追加し、テキストで結果を返す */
+function shopAdd_(items) {
+  var r = shopAddCore_(items);
+  var added = r.added;
+  var dup = r.dup;
+  if (!added.length && !dup.length) return '追加するものを読み取れませんでした。';
+
+  var lines = [];
+  if (added.length) {
     lines.push('買い物リストに追加しました（' + added.length + '件）');
     lines.push('');
-    added.forEach(function (it, i) { lines.push((i + 1) + '. ' + it.name); });
+    added.forEach(function (n, i) { lines.push((i + 1) + '. ' + n); });
   }
 
   if (dup.length) {
@@ -2354,7 +2400,7 @@ function shopClear_() {
 
 /**
  * postback「買った」ボタン用。押された1件をシートから読んで、何を返すかだけ決める。
- * まだ書き込みはしない（handleShopPostback_ が返信を先に送ってから commit する）。
+ * まだ書き込みはしない（handlePostback_ が返信を先に送ってから commit する）。
  * 戻り値: { sheet, row, name, remaining } / { already, name }（二度押し）/ { notFound }
  *
  * 押してから返信が届くまでを短くしたいので、シートへの往復を最小にしている。
@@ -2395,7 +2441,7 @@ function shopBoughtCommit_(plan) {
 /**
  * 「買い物リスト表示」の返信バブル。品名の右に「買った」ボタン（postback）が
  * 1つずつ付き、押しても入力欄に文字は入らず自分の発言も残らない。
- * 押した後の反応は handleShopPostback_ 側で個別に返す（このバブル自体は編集できない）。
+ * 押した後の反応は handlePostback_ 側で個別に返す（このバブル自体は編集できない）。
  */
 var SHOP_BG = '#1e2127';
 var SHOP_GREEN = '#4ADE80';
@@ -2406,55 +2452,81 @@ var SHOP_POSTBACK_ALL = 'shop_bought_all';
 
 function shopBoughtPostbackData_(id) { return 'shop_bought:' + id; }
 
+/**
+ * 品名を左、操作を右に置く1行。買い物リストと材料確認で見た目を揃えるため共通にする。
+ * button コンポーネントは height:'sm' でも約40pxの固定高があるので、余白を自前で
+ * 持たせた box に action を付けて代用している（緑文字のまま、タップ領域は保てる）。
+ */
+function bubbleActionRow_(name, actionLabel, action) {
+  return {
+    type: 'box',
+    layout: 'horizontal',
+    paddingStart: '14px',
+    paddingEnd: '4px',
+    alignItems: 'center',
+    contents: [
+      // size:'md'（16px）が LINE の通常のトーク文字と同じ大きさ。太さは既定（regular）のまま
+      { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: true, gravity: 'center' },
+      {
+        type: 'box',
+        layout: 'vertical',
+        flex: 0,
+        paddingStart: '16px',
+        paddingEnd: '10px',
+        paddingTop: '8px',
+        paddingBottom: '8px',
+        action: action,
+        contents: [
+          { type: 'text', text: actionLabel, color: SHOP_GREEN, size: 'md', align: 'end' }
+        ]
+      }
+    ]
+  };
+}
+
+/** バブル上部の帯。左に見出し、右に件数 */
+function bubbleHeader_(title, note) {
+  return {
+    type: 'box',
+    layout: 'horizontal',
+    backgroundColor: SHOP_BG,
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    paddingTop: '12px',
+    paddingBottom: '12px',
+    contents: [
+      { type: 'text', text: title, weight: 'bold', size: 'md', color: SHOP_GREEN, flex: 1 },
+      { type: 'text', text: note, size: 'sm', color: SHOP_GRAY, align: 'end', gravity: 'center' }
+    ]
+  };
+}
+
+/** 最下段などに置く、横いっぱいの1行ボタン */
+function bubbleWideButton_(label, action) {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    paddingTop: '11px',
+    paddingBottom: '11px',
+    action: action,
+    contents: [
+      { type: 'text', text: label, color: SHOP_GREEN, size: 'md', align: 'center' }
+    ]
+  };
+}
+
 function buildShopListBubble_(todo) {
   var rows = [];
   todo.forEach(function (t, i) {
     if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push({
-      type: 'box',
-      layout: 'horizontal',
-      paddingStart: '14px',
-      paddingEnd: '4px',
-      alignItems: 'center',
-      contents: [
-        // size:'md'（16px）が LINE の通常のトーク文字と同じ大きさ。太さは既定（regular）のまま
-        { type: 'text', text: String(t.name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: true, gravity: 'center' },
-        // button コンポーネントは height:'sm' でも約40pxの固定高がある。
-        // 行を詰めたいので、余白を自前で持たせた box に action を付けて代用する
-        // （見た目は同じ緑文字のまま、タップ領域も指の届く高さを保てる）
-        {
-          type: 'box',
-          layout: 'vertical',
-          flex: 0,
-          paddingStart: '16px',
-          paddingEnd: '10px',
-          paddingTop: '8px',
-          paddingBottom: '8px',
-          action: { type: 'postback', label: '買った', data: shopBoughtPostbackData_(t.id) },
-          contents: [
-            { type: 'text', text: '買った', color: SHOP_GREEN, size: 'md', align: 'end' }
-          ]
-        }
-      ]
-    });
+    rows.push(bubbleActionRow_(t.name, '買った',
+      { type: 'postback', label: '買った', data: shopBoughtPostbackData_(t.id) }));
   });
 
   return {
     type: 'bubble',
     size: 'mega',
-    header: {
-      type: 'box',
-      layout: 'horizontal',
-      backgroundColor: SHOP_BG,
-      paddingStart: '14px',
-      paddingEnd: '14px',
-      paddingTop: '12px',
-      paddingBottom: '12px',
-      contents: [
-        { type: 'text', text: '買い物リスト', weight: 'bold', size: 'md', color: SHOP_GREEN, flex: 1 },
-        { type: 'text', text: '残り' + todo.length + '件', size: 'sm', color: SHOP_GRAY, align: 'end', gravity: 'center' }
-      ]
-    },
+    header: bubbleHeader_('買い物リスト', '残り' + todo.length + '件'),
     body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows },
     footer: {
       type: 'box',
@@ -2464,16 +2536,7 @@ function buildShopListBubble_(todo) {
       spacing: 'none',
       contents: [
         { type: 'separator', color: SHOP_LINE },
-        {
-          type: 'box',
-          layout: 'vertical',
-          paddingTop: '11px',
-          paddingBottom: '11px',
-          action: { type: 'postback', label: '全部買った', data: SHOP_POSTBACK_ALL },
-          contents: [
-            { type: 'text', text: '全部買った', color: SHOP_GREEN, size: 'md', align: 'center' }
-          ]
-        }
+        bubbleWideButton_('全部買った', { type: 'postback', label: '全部買った', data: SHOP_POSTBACK_ALL })
       ]
     }
   };
@@ -2489,10 +2552,10 @@ function buildShopNoteBubble_(text, color) {
 }
 
 /**
- * 「買った」を押したときの確認。チェックだけ緑にして、品名は
+ * 「買った」「追加」を押したときの確認。チェックだけ緑にして、品名は
  * トークの文字と同じ白で出す（span で1行の中の色を分けている）
  */
-function buildShopBoughtBubble_(name) {
+function buildShopCheckBubble_(name) {
   return shopNoteShell_({
     type: 'text',
     size: 'md',
@@ -2573,16 +2636,192 @@ function replyShopList_(replyToken, note) {
   replyMessages_(replyToken, messages);
 }
 
+// ---------------------------------------------------------------- 材料確認（Flexバブル）
+
+var RECIPE_ADD_PREFIX = 'recipe_add:';
+var RECIPE_ADD_ALL_PREFIX = 'recipe_add_all:';
+
 /**
- * 買い物リストの postback（買った／全部買った）を処理する。
- *
- * 押してから吹き出しが出るまでを短くしたいので、シートを読んで内容が決まった時点で
- * 先に返信し、シートへの書き込みはその後に回している。
- * 書き込みに失敗すると「返したのに記録されていない」状態になるので、
- * そのときだけ push で知らせる（黙って消えないようにする）。
+ * バブルに出した材料の控え。postback の data は300文字までで、材料が多いと
+ * 品名を並べきれない。そこで data には並び順の番号だけを入れ、品名と区分は
+ * スクリプトプロパティに預けておく。直近 RECIPE_SET_KEEP 回ぶんだけ残し、
+ * それより古いバブルを押したときは案内を返す。
  */
-function handleShopPostback_(event) {
+var RECIPE_SET_KEY = 'RECIPE_SETS';
+var RECIPE_SET_KEEP = 3;
+
+function loadRecipeSets_() {
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty(RECIPE_SET_KEY) || '[]');
+  } catch (err) {
+    console.error('材料確認の控えを読めませんでした: ' + err.stack);
+    return [];
+  }
+}
+
+function saveRecipeSet_(entries, missingCount) {
+  var token = String(Date.now());
+  var sets = loadRecipeSets_();
+  sets.unshift({
+    token: token,
+    missingCount: missingCount,
+    items: entries.map(function (e) { return { name: e.name, category: e.category }; })
+  });
+
+  // スクリプトプロパティ1件の上限（9KB）に当てないよう、大きいときは直近だけ残す
+  var json = JSON.stringify(sets.slice(0, RECIPE_SET_KEEP));
+  if (json.length > 8000) json = JSON.stringify(sets.slice(0, 1));
+  PropertiesService.getScriptProperties().setProperty(RECIPE_SET_KEY, json);
+
+  return token;
+}
+
+function findRecipeSet_(token) {
+  return loadRecipeSets_().filter(function (s) { return s.token === token; })[0] || null;
+}
+
+/**
+ * 材料確認のバブル。買うべきもの／家にあるものを縦に並べ、どちらの行にも
+ * 買い物リストへの「追加」ボタンを付ける（家にあっても買い足したいことがある）。
+ * 「全部追加」は買うべきものの下にだけ置く。
+ */
+function buildRecipeBubble_(missing, have, token) {
+  var rows = [];
+
+  if (missing.length) {
+    rows.push(recipeSectionLabel_('買うべきもの（' + missing.length + '件）'));
+    missing.forEach(function (e, i) {
+      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      rows.push(recipeItemRow_(e, token, i));
+    });
+    rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push(bubbleWideButton_('全部追加（' + missing.length + '件）',
+      { type: 'postback', label: '全部追加', data: RECIPE_ADD_ALL_PREFIX + token }));
+  }
+
+  if (have.length) {
+    if (rows.length) rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push(recipeSectionLabel_('家にあるもの（' + have.length + '件）'));
+    have.forEach(function (e, i) {
+      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      rows.push(recipeItemRow_(e, token, missing.length + i));
+    });
+  }
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: bubbleHeader_('材料確認', '買う' + missing.length + '件'),
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+/** セクションの見出し行。品名より小さいグレーで、帯にはしない */
+function recipeSectionLabel_(text) {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    paddingTop: '12px',
+    paddingBottom: '4px',
+    contents: [
+      { type: 'text', text: text, color: SHOP_GRAY, size: 'sm', wrap: true }
+    ]
+  };
+}
+
+/** 材料1件の行。読み取り確度が低いものには ⚠ を添える */
+function recipeItemRow_(entry, token, index) {
+  return bubbleActionRow_(entry.name + (entry.low ? ' ⚠' : ''), '追加',
+    { type: 'postback', label: '追加', data: RECIPE_ADD_PREFIX + token + ':' + index });
+}
+
+/** 「全部追加」を押したときのまとめ返信 */
+function buildShopAddedBubble_(added, dup) {
+  var contents = [];
+  if (added.length) {
+    contents.push({ type: 'text', text: '買い物リストに追加しました（' + added.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true });
+    contents.push({ type: 'text', text: added.join('、'), color: SHOP_GRAY, size: 'sm', wrap: true });
+  }
+  if (dup.length) {
+    contents.push({ type: 'text', text: '※ すでにリストにあります: ' + dup.join('、'), color: SHOP_GRAY, size: 'sm', wrap: true });
+  }
+
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: SHOP_BG,
+      paddingAll: '14px',
+      spacing: 'sm',
+      contents: contents
+    }
+  };
+}
+
+/** 材料確認のバブルから1件だけ買い物リストに入れる */
+function handleRecipeAdd_(replyToken, data) {
+  var m = /^(\d+):(\d+)$/.exec(data);
+  var set = m && findRecipeSet_(m[1]);
+  if (!set) {
+    replyFlexMessage_(replyToken, '材料確認',
+      buildShopNoteBubble_('この材料確認は古くなりました。写真を送り直してください', SHOP_GRAY));
+    return;
+  }
+
+  var item = set.items[Number(m[2])];
+  if (!item) {
+    replyFlexMessage_(replyToken, '材料確認', buildShopNoteBubble_('この項目は見つかりませんでした', SHOP_GRAY));
+    return;
+  }
+
+  var r = shopAddCore_([item]);
+  replyFlexMessage_(replyToken, '買い物リスト', r.added.length
+    ? buildShopCheckBubble_(r.added[0])
+    : buildShopNoteBubble_(item.name + ' はすでにリストにあります', SHOP_GRAY));
+}
+
+/** 材料確認のバブルから「買うべきもの」をまとめて買い物リストに入れる */
+function handleRecipeAddAll_(replyToken, token) {
+  var set = findRecipeSet_(token);
+  if (!set) {
+    replyFlexMessage_(replyToken, '材料確認',
+      buildShopNoteBubble_('この材料確認は古くなりました。写真を送り直してください', SHOP_GRAY));
+    return;
+  }
+
+  var items = set.items.slice(0, set.missingCount);
+  if (!items.length) {
+    replyFlexMessage_(replyToken, '材料確認', buildShopNoteBubble_('買うべきものはありません', SHOP_GRAY));
+    return;
+  }
+
+  var r = shopAddCore_(items);
+  replyFlexMessage_(replyToken, '買い物リスト', buildShopAddedBubble_(r.added, r.dup));
+}
+
+/**
+ * ボタン（postback）を処理する。
+ *
+ * 買い物リストの「買った」「全部買った」は、押してから吹き出しが出るまでを
+ * 短くしたいので、シートを読んで内容が決まった時点で先に返信し、書き込みは
+ * その後に回している。書き込みに失敗すると「返したのに記録されていない」状態に
+ * なるので、そのときだけ push で知らせる（黙って消えないようにする）。
+ */
+function handlePostback_(event) {
   var data = (event.postback && event.postback.data) || '';
+
+  if (data.indexOf(RECIPE_ADD_PREFIX) === 0) {
+    handleRecipeAdd_(event.replyToken, data.substring(RECIPE_ADD_PREFIX.length));
+    return;
+  }
+  if (data.indexOf(RECIPE_ADD_ALL_PREFIX) === 0) {
+    handleRecipeAddAll_(event.replyToken, data.substring(RECIPE_ADD_ALL_PREFIX.length));
+    return;
+  }
 
   if (data === SHOP_POSTBACK_ALL) {
     var clear = shopClearPlan_();
@@ -2611,7 +2850,7 @@ function handleShopPostback_(event) {
   // 最後の1件だけは「空になった」ことを伝える。それ以外は品名だけ返す
   replyFlexMessage_(event.replyToken, '買い物リスト', plan.remaining === 0
     ? buildShopEmptyBubble_()
-    : buildShopBoughtBubble_(plan.name));
+    : buildShopCheckBubble_(plan.name));
 
   commitOrNotify_(function () { shopBoughtCommit_(plan); }, plan.name + ' の購入');
 }
