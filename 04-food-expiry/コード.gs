@@ -237,9 +237,12 @@ var HELP_MESSAGE = [
   '種別が確定するので、取り違えが起きません。',
   'これまでどおり接頭辞なしでも送れます。',
   '',
-  '「取消」「買い物リスト表示」「買い物リスト全削除」は',
-  '押すとすぐ実行されます。全削除しても行は消さず',
-  '「取消」で戻せます。',
+  '「買い物リスト表示」「取消」は押すとすぐ実行されます。',
+  '「材料確認」は押すと写真の選択画面が開きます。',
+  '',
+  '買い物リストの全件削除はメニューから外しました。',
+  '「買い物リスト表示」のバブル最下段にある「全て削除」',
+  'を使ってください。行は消さないので「取消」で戻せます。',
   '',
   '■ 登録',
   '・「豆乳は2027年2月21日 ヨーグルトは9月17日」と送る',
@@ -1866,7 +1869,9 @@ function isCancelWord_(text) {
 // 「捨てた」も在庫から消す点は同じなので、消費と分けずに1つにまとめている
 var USED_VERB = /^(.{1,14}?)(?:を|は)?(使った|使いました|つかった|食べた|たべた|食べました|飲んだ|のんだ|飲みました|消費した|開けた|捨てた|すてた|捨てました|処分した|廃棄した|だめにした)$/;
 
-var SHOP_LIST_CMD = /^(買い物リスト|買物リスト|買うもの|買い物)$/;
+// 「買い物リスト表示」はリッチメニューが送る文字。ボタンの見出しと揃えてあるので、
+// あとから履歴を見たときに、どのボタンを押したのかが分かる
+var SHOP_LIST_CMD = /^(買い物リスト表示|買い物リスト|買物リスト|買うもの|買い物)$/;
 var SHOP_CLEAR_CMD = /^買い?物リスト(を)?(全部|すべて|全て|ぜんぶ)?(削除|消して|消す|クリア|リセット|空に)(して|する)?$/;
 var BOUGHT_VERB = /^(.{1,14}?)(?:を|は)?(買った|買いました|購入した|買ってきた|買えた)$/;
 var SHOP_ADD_A = /^買い?物リスト(?:に|へ)(.+?)(?:を)?(?:追加|入れて|足して|加えて|メモ)(?:して|しといて|しておいて|とく)?$/;
@@ -2979,35 +2984,34 @@ function commitOrNotify_(commit, label) {
  */
 var RICHMENU_SIZE = { width: 2500, height: 1686 };
 
-// richmenu.png の格子と一致させること。境界の並びは列0の左端→列4の右端
-var RICHMENU_COLS = [0, 625, 1250, 1875, 2500];
-var RICHMENU_TOP_Y = 0, RICHMENU_TOP_H = 843;
-var RICHMENU_BOT_Y = 843, RICHMENU_BOT_H = 843;
-// LINE の bounds は整数座標が必須。843は奇数なので均等に割れず、421/422に分ける
-var RICHMENU_HALF_H = Math.floor(RICHMENU_BOT_H / 2);
-var RICHMENU_HALF_H2 = RICHMENU_BOT_H - RICHMENU_HALF_H;
+// richmenu.png の格子と一致させること（2列×4行）。
+// 1250 = 2500/2、421 = 1686/4 の切り捨て。1686は4で割り切れないので
+// 最下段だけ余りを足して、下端がぴったり1686になるようにする
+var RICHMENU_COL_W = RICHMENU_SIZE.width / 2;
+var RICHMENU_ROW_H = Math.floor(RICHMENU_SIZE.height / 4);
+var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * 3;
 
 /**
- * 画像と同じ並び（左上から右へ、上段→下段）。下段の3列目（買い物リスト
- * 削除／全削除）だけ高さを半分にして2つ積んでいるので、行・高さを
- * セルごとに明示する（列番号からの自動計算はできない）。
- *   col        … 列番号（0始まり）。幅は RICHMENU_COLS から決まる
- *   y, h       … そのセルのY座標と高さ
+ * 画像と同じ並び（左列を上から、続いて右列を上から）。
+ *   col        … 列番号（0=左, 1=右）
+ *   row        … 行番号（0が最上段）
  *   fill       … 押すと入力欄に差し込まれる。続きを打って自分で送る
  *   send       … 押すとそのまま送信される。続けて入力するものがない操作に使う
  *   cameraRoll … 押すと写真選択画面が開く（レシピ写真を選んで送る用）
+ *
+ * 「買い物リストを全部削除」はメニューから外した。買い物リスト表示の
+ * バブル最下段に「全て削除」があり、そちらのほうが誤爆しにくいため
+ * （文字で「買い物リストを全部削除」と送る経路は残してある）。
  */
 var RICHMENU_CELLS = [
-  { col: 0, y: RICHMENU_TOP_Y, h: RICHMENU_TOP_H, fill: '期限登録\n' },
-  { col: 1, y: RICHMENU_TOP_Y, h: RICHMENU_TOP_H, fill: '使用済\n' },
-  { col: 2, y: RICHMENU_TOP_Y, h: RICHMENU_TOP_H, fill: '在庫確認\n' },
-  { col: 3, y: RICHMENU_TOP_Y, h: RICHMENU_TOP_H, cameraRoll: true }, // 材料確認
-  { col: 0, y: RICHMENU_BOT_Y, h: RICHMENU_BOT_H, fill: '買い物リスト追加\n' },
-  { col: 1, y: RICHMENU_BOT_Y, h: RICHMENU_BOT_H, send: '買い物リスト' },
-  { col: 2, y: RICHMENU_BOT_Y, h: RICHMENU_HALF_H, fill: '買い物リスト削除\n' },
-  // 全削除は行を消さず「購入済」にするだけなので、押し間違えても「取消」で戻せる
-  { col: 2, y: RICHMENU_BOT_Y + RICHMENU_HALF_H, h: RICHMENU_HALF_H2, send: '買い物リストを全部削除' },
-  { col: 3, y: RICHMENU_BOT_Y, h: RICHMENU_BOT_H, send: '取消' }
+  { col: 0, row: 0, cameraRoll: true },                      // 材料確認
+  { col: 0, row: 1, send: '買い物リスト表示' },
+  { col: 0, row: 2, fill: '買い物リスト追加\n' },
+  { col: 0, row: 3, fill: '買い物リスト削除\n' },
+  { col: 1, row: 0, fill: '在庫確認\n' },
+  { col: 1, row: 1, fill: '期限登録\n' },
+  { col: 1, row: 2, fill: '使用済\n' },
+  { col: 1, row: 3, send: '取消' }
 ];
 
 function buildRichMenu_() {
@@ -3017,9 +3021,15 @@ function buildRichMenu_() {
     name: '食材在庫メニュー',
     chatBarText: 'メニュー',
     areas: RICHMENU_CELLS.map(function (cell) {
-      var x0 = RICHMENU_COLS[cell.col], x1 = RICHMENU_COLS[cell.col + 1];
+      // 最下段だけ、割り切れなかったぶんを足して下端を画像に合わせる
+      var h = cell.row === 3 ? RICHMENU_LAST_ROW_H : RICHMENU_ROW_H;
       return {
-        bounds: { x: x0, y: cell.y, width: x1 - x0, height: cell.h },
+        bounds: {
+          x: cell.col * RICHMENU_COL_W,
+          y: cell.row * RICHMENU_ROW_H,
+          width: RICHMENU_COL_W,
+          height: h
+        },
         action: cell.send
           ? { type: 'message', text: cell.send }
           : cell.cameraRoll
@@ -3146,7 +3156,12 @@ function testConfig() {
   // 押しても普通の文として扱われてしまう。目に見えにくいのでここで検査する
   RICHMENU_CELLS.forEach(function (cell, i) {
     if (cell.send) {
-      console.log('メニュー' + (i + 1) + '「' + cell.send + '」: そのまま送信');
+      // そのまま送信するボタンは、その文字でコマンドが成立しないと何も起きない。
+      // 見出しを変えたときに判定側を直し忘れると気づきにくいので検査する
+      var known = SHOP_LIST_CMD.test(cell.send) || SHOP_CLEAR_CMD.test(cell.send)
+        || cell.send === '取消' || cell.send === '取り消し' || cell.send === 'とりけし';
+      console.log('メニュー' + (i + 1) + '「' + cell.send + '」: そのまま送信'
+        + (known ? ' OK' : ' *** どのコマンドにも当たらない ***'));
       return;
     }
     if (cell.cameraRoll) {

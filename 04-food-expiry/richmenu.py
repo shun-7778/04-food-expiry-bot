@@ -1,194 +1,179 @@
 # -*- coding: utf-8 -*-
-"""リッチメニュー画像を生成する。既存 icons/ の配色（緑=在庫 / 紺=買い物リスト）に合わせる。"""
+"""リッチメニュー画像を生成する。
+
+2列×4行のダーク基調。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
+トークのバブル（買い物リスト・材料確認）と同じ暗い配色に合わせてある。
+色の役割は次のとおり。
+  緑系   … 在庫まわり（材料確認・在庫確認・期限登録・使用済）
+  青緑   … 買い物リストの表示
+  紫     … 買い物リストへの追加
+  赤     … 買い物リストからの削除
+  グレー … 取消（在庫にも買い物リストにも属さないので中間色）
+"""
 import math
 
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 2500, 1686
-COLS = [(0, 625), (625, 625), (1250, 625), (1875, 625)]   # (x, width) 合計 2500
-ROWS = [(0, 843), (843, 843)]
+COLS = 2
+ROWS = 4
 
-GREEN      = (47, 125, 92)     # #2F7D5C 在庫
-GREEN_DARK = (30, 91, 65)      # #1E5B41
-BLUE       = (44, 76, 124)     # #2C4C7C 買い物リスト
-BLUE_DARK  = (32, 56, 92)
-ORANGE     = (224, 122, 62)    # #E07A3E アクセント
-GRAY       = (92, 99, 105)     # 取消。在庫にも買い物リストにも属さないので中間色
-GRAY_DARK  = (66, 72, 77)
-WHITE      = (255, 255, 255)
-LINE       = (255, 255, 255)
+BG = (18, 20, 23)            # 画像全体の下地
+TILE = (32, 36, 41)          # タイルの面
+TILE_EDGE = (52, 58, 65)     # タイルの縁。面との差は小さく、輪郭だけ分かる程度
+TEXT = (243, 244, 246)
+TEXT_DIM = (156, 163, 175)   # 取消だけ控えめにする
+
+GREEN = (74, 222, 128)
+TEAL = (45, 212, 191)
+MINT = (110, 231, 183)
+PURPLE = (167, 139, 250)
+RED = (248, 113, 113)
+GRAY = (156, 163, 175)
+
+MARGIN = 26                  # タイルどうしの隙間
+RADIUS = 34
 
 FONT = "C:/Windows/Fonts/YuGothB.ttc"
-label_font = ImageFont.truetype(FONT, 86, index=0)
-sub_font   = ImageFont.truetype(FONT, 52, index=0)
+label_font = ImageFont.truetype(FONT, 76, index=0)
 
-img = Image.new("RGB", (W, H), WHITE)
+img = Image.new("RGB", (W, H), BG)
 d = ImageDraw.Draw(img)
 
 
-def center(cx, cy, text, font, fill):
-    l, t, r, b = d.textbbox((0, 0), text, font=font)
-    d.text((cx - (r - l) / 2 - l, cy - (b - t) / 2 - t), text, font=font, fill=fill)
-
-
 # ---------------------------------------------------------------- アイコン
+#
+# すべて線画。lw は線の太さで、タイルの大きさに対して一定の比率になるよう
+# 呼び出し側から渡す。cx, cy は中心、s は一辺の目安。
 
-def icon_calendar(cx, cy, s, fg, bg):
-    """カレンダー。既存 a-calendar.png と同じ形"""
-    w, h = s * 1.08, s
-    x0, y0 = cx - w / 2, cy - h / 2
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.11, fill=fg)
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + h * 0.27], radius=s * 0.11, fill=bg)
-    d.rectangle([x0, y0 + h * 0.16, x0 + w, y0 + h * 0.27], fill=bg)
-    for fx in (0.26, 0.74):
-        rw = s * 0.085
-        d.rounded_rectangle([x0 + w * fx - rw / 2, y0 - s * 0.14,
-                             x0 + w * fx + rw / 2, y0 + s * 0.13],
-                            radius=rw / 2, fill=(220, 233, 225))
-    # 中央のドット（日付）
-    for r in range(2):
-        for c in range(3):
-            dx = x0 + w * (0.28 + c * 0.22)
-            dy = y0 + h * (0.48 + r * 0.24)
-            d.ellipse([dx - s * 0.05, dy - s * 0.05, dx + s * 0.05, dy + s * 0.05], fill=bg)
-
-
-def icon_check(cx, cy, s, fg, bg):
-    """丸にチェック＝使用済"""
-    d.ellipse([cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2], fill=fg)
-    d.line([(cx - s * 0.22, cy + s * 0.02), (cx - s * 0.05, cy + s * 0.19),
-            (cx + s * 0.24, cy - s * 0.19)], fill=bg, width=int(s * 0.11),
-           joint="curve")
-
-
-def icon_camera(cx, cy, s, fg, bg):
+def icon_camera(cx, cy, s, c, lw):
     """カメラ＝材料確認（押すと写真選択画面が開く）"""
-    w, h = s * 1.04, s * 0.76
-    x0 = cx - w / 2
-    y0 = cy - h / 2 + s * 0.08
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.10, fill=fg)
+    w, h = s, s * 0.76
+    x0, y0 = cx - w / 2, cy - h / 2 + s * 0.06
+    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.14, outline=c, width=lw)
     # 上部のポップアップ（ファインダー部分）
-    bw, bh = w * 0.32, h * 0.30
-    bx0 = cx - bw * 0.55
-    by0 = y0 - bh * 0.6
-    d.rounded_rectangle([bx0, by0, bx0 + bw, by0 + bh], radius=s * 0.05, fill=fg)
-    # レンズ（外側の輪を bg で抜き、内側を fg で塗る）
-    r = h * 0.34
-    lcx, lcy = cx, y0 + h * 0.56
-    d.ellipse([lcx - r, lcy - r, lcx + r, lcy + r], fill=bg)
-    r2 = r * 0.6
-    d.ellipse([lcx - r2, lcy - r2, lcx + r2, lcy + r2], fill=fg)
+    bw = w * 0.28
+    d.line([(cx - bw * 0.5, y0), (cx - bw * 0.34, y0 - s * 0.11),
+            (cx + bw * 0.18, y0 - s * 0.11), (cx + bw * 0.34, y0)],
+           fill=c, width=lw, joint="curve")
+    r = h * 0.26
+    d.ellipse([cx - r, cy + s * 0.06 - r, cx + r, cy + s * 0.06 + r], outline=c, width=lw)
 
 
-def icon_fridge(cx, cy, s, fg, bg):
-    """冷蔵庫＝在庫確認"""
-    w, h = s * 0.76, s * 1.04
+def icon_box(cx, cy, s, c, lw):
+    """箱＝在庫確認"""
+    w, h = s * 0.94, s * 0.94
     x0, y0 = cx - w / 2, cy - h / 2
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.10, fill=fg)
-    # 上下の扉を分ける線
-    dy = y0 + h * 0.36
-    d.rectangle([x0, dy - s * 0.028, x0 + w, dy + s * 0.028], fill=bg)
-    # 取っ手
-    for ty in (dy - h * 0.20, dy + h * 0.10):
-        d.rounded_rectangle([x0 + w * 0.72 - s * 0.032, ty,
-                             x0 + w * 0.72 + s * 0.032, ty + h * 0.16],
-                            radius=s * 0.032, fill=bg)
+    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.14, outline=c, width=lw)
+    d.line([(x0, y0 + h * 0.33), (x0 + w, y0 + h * 0.33)], fill=c, width=lw)
+    d.line([(cx, y0 + h * 0.33), (cx, y0 + h)], fill=c, width=lw)
 
 
-def icon_list(cx, cy, s, fg, bg, mark=None):
-    """リスト。mark で + / - / なし"""
-    w, h = s * 0.88, s
-    x0, y0 = cx - w / 2, cy - h / 2
-    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.1, fill=fg)
+def icon_list(cx, cy, s, c, lw):
+    """チェックリスト＝買い物リスト表示"""
+    w = s * 0.98
+    x0 = cx - w / 2
     for i in range(3):
-        ly = y0 + h * (0.28 + i * 0.22)
-        d.ellipse([x0 + w * 0.16 - s * 0.05, ly - s * 0.05,
-                   x0 + w * 0.16 + s * 0.05, ly + s * 0.05], fill=bg)
-        d.rounded_rectangle([x0 + w * 0.34, ly - s * 0.035, x0 + w * 0.84, ly + s * 0.035],
-                            radius=s * 0.035, fill=bg)
-    if mark:
-        bx, by, br = cx + w * 0.46, cy + h * 0.42, s * 0.23
-        d.ellipse([bx - br, by - br, bx + br, by + br], fill=ORANGE)
-        d.ellipse([bx - br * 0.82, by - br * 0.82, bx + br * 0.82, by + br * 0.82], fill=WHITE)
-        t = br * 0.16
-        d.rounded_rectangle([bx - br * 0.46, by - t, bx + br * 0.46, by + t],
-                            radius=t, fill=ORANGE)
-        if mark == "+":
-            d.rounded_rectangle([bx - t, by - br * 0.46, bx + t, by + br * 0.46],
-                                radius=t, fill=ORANGE)
+        ly = cy + (i - 1) * s * 0.34
+        # 左のチェック
+        d.line([(x0, ly), (x0 + w * 0.10, ly + s * 0.10), (x0 + w * 0.28, ly - s * 0.12)],
+               fill=c, width=lw, joint="curve")
+        # 右の横線。下の行ほど短くして一覧らしく見せる
+        d.line([(x0 + w * 0.44, ly), (x0 + w * (1.0 - i * 0.12), ly)], fill=c, width=lw)
 
 
-def icon_undo(cx, cy, s, fg, bg):
-    """左へ戻る矢印＝取消"""
-    r = s * 0.38
-    lw = int(s * 0.15)
-    # 上side を開けた円弧。PIL の角度は 0=右, 90=下, 270=上
-    d.arc([cx - r, cy - r, cx + r, cy + r], start=300, end=600, fill=fg, width=lw)
+def icon_calendar_plus(cx, cy, s, c, lw):
+    """カレンダーに＋＝期限登録"""
+    w, h = s * 0.94, s * 0.88
+    x0, y0 = cx - w / 2, cy - h / 2 + s * 0.06
+    d.rounded_rectangle([x0, y0, x0 + w, y0 + h], radius=s * 0.13, outline=c, width=lw)
+    d.line([(x0, y0 + h * 0.30), (x0 + w, y0 + h * 0.30)], fill=c, width=lw)
+    for fx in (0.28, 0.72):
+        d.line([(x0 + w * fx, y0 - s * 0.10), (x0 + w * fx, y0 + s * 0.08)], fill=c, width=lw)
+    # 中の＋
+    px, py, pr = cx, y0 + h * 0.66, s * 0.16
+    d.line([(px - pr, py), (px + pr, py)], fill=c, width=lw)
+    d.line([(px, py - pr), (px, py + pr)], fill=c, width=lw)
 
-    # 円弧の左上の端に矢じりを置く
-    px = cx + r * math.cos(math.radians(240))
-    py = cy + r * math.sin(math.radians(240))
-    a = s * 0.21
-    d.polygon([(px - a * 1.05, py - a * 0.10),
-               (px + a * 0.35, py - a * 1.00),
-               (px + a * 0.55, py + a * 0.70)], fill=fg)
+
+def icon_plus_circle(cx, cy, s, c, lw):
+    """丸に＋＝買い物リスト追加"""
+    r = s * 0.47
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=c, width=lw)
+    a = r * 0.48
+    d.line([(cx - a, cy), (cx + a, cy)], fill=c, width=lw)
+    d.line([(cx, cy - a), (cx, cy + a)], fill=c, width=lw)
+
+
+def icon_check_circle(cx, cy, s, c, lw):
+    """丸にチェック＝使用済"""
+    r = s * 0.47
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=c, width=lw)
+    d.line([(cx - r * 0.42, cy + r * 0.02), (cx - r * 0.10, cy + r * 0.34),
+            (cx + r * 0.46, cy - r * 0.32)], fill=c, width=lw, joint="curve")
+
+
+def icon_trash(cx, cy, s, c, lw):
+    """ごみ箱＝買い物リスト削除"""
+    w, h = s * 0.70, s * 0.78
+    x0, y0 = cx - w / 2, cy - h / 2 + s * 0.10
+    # 本体
+    d.line([(x0, y0), (x0 + w * 0.10, y0 + h), (x0 + w * 0.90, y0 + h), (x0 + w, y0)],
+           fill=c, width=lw, joint="curve")
+    # ふたと取っ手
+    d.line([(x0 - w * 0.14, y0), (x0 + w * 1.14, y0)], fill=c, width=lw)
+    d.line([(cx - w * 0.24, y0 - s * 0.13), (cx + w * 0.24, y0 - s * 0.13)], fill=c, width=lw)
+    d.line([(cx - w * 0.24, y0 - s * 0.13), (cx - w * 0.24, y0)], fill=c, width=lw)
+    d.line([(cx + w * 0.24, y0 - s * 0.13), (cx + w * 0.24, y0)], fill=c, width=lw)
+    # 中の縦線
+    for fx in (0.36, 0.64):
+        d.line([(x0 + w * fx, y0 + h * 0.22), (x0 + w * fx, y0 + h * 0.80)], fill=c, width=lw)
+
+
+def icon_close(cx, cy, s, c, lw):
+    """×＝取消"""
+    a = s * 0.38
+    d.line([(cx - a, cy - a), (cx + a, cy + a)], fill=c, width=lw)
+    d.line([(cx + a, cy - a), (cx - a, cy + a)], fill=c, width=lw)
 
 
 # ---------------------------------------------------------------- 配置
 #
-# 下段の3列目（買い物リスト削除／全削除）だけ高さを半分にして2つ積む。
-# それ以外は今までどおり列1つ＝ボタン1つ。
+# 並びは コード.gs の RICHMENU_CELLS と一致させること。
+# 左列を上から、次に右列を上から見ていく順で並べる。
+# (col, row, 見出し, アイコン, 色, 文字色)
 
-TOP_Y, TOP_H = ROWS[0]
-BOT_Y, BOT_H = ROWS[1]
-# LINE の bounds は整数座標が必須。843は奇数なので均等に割れず、421/422に分ける
-HALF_H = BOT_H // 2
-HALF_H2 = BOT_H - HALF_H
-
-ICON_CELLS = [
-    # (col, y, h, 見出し, 2行目, アイコン, 背景, 前景)
-    (0, TOP_Y, TOP_H, "期限登録", None,      icon_calendar, GREEN, GREEN_DARK),
-    (1, TOP_Y, TOP_H, "使用済",   None,      icon_check,    GREEN, GREEN_DARK),
-    (2, TOP_Y, TOP_H, "在庫確認", None,      icon_fridge,   GREEN, GREEN_DARK),
-    (3, TOP_Y, TOP_H, "材料確認", None,      icon_camera,   GREEN, GREEN_DARK),
-    (0, BOT_Y, BOT_H, "買い物リスト", "追加", lambda *a: icon_list(*a, mark="+"), BLUE, BLUE_DARK),
-    (1, BOT_Y, BOT_H, "買い物リスト", "表示", icon_list,                          BLUE, BLUE_DARK),
-    # 取消は在庫にも買い物リストにも効くので、どちらの色にも寄せない
-    (3, BOT_Y, BOT_H, "取消",     None,      icon_undo,     GRAY,  GRAY_DARK),
+CELLS = [
+    (0, 0, "材料確認",       icon_camera,        TEAL,   TEXT),
+    (0, 1, "買い物リスト表示", icon_list,          MINT,   TEXT),
+    (0, 2, "買い物リスト追加", icon_plus_circle,   PURPLE, TEXT),
+    (0, 3, "買い物リスト削除", icon_trash,         RED,    TEXT),
+    (1, 0, "在庫確認",       icon_box,           GREEN,  TEXT),
+    (1, 1, "期限登録",       icon_calendar_plus, GREEN,  TEXT),
+    (1, 2, "使用済",         icon_check_circle,  GREEN,  TEXT),
+    # 取消は押し間違えたときの操作なので、色も文字も他より控えめにする
+    (1, 3, "取消",           icon_close,         GRAY,   TEXT_DIM),
 ]
 
-# 文字だけのボタン（アイコンなし）。「買い物リスト」の1行だけだと
-# 幅625pxに収まらず隣の列にはみ出すので、他のボタンと同じく
-# 「買い物リスト」＋「削除」/「全削除」の2行に分ける。削除／全削除は
-# 上下に積むので、押し間違えても取消で戻せる前提で同じ配色にしている
-TEXT_CELLS = [
-    (2, BOT_Y,            HALF_H,  "削除",   BLUE),
-    (2, BOT_Y + HALF_H,   HALF_H2, "全削除", BLUE),
-]
+CELL_W = W // COLS
+CELL_H = H // ROWS
 
-for col, y, h, title, sub, icon, bg, fg in ICON_CELLS:
-    x, w = COLS[col]
-    d.rectangle([x, y, x + w, y + h], fill=bg)
-    icon(x + w / 2, y + h * 0.36, h * 0.30, WHITE, bg)
-    if sub:
-        center(x + w / 2, y + h * 0.70, title, sub_font, WHITE)
-        center(x + w / 2, y + h * 0.84, sub, label_font, WHITE)
-    else:
-        center(x + w / 2, y + h * 0.76, title, label_font, WHITE)
+for col, row, title, icon, color, text_color in CELLS:
+    x0 = col * CELL_W + MARGIN
+    y0 = row * CELL_H + MARGIN
+    x1 = (col + 1) * CELL_W - MARGIN
+    y1 = (row + 1) * CELL_H - MARGIN
 
-for col, y, h, sub, bg in TEXT_CELLS:
-    x, w = COLS[col]
-    d.rectangle([x, y, x + w, y + h], fill=bg)
-    center(x + w / 2, y + h * 0.40, "買い物リスト", sub_font, WHITE)
-    center(x + w / 2, y + h * 0.66, sub, label_font, WHITE)
+    d.rounded_rectangle([x0, y0, x1, y1], radius=RADIUS,
+                        fill=TILE, outline=TILE_EDGE, width=3)
 
-# 区切り線
-for x, w in COLS[1:]:
-    d.rectangle([x - 4, 0, x + 4, H], fill=LINE)
-d.rectangle([0, ROWS[1][0] - 4, W, ROWS[1][0] + 4], fill=LINE)
-# 削除／全削除の間の横線
-split_x, split_w = COLS[2]
-d.rectangle([split_x, BOT_Y + HALF_H - 4, split_x + split_w, BOT_Y + HALF_H + 4], fill=LINE)
+    h = y1 - y0
+    icon(x0 + h * 0.44, (y0 + y1) / 2, h * 0.40, color, int(h * 0.055))
+
+    # 見出しはアイコンの右に左揃えで置く。タイルごとに文字数が違うので中央揃えにはしない
+    tx = x0 + h * 0.84
+    l, t, r, b = d.textbbox((0, 0), title, font=label_font)
+    d.text((tx - l, (y0 + y1) / 2 - (b - t) / 2 - t), title, font=label_font, fill=text_color)
 
 # ---------------------------------------------------------------- 出力
 
