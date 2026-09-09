@@ -2525,7 +2525,9 @@ function shopBoughtCommit_(plan) {
  * 押した後の反応は handlePostback_ 側で個別に返す（このバブル自体は編集できない）。
  */
 var SHOP_BG = '#1e2127';
+var SHOP_SECTION_BG = '#262a30'; // セクション見出しの帯。品目の行より1段明るく
 var SHOP_GREEN = '#4ADE80';
+var SHOP_BLUE = '#60A5FA';       // 「買うべきもの」「在庫にありません」の縦棒
 var SHOP_GRAY = '#9CA3AF';
 var SHOP_TEXT = '#F3F4F6';
 var SHOP_LINE = '#33363c';
@@ -2540,7 +2542,7 @@ function shopBoughtPostbackData_(id) { return 'shop_bought:' + id; }
  * button コンポーネントは height:'sm' でも約40pxの固定高があるので、余白を自前で
  * 持たせた box に action を付けて代用している（緑文字のまま、タップ領域は保てる）。
  */
-function bubbleActionRow_(name, actionLabel, action, sub) {
+function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
   // 品名の下に小さく添える行（在庫確認の期限など）。無いときは品名だけ
   var label = sub
     ? {
@@ -2576,15 +2578,26 @@ function bubbleActionRow_(name, actionLabel, action, sub) {
         paddingBottom: '8px',
         action: action,
         contents: [
-          { type: 'text', text: actionLabel, color: SHOP_GREEN, size: 'md', align: 'end' }
+          { type: 'text', text: actionLabel, color: actionColor || SHOP_GREEN, size: 'md', align: 'end' }
         ]
       }
     ]
   };
 }
 
-/** バブル上部の帯。左に見出し、右に件数 */
-function bubbleHeader_(title, note) {
+/**
+ * バブル上部の帯。左に見出し、右に件数（note を省くと見出しだけ）。
+ * 色は用途で変える。セクション見出しを持つバブル（材料確認・在庫確認）は
+ * 白にして、緑はセクションの縦棒とボタンのほうに使う。
+ */
+function bubbleHeader_(title, note, titleColor) {
+  var contents = [
+    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 1 }
+  ];
+  if (note) {
+    contents.push({ type: 'text', text: note, size: 'sm', color: SHOP_GRAY, align: 'end', gravity: 'center' });
+  }
+
   return {
     type: 'box',
     layout: 'horizontal',
@@ -2593,9 +2606,53 @@ function bubbleHeader_(title, note) {
     paddingEnd: '14px',
     paddingTop: '12px',
     paddingBottom: '12px',
+    contents: contents
+  };
+}
+
+/**
+ * セクションの見出し帯。左に色の縦棒、見出し、件数を置き、
+ * 右にひとつだけ丸いボタンを添えられる（「全て追加」用）。
+ * 帯の地色を1段明るくして、品目の行と区別する。
+ */
+function bubbleSectionHeader_(title, count, barColor, pill) {
+  var left = [
+    // 縦棒。高さは中身に合わせて伸びるので、幅だけ決めておく
+    { type: 'box', layout: 'vertical', flex: 0, width: '6px', backgroundColor: barColor, cornerRadius: '3px', contents: [{ type: 'filler' }] },
+    { type: 'text', text: title, weight: 'bold', size: 'md', color: SHOP_TEXT, flex: 0, gravity: 'center', margin: 'md' },
+    { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, gravity: 'center', margin: 'md', flex: 1 }
+  ];
+  if (pill) left.push(pill);
+
+  return {
+    type: 'box',
+    layout: 'horizontal',
+    backgroundColor: SHOP_SECTION_BG,
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    paddingTop: '10px',
+    paddingBottom: '10px',
+    alignItems: 'center',
+    contents: left
+  };
+}
+
+/** 見出し帯の右に置く、緑の枠線だけの丸いボタン */
+function bubblePillButton_(label, action) {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    flex: 0,
+    borderColor: SHOP_GREEN,
+    borderWidth: '1px',
+    cornerRadius: '999px',
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    paddingTop: '6px',
+    paddingBottom: '6px',
+    action: action,
     contents: [
-      { type: 'text', text: title, weight: 'bold', size: 'md', color: SHOP_GREEN, flex: 1 },
-      { type: 'text', text: note, size: 'sm', color: SHOP_GRAY, align: 'end', gravity: 'center' }
+      { type: 'text', text: label, color: SHOP_GREEN, size: 'xs', align: 'center' }
     ]
   };
 }
@@ -2783,52 +2840,36 @@ function buildRecipeBubble_(missing, have, token) {
   var rows = [];
 
   if (missing.length) {
-    rows.push(bubbleSectionLabel_('買うべきもの（' + missing.length + '件）'));
+    rows.push(bubbleSectionHeader_('買うべきもの', missing.length, SHOP_BLUE,
+      bubblePillButton_('全て追加', { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token })));
     missing.forEach(function (e, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
       rows.push(recipeItemRow_(e, token, i));
     });
-    rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleWideButton_('全て追加（' + missing.length + '件）',
-      { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token }));
   }
 
   if (have.length) {
-    if (rows.length) rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleSectionLabel_('家にあるもの（' + have.length + '件）'));
+    rows.push(bubbleSectionHeader_('家にあるもの', have.length, SHOP_GREEN));
     have.forEach(function (e, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
-      rows.push(recipeItemRow_(e, token, missing.length + i));
+      // 家にあるものは買い足しのための控えめな扱い。押せるが色は目立たせない
+      rows.push(recipeItemRow_(e, token, missing.length + i, SHOP_GRAY));
     });
   }
 
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('材料確認', '買う' + missing.length + '件'),
+    header: bubbleHeader_('材料確認', '', SHOP_TEXT),
     body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
-/** セクションの見出し行。品名より小さいグレーで、帯にはしない */
-function bubbleSectionLabel_(text) {
-  return {
-    type: 'box',
-    layout: 'vertical',
-    paddingStart: '14px',
-    paddingEnd: '14px',
-    paddingTop: '12px',
-    paddingBottom: '4px',
-    contents: [
-      { type: 'text', text: text, color: SHOP_GRAY, size: 'sm', wrap: true }
-    ]
-  };
-}
-
 /** 材料1件の行。読み取り確度が低いものには ⚠ を添える */
-function recipeItemRow_(entry, token, index) {
+function recipeItemRow_(entry, token, index, actionColor) {
   return bubbleActionRow_(entry.name + (entry.low ? ' ⚠' : ''), '追加',
-    { type: 'postback', label: '追加', data: ADD_PREFIX + token + ':' + index });
+    { type: 'postback', label: '追加', data: ADD_PREFIX + token + ':' + index },
+    null, actionColor);
 }
 
 // ---------------------------------------------------------------- 在庫確認（Flexバブル）
@@ -2863,7 +2904,7 @@ function buildStockCheckBubble_(have, missing, token) {
   var rows = [];
 
   if (have.length) {
-    rows.push(bubbleSectionLabel_('在庫にあります（' + have.length + '件）'));
+    rows.push(bubbleSectionHeader_('在庫にあります', have.length, SHOP_GREEN));
     have.forEach(function (it, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
       rows.push(bubbleActionRow_(
@@ -2875,21 +2916,18 @@ function buildStockCheckBubble_(have, missing, token) {
   }
 
   if (missing.length) {
-    if (rows.length) rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleSectionLabel_('在庫にありません（' + missing.length + '件）'));
+    rows.push(bubbleSectionHeader_('在庫にありません', missing.length, SHOP_BLUE,
+      bubblePillButton_('全て追加', { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token })));
     missing.forEach(function (e, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
       rows.push(recipeItemRow_(e, token, i));
     });
-    rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(bubbleWideButton_('全て追加（' + missing.length + '件）',
-      { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token }));
   }
 
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('在庫確認', 'あり' + have.length + '件'),
+    header: bubbleHeader_('在庫確認', '', SHOP_TEXT),
     body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
