@@ -353,18 +353,6 @@ function parseCommand_(text) {
   return { action: action, rest: (m[2] || '').trim() };
 }
 
-/**
- * 買い物リストから外す品名を Claude に特定させて削除する。
- * 追加のほうは削除ボタン付きのバブルで返すため、この経路には乗せていない
- * （replyShopAdd_ が返信まで受け持つ）
- */
-function runShopCommand_(action, text) {
-  var items = parseItemNames_(text);
-  if (!items.length) return '品名を読み取れませんでした。';
-
-  return shopBought_(items.map(function (it) { return it.name; }));
-}
-
 /** 在庫から消す食材を Claude に特定させ、消費として記録する */
 function runConsumeCommand_(text) {
   var items = parseItemNames_(text);
@@ -382,9 +370,6 @@ function runConsumeCommand_(text) {
 function runCommand_(cmd) {
   if (!cmd.rest) return COMMAND_HINTS[cmd.action];
 
-  if (cmd.action === 'shop_add' || cmd.action === 'shop_bought') {
-    return runShopCommand_(cmd.action, cmd.rest);
-  }
   if (cmd.action === 'consume') {
     return runConsumeCommand_(cmd.rest);
   }
@@ -437,9 +422,16 @@ function handleText_(event, text) {
   var cmd = parseCommand_(text);
   if (cmd) {
     try {
-      // 追加と在庫確認はボタン付きのバブルで返すので、文字列を組み立てる経路には乗せない
+      // 買い物リストの操作と在庫確認はバブルで返すので、文字列を組み立てる経路には乗せない
       if (cmd.action === 'shop_add' && cmd.rest) {
         replyShopAdd_(event.replyToken, note, parseItemNames_(cmd.rest));
+      } else if (cmd.action === 'shop_bought' && cmd.rest) {
+        var told = parseItemNames_(cmd.rest);
+        if (told.length) {
+          replyShopBought_(event.replyToken, note, told.map(function (it) { return it.name; }));
+        } else {
+          replyText_(event.replyToken, note + '品名を読み取れませんでした。');
+        }
       } else if (cmd.action === 'stock_check' && cmd.rest) {
         var asked = parseItemNames_(cmd.rest);
         if (asked.length) {
@@ -458,7 +450,7 @@ function handleText_(event, text) {
   }
 
   // 買い物リストの操作は言い回しが定型なので、種別の判定は API を使わずに済む。
-  // 品名の特定だけ Claude に任せる（runShopCommand_）
+  // 品名の特定だけ Claude に任せる（parseItemNames_）
   if (SHOP_LIST_CMD.test(text)) {
     replyShopList_(event.replyToken, note);
     return;
@@ -480,7 +472,12 @@ function handleText_(event, text) {
   var bought = text.replace(/[。．!！]/g, '').trim().match(BOUGHT_VERB);
   if (bought) {
     try {
-      replyText_(event.replyToken, prefixReply_(note, runShopCommand_('shop_bought', bought[1])));
+      var boughtItems = parseItemNames_(bought[1]);
+      if (boughtItems.length) {
+        replyShopBought_(event.replyToken, note, boughtItems.map(function (it) { return it.name; }));
+      } else {
+        replyText_(event.replyToken, note + '品名を読み取れませんでした。');
+      }
     } catch (err) {
       console.error('買い物リストからの削除に失敗: ' + err.stack);
       replyText_(event.replyToken, note + '処理に失敗しました。\n' + err.message);
@@ -526,7 +523,7 @@ function handleText_(event, text) {
       return;
     }
     if (intent === 'shop_bought' && names.length) {
-      replyText_(event.replyToken, note + shopBought_(names));
+      replyShopBought_(event.replyToken, note, names);
       return;
     }
     // 「捨てた」も消費として記録する。使ったか捨てたかで在庫の扱いは変わらない
@@ -2386,17 +2383,33 @@ function shopBought_(names) {
     setLastOp_({ type: 'shop_bought', sheet: 'shopping', rows: changed });
   }
 
-  var lines = [];
-  if (done.length) {
-    lines.push('買い物リストから外しました（' + done.length + '件）');
-    lines.push('');
-    done.forEach(function (n, i) { lines.push((i + 1) + '. ' + n); });
+  return { done: done, missed: missed };
+}
+
+/**
+ * テキストでの「牛乳買った」等への返信。ボタンを押したときと同じ ✓ のバブルで
+ * 外したものを並べ、見つからなかったものはテキストで添える。
+ */
+function replyShopBought_(replyToken, note, names) {
+  var r = shopBought_(names);
+
+  var messages = [];
+  if (note) messages.push({ type: 'text', text: note.replace(/\n+$/, '') });
+
+  if (r.done.length) {
+    messages.push({
+      type: 'flex',
+      altText: '買い物リストから削除 ' + r.done.length + '件',
+      contents: buildShopCheckBubble_(r.done)
+    });
   }
-  if (missed.length) {
-    if (lines.length) lines.push('');
-    lines.push('※ リストに見つかりませんでした: ' + missed.join('、'));
+  if (r.missed.length) {
+    messages.push({ type: 'text', text: 'リストに見つかりませんでした: ' + r.missed.join('、') });
   }
-  return lines.length ? lines.join('\n') : '対象を読み取れませんでした。';
+  if (!messages.length || (!r.done.length && !r.missed.length)) {
+    messages.push({ type: 'text', text: '対象を読み取れませんでした。' });
+  }
+  replyMessages_(replyToken, messages);
 }
 
 /**
@@ -2724,23 +2737,27 @@ function buildShopListBubble_(todo) {
 }
 
 /**
- * 「買った」「追加」を押したときの確認。チェックだけ緑にして、品名は
- * トークの文字と同じ白で出す（span で1行の中の色を分けている）
+ * 「削除」「追加」「使用済」を押したときの確認。チェックだけ緑にして、品名は
+ * トークの文字と同じ白で出す（span で1行の中の色を分けている）。
+ * 品名の配列を渡すと1つのバブルに複数行で並べる（手入力でまとめて操作したとき用）。
  */
-function buildShopCheckBubble_(name) {
-  return shopNoteShell_({
-    type: 'text',
-    size: 'md',
-    wrap: true,
-    contents: [
-      { type: 'span', text: '✓ ', color: SHOP_GREEN },
-      { type: 'span', text: String(name), color: SHOP_TEXT }
-    ]
-  });
+function buildShopCheckBubble_(names) {
+  var list = Array.isArray(names) ? names : [names];
+  return shopNoteShell_(list.map(function (name) {
+    return {
+      type: 'text',
+      size: 'md',
+      wrap: true,
+      contents: [
+        { type: 'span', text: '✓ ', color: SHOP_GREEN },
+        { type: 'span', text: String(name), color: SHOP_TEXT }
+      ]
+    };
+  }));
 }
 
-/** 1行バブルの外枠。中身のテキスト部品だけ差し替えて使う */
-function shopNoteShell_(textComponent) {
+/** 1行バブルの外枠。中身のテキスト部品（1つでも配列でも）を差し替えて使う */
+function shopNoteShell_(textComponents) {
   return {
     type: 'bubble',
     size: 'deca',
@@ -2752,7 +2769,8 @@ function shopNoteShell_(textComponent) {
       paddingEnd: '14px',
       paddingTop: '12px',
       paddingBottom: '12px',
-      contents: [textComponent]
+      spacing: 'sm',
+      contents: Array.isArray(textComponents) ? textComponents : [textComponents]
     }
   };
 }
