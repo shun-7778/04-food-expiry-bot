@@ -31,25 +31,27 @@ var MAX_IMAGE_BYTES = 4 * 1024 * 1024; // Claude の画像サイズ上限に対�
 var SHEET_NAME = '在庫';
 
 // 列番号（1始まり）。順番を変えるときはヘッダーと合わせて直すこと。
+// STATUS と UPDATED は隣り合わせのままにすること（1回の setValues でまとめて書いている）
 var COL = {
-  REG_DATE: 1,    // 登録日 (YYYY-MM-DD)
-  REG_TIME: 2,    // 登録時刻 (HH:mm)
-  NAME: 3,        // 食材名
-  CATEGORY: 4,    // 区分（CATEGORIES のいずれか）
-  DATE: 5,        // 期限 (YYYY-MM-DD)
-  PRECISION: 6,   // day / month
-  LABEL: 7,       // 賞味期限 / 消費期限
-  CONFIDENCE: 8,  // high / medium / low
-  SOURCE: 9,      // 写真 / テキスト
-  RAW: 10,        // 原文（写真の印字、または発話の該当部分）
-  STATUS: 11,     // 在庫 / 消費済 / 破棄 / 取消
-  UPDATED: 12,    // 状態を最後に変えた日時
-  NOTIFIED_1M: 13, // 残り1か月の通知を送った日
-  NOTIFIED_1W: 14  // 残り1週間の通知を送った日
+  ID: 1,          // 連番ID。バブルの「使った」ボタンはこれで品目を指す
+  REG_DATE: 2,    // 登録日 (YYYY-MM-DD)
+  REG_TIME: 3,    // 登録時刻 (HH:mm)
+  NAME: 4,        // 食材名
+  CATEGORY: 5,    // 区分（CATEGORIES のいずれか）
+  DATE: 6,        // 期限 (YYYY-MM-DD)
+  PRECISION: 7,   // day / month
+  LABEL: 8,       // 賞味期限 / 消費期限
+  CONFIDENCE: 9,  // high / medium / low
+  SOURCE: 10,     // 写真 / テキスト
+  RAW: 11,        // 原文（写真の印字、または発話の該当部分）
+  STATUS: 12,     // 在庫 / 消費済 / 破棄 / 取消
+  UPDATED: 13,    // 状態を最後に変えた日時
+  NOTIFIED_1M: 14, // 残り1か月の通知を送った日
+  NOTIFIED_1W: 15  // 残り1週間の通知を送った日
 };
-var COL_COUNT = 14;
+var COL_COUNT = 15;
 
-var HEADERS = ['登録日', '登録時刻', '食材名', '区分', '期限', '精度', 'ラベル', '確度',
+var HEADERS = ['ID', '登録日', '登録時刻', '食材名', '区分', '期限', '精度', 'ラベル', '確度',
   '入力元', '原文', '状態', '更新日時', '通知1M', '通知1W'];
 
 // DISCARDED は使わなくなったが、過去に記録した行が持っているので残す
@@ -252,7 +254,10 @@ var HELP_MESSAGE = [
   '',
   '■ 在庫確認',
   '「在庫確認 醤油、みりん」のように送ると、それぞれ',
-  '在庫にあるかどうかを期限・登録日つきで返します。',
+  '在庫にあるかどうかを返します。あるものは期限を',
+  '色付き（超過=赤／残り1週間=黄）で示し、「使った」で',
+  'その場で消費できます。ないものは「追加」で買い物',
+  'リストに入れられます。',
   '',
   '■ 材料確認（レシピ照合）',
   'レシピの写真を送ると、材料を在庫と突き合わせて',
@@ -370,14 +375,6 @@ function runConsumeCommand_(text) {
   }));
 }
 
-/** 品名を Claude に特定させ、在庫にあるかどうかを返す */
-function runStockCheckCommand_(text) {
-  var items = parseItemNames_(text);
-  if (!items.length) return '品名を読み取れませんでした。';
-
-  return checkStock_(items.map(function (it) { return { item_name: it.name }; }));
-}
-
 /**
  * 接頭辞で種別が確定した入力を処理する。
  * 種別は押されたボタンで決まっているので、品名の特定だけを Claude に任せる。
@@ -390,9 +387,6 @@ function runCommand_(cmd) {
   }
   if (cmd.action === 'consume') {
     return runConsumeCommand_(cmd.rest);
-  }
-  if (cmd.action === 'stock_check') {
-    return runStockCheckCommand_(cmd.rest);
   }
 
   var result = parseTextExpiry_(cmd.rest);
@@ -443,9 +437,16 @@ function handleText_(event, text) {
   var cmd = parseCommand_(text);
   if (cmd) {
     try {
-      // 追加だけは削除ボタン付きのバブルで返すので、文字列を組み立てる経路には乗せない
+      // 追加と在庫確認はボタン付きのバブルで返すので、文字列を組み立てる経路には乗せない
       if (cmd.action === 'shop_add' && cmd.rest) {
         replyShopAdd_(event.replyToken, note, parseItemNames_(cmd.rest));
+      } else if (cmd.action === 'stock_check' && cmd.rest) {
+        var asked = parseItemNames_(cmd.rest);
+        if (asked.length) {
+          replyStockCheck_(event.replyToken, note, asked);
+        } else {
+          replyText_(event.replyToken, note + '品名を読み取れませんでした。');
+        }
       } else {
         replyText_(event.replyToken, prefixReply_(note, runCommand_(cmd)));
       }
@@ -1103,6 +1104,26 @@ function migrateAddShopCategoryColumn() {
 }
 
 /**
+ * 在庫シートの先頭に「ID」列を追加する一度きりの移行処理。
+ * バブルの「使った」ボタンが行番号ではなく ID で品目を指すようにするため、
+ * 既存行にも上から順に連番を振る。エディタから1回だけ実行する。
+ */
+function migrateAddStockIdColumn() {
+  var sh = sheet_();
+  sh.insertColumnBefore(1);
+  sh.getRange(1, 1, 1, COL_COUNT).setValues([HEADERS]).setFontWeight('bold');
+
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    var ids = [];
+    for (var i = 0; i < last - 1; i++) ids.push([i + 1]);
+    sh.getRange(2, COL.ID, ids.length, 1).setValues(ids);
+    PropertiesService.getScriptProperties().setProperty('STOCK_NEXT_ID', String(ids.length + 1));
+  }
+  console.log('在庫シートにID列を追加しました。');
+}
+
+/**
  * 買い物リストの先頭に「ID」列を追加する一度きりの移行処理。
  * postback（買った/全部買ったボタン）が行番号ではなく ID で品目を指すようにするため、
  * 既存行にも上から順に連番を振る。エディタから1回だけ実行する。
@@ -1203,15 +1224,45 @@ function clampQty_(q, max) {
   return Math.min(n, max);
 }
 
+/**
+ * 在庫の品目に振る連番を n 個まとめて確保する。
+ * 買い物リストと同じ考え方で、行の並び替えや削除の影響を受けないようにする。
+ */
+function stockReserveIds_(n) {
+  var props = PropertiesService.getScriptProperties();
+  var next = Number(props.getProperty('STOCK_NEXT_ID')) || (stockMaxId_() + 1);
+  props.setProperty('STOCK_NEXT_ID', String(next + n));
+
+  var ids = [];
+  for (var i = 0; i < n; i++) ids.push(next + i);
+  return ids;
+}
+
+function stockMaxId_() {
+  var sh = sheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+
+  var ids = sh.getRange(2, COL.ID, last - 1, 1).getValues();
+  var max = 0;
+  ids.forEach(function (r) {
+    var n = Number(r[0]);
+    if (n > max) max = n;
+  });
+  return max;
+}
+
 /** 実際にシートへ追記し、追記した行番号を返す */
 function appendRows_(sh, items, source) {
   if (!items.length) return [];
 
   var startRow = sh.getLastRow() + 1;
   var stamp = nowStamp_();
+  var ids = stockReserveIds_(items.length);
 
-  var values = items.map(function (it) {
+  var values = items.map(function (it, idx) {
     var row = new Array(COL_COUNT).fill('');
+    row[COL.ID - 1] = ids[idx];
     row[COL.REG_DATE - 1] = todayStamp_();
     row[COL.REG_TIME - 1] = timeStamp_();
     row[COL.NAME - 1] = it.item_name || '(名称不明)';
@@ -1473,6 +1524,7 @@ function currentStockRows_() {
     if (data[i][COL.STATUS - 1] !== STATUS.STOCK) continue;
     stock.push({
       row: i + 2,
+      id: data[i][COL.ID - 1],
       name: data[i][COL.NAME - 1],
       date: normalizeYmd_(data[i][COL.DATE - 1]),
       label: data[i][COL.LABEL - 1],
@@ -1491,6 +1543,7 @@ function withStockInfo_(it, stockRow) {
     item_name: it.item_name,
     category: it.category || '',
     confidence: it.confidence,
+    id: stockRow.id,          // バブルの「使った」ボタンが指す先
     date: stockRow.date,
     label: stockRow.label,
     regDate: stockRow.regDate
@@ -1540,36 +1593,6 @@ function matchNamesToStock_(items) {
   return { have: have, missing: missing };
 }
 
-/** 在庫にある側の1行を「品名（期限・登録日）」の形にする */
-function withStockLines_(it) {
-  var lines = [it.item_name + (it.confidence && it.confidence !== 'high' ? ' ⚠' : '')];
-  if (it.date) {
-    var label = (it.label === '賞味期限' || it.label === '消費期限') ? it.label : '賞味期限';
-    lines.push('　' + label + '：' + it.date);
-  }
-  lines.push('　登録日：' + (it.regDate || '不明'));
-  return lines.join('\n');
-}
-
-/** 在庫にない側の1行を「品名」の形にする（⚠は読み取り確度が低いときだけ） */
-function missingLine_(it) {
-  return it.item_name + (it.confidence && it.confidence !== 'high' ? ' ⚠' : '');
-}
-
-/** 0件のブロックは丸ごと省く。1件以上あるときだけ見出し＋一覧を返す */
-function resultBlock_(header, list, lineFn) {
-  if (!list.length) return null;
-  var lines = [header + '（' + list.length + '件）'];
-  list.forEach(function (it, i) {
-    lines.push((i + 1) + '. ' + lineFn(it));
-  });
-  return lines.join('\n');
-}
-
-function joinBlocks_(blocks) {
-  return blocks.filter(function (b) { return b; }).join('\n\n') || '該当するものがありません。';
-}
-
 /**
  * レシピの材料を「買うべきもの」「家にあるもの」に振り分け、バブルで返信する。
  * どちらの行にも買い物リストへの「追加」ボタンを付ける（家にあっても買い足したい
@@ -1582,7 +1605,7 @@ function replyRecipeMatch_(replyToken, items) {
 
   // ボタンの postback には並び順の番号だけを入れ、品名と区分は控えのほうから引く。
   // postback の data は300文字までで、材料が多いと品名を並べきれないため
-  var token = saveRecipeSet_(missing.concat(have), missing.length);
+  var token = saveAddSet_(missing.concat(have), missing.length);
 
   replyFlexMessage_(replyToken, '材料確認 買うべきもの' + missing.length + '件',
     buildRecipeBubble_(missing, have, token));
@@ -1597,13 +1620,28 @@ function recipeEntry_(it) {
   };
 }
 
-/** 在庫確認: 品名が在庫にあるかどうかを返信する */
-function checkStock_(items) {
-  var r = matchNamesToStock_(items);
-  return joinBlocks_([
-    resultBlock_('■ 在庫にあります', r.have, withStockLines_),
-    resultBlock_('■ 在庫にありません', r.missing, missingLine_)
-  ]);
+/**
+ * 在庫確認をバブルで返す。あるものは期限を色付きで添えて「使った」ボタンを、
+ * ないものは品名だけを並べて「追加」ボタン（買い物リストへ）を付ける。
+ */
+function replyStockCheck_(replyToken, note, items) {
+  var asked = items.map(function (it) {
+    return { item_name: it.name, category: it.category || '' };
+  });
+  var r = matchNamesToStock_(asked);
+
+  // ない側の「追加」は材料確認と同じ仕組み。postback には控えの番号だけを入れる
+  var missing = r.missing.map(recipeEntry_);
+  var token = saveAddSet_(missing, missing.length);
+
+  var messages = [];
+  if (note) messages.push({ type: 'text', text: note.replace(/\n+$/, '') });
+  messages.push({
+    type: 'flex',
+    altText: '在庫確認 あり' + r.have.length + '件 / なし' + missing.length + '件',
+    contents: buildStockCheckBubble_(r.have, missing, token)
+  });
+  replyMessages_(replyToken, messages);
 }
 
 /**
@@ -2502,16 +2540,32 @@ function shopBoughtPostbackData_(id) { return 'shop_bought:' + id; }
  * button コンポーネントは height:'sm' でも約40pxの固定高があるので、余白を自前で
  * 持たせた box に action を付けて代用している（緑文字のまま、タップ領域は保てる）。
  */
-function bubbleActionRow_(name, actionLabel, action) {
+function bubbleActionRow_(name, actionLabel, action, sub) {
+  // 品名の下に小さく添える行（在庫確認の期限など）。無いときは品名だけ
+  var label = sub
+    ? {
+      type: 'box',
+      layout: 'vertical',
+      flex: 1,
+      spacing: 'xs',
+      contents: [
+        { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', wrap: true },
+        { type: 'text', text: sub.text, color: sub.color, size: 'xs', wrap: true }
+      ]
+    }
+    // size:'md'（16px）が LINE の通常のトーク文字と同じ大きさ。太さは既定（regular）のまま
+    : { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: true, gravity: 'center' };
+
   return {
     type: 'box',
     layout: 'horizontal',
     paddingStart: '14px',
     paddingEnd: '4px',
+    paddingTop: sub ? '10px' : '0px',
+    paddingBottom: sub ? '10px' : '0px',
     alignItems: 'center',
     contents: [
-      // size:'md'（16px）が LINE の通常のトーク文字と同じ大きさ。太さは既定（regular）のまま
-      { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: true, gravity: 'center' },
+      label,
       {
         type: 'box',
         layout: 'vertical',
@@ -2672,34 +2726,36 @@ function replyShopList_(replyToken, note) {
   replyMessages_(replyToken, messages);
 }
 
-// ---------------------------------------------------------------- 材料確認（Flexバブル）
+// ---------------------------------------------------------------- 材料確認・在庫確認（Flexバブル）
 
-var RECIPE_ADD_PREFIX = 'recipe_add:';
-var RECIPE_ADD_ALL_PREFIX = 'recipe_add_all:';
+// data の文字列は変えないこと。トークに残っている古いバブルが押せなくなる
+var ADD_PREFIX = 'recipe_add:';
+var ADD_ALL_PREFIX = 'recipe_add_all:';
 
 /**
- * バブルに出した材料の控え。postback の data は300文字までで、材料が多いと
- * 品名を並べきれない。そこで data には並び順の番号だけを入れ、品名と区分は
- * スクリプトプロパティに預けておく。直近 RECIPE_SET_KEEP 回ぶんだけ残し、
- * それより古いバブルを押したときは案内を返す。
+ * バブルに出した品目の控え。材料確認と在庫確認の「追加」ボタンが共用する。
+ * postback の data は300文字までで、品目が多いと品名を並べきれない。
+ * そこで data には並び順の番号だけを入れ、品名と区分はスクリプトプロパティに
+ * 預けておく。直近 ADD_SET_KEEP 回ぶんだけ残し、それより古いバブルを
+ * 押したときは案内を返す。
  */
-var RECIPE_SET_KEY = 'RECIPE_SETS';
-var RECIPE_SET_KEEP = 3;
+var ADD_SET_KEY = 'RECIPE_SETS';
+var ADD_SET_KEEP = 3;
 
-var RECIPE_STALE_MESSAGE = 'この材料確認は古くなりました。\n写真を送り直してください。';
+var ADD_SET_STALE_MESSAGE = 'この一覧は古くなりました。\nもう一度実行してください。';
 
-function loadRecipeSets_() {
+function loadAddSets_() {
   try {
-    return JSON.parse(PropertiesService.getScriptProperties().getProperty(RECIPE_SET_KEY) || '[]');
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty(ADD_SET_KEY) || '[]');
   } catch (err) {
-    console.error('材料確認の控えを読めませんでした: ' + err.stack);
+    console.error('バブルの控えを読めませんでした: ' + err.stack);
     return [];
   }
 }
 
-function saveRecipeSet_(entries, missingCount) {
+function saveAddSet_(entries, missingCount) {
   var token = String(Date.now());
-  var sets = loadRecipeSets_();
+  var sets = loadAddSets_();
   sets.unshift({
     token: token,
     missingCount: missingCount,
@@ -2707,15 +2763,15 @@ function saveRecipeSet_(entries, missingCount) {
   });
 
   // スクリプトプロパティ1件の上限（9KB）に当てないよう、大きいときは直近だけ残す
-  var json = JSON.stringify(sets.slice(0, RECIPE_SET_KEEP));
+  var json = JSON.stringify(sets.slice(0, ADD_SET_KEEP));
   if (json.length > 8000) json = JSON.stringify(sets.slice(0, 1));
-  PropertiesService.getScriptProperties().setProperty(RECIPE_SET_KEY, json);
+  PropertiesService.getScriptProperties().setProperty(ADD_SET_KEY, json);
 
   return token;
 }
 
-function findRecipeSet_(token) {
-  return loadRecipeSets_().filter(function (s) { return s.token === token; })[0] || null;
+function findAddSet_(token) {
+  return loadAddSets_().filter(function (s) { return s.token === token; })[0] || null;
 }
 
 /**
@@ -2727,19 +2783,19 @@ function buildRecipeBubble_(missing, have, token) {
   var rows = [];
 
   if (missing.length) {
-    rows.push(recipeSectionLabel_('買うべきもの（' + missing.length + '件）'));
+    rows.push(bubbleSectionLabel_('買うべきもの（' + missing.length + '件）'));
     missing.forEach(function (e, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
       rows.push(recipeItemRow_(e, token, i));
     });
     rows.push({ type: 'separator', color: SHOP_LINE });
     rows.push(bubbleWideButton_('全て追加（' + missing.length + '件）',
-      { type: 'postback', label: '全て追加', data: RECIPE_ADD_ALL_PREFIX + token }));
+      { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token }));
   }
 
   if (have.length) {
     if (rows.length) rows.push({ type: 'separator', color: SHOP_LINE });
-    rows.push(recipeSectionLabel_('家にあるもの（' + have.length + '件）'));
+    rows.push(bubbleSectionLabel_('家にあるもの（' + have.length + '件）'));
     have.forEach(function (e, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
       rows.push(recipeItemRow_(e, token, missing.length + i));
@@ -2755,7 +2811,7 @@ function buildRecipeBubble_(missing, have, token) {
 }
 
 /** セクションの見出し行。品名より小さいグレーで、帯にはしない */
-function recipeSectionLabel_(text) {
+function bubbleSectionLabel_(text) {
   return {
     type: 'box',
     layout: 'vertical',
@@ -2772,7 +2828,96 @@ function recipeSectionLabel_(text) {
 /** 材料1件の行。読み取り確度が低いものには ⚠ を添える */
 function recipeItemRow_(entry, token, index) {
   return bubbleActionRow_(entry.name + (entry.low ? ' ⚠' : ''), '追加',
-    { type: 'postback', label: '追加', data: RECIPE_ADD_PREFIX + token + ':' + index });
+    { type: 'postback', label: '追加', data: ADD_PREFIX + token + ':' + index });
+}
+
+// ---------------------------------------------------------------- 在庫確認（Flexバブル）
+
+var STOCK_USED_PREFIX = 'stock_used:';
+
+var STOCK_RED = '#F87171';     // 期限切れ
+var STOCK_YELLOW = '#FBBF24';  // 残りわずか
+
+/**
+ * 期限の1行と、その色。週次通知と同じしきい値（残り1週間）で色を変える。
+ *   超過      … 赤
+ *   7日以内   … 黄
+ *   それ以外  … グレー（読めればよい補助情報なので目立たせない）
+ */
+function stockExpirySub_(it) {
+  if (!it.date) return { text: '期限不明', color: SHOP_GRAY };
+
+  var days = daysLeft_(it.date);
+  var label = it.label === '消費期限' ? '消費期限' : '賞味期限';
+  var remain = days < 0 ? (days * -1) + '日超過' : days === 0 ? '今日まで' : '残り' + days + '日';
+  var color = days < 0 ? STOCK_RED : days <= NOTIFY_1W_DAYS ? STOCK_YELLOW : SHOP_GRAY;
+
+  return { text: label + ' ' + it.date + ' ・ ' + remain, color: color };
+}
+
+/**
+ * 在庫確認のバブル。あるものは期限を色付きで添えて「使った」を、
+ * ないものは品名だけを並べて「追加」（買い物リストへ）を付ける。
+ */
+function buildStockCheckBubble_(have, missing, token) {
+  var rows = [];
+
+  if (have.length) {
+    rows.push(bubbleSectionLabel_('在庫にあります（' + have.length + '件）'));
+    have.forEach(function (it, i) {
+      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      rows.push(bubbleActionRow_(
+        it.item_name + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
+        '使った',
+        { type: 'postback', label: '使った', data: STOCK_USED_PREFIX + it.id },
+        stockExpirySub_(it)));
+    });
+  }
+
+  if (missing.length) {
+    if (rows.length) rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push(bubbleSectionLabel_('在庫にありません（' + missing.length + '件）'));
+    missing.forEach(function (e, i) {
+      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      rows.push(recipeItemRow_(e, token, i));
+    });
+    rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push(bubbleWideButton_('全て追加（' + missing.length + '件）',
+      { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token }));
+  }
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: bubbleHeader_('在庫確認', 'あり' + have.length + '件'),
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+/**
+ * postback「使った」ボタン用。IDで1件だけ消費済にする下ごしらえ。
+ * 買い物リストと同じく、ここでは書かずに返信を先に送る。
+ */
+function stockUsedPlan_(id) {
+  var sh = sheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return { notFound: true };
+
+  var data = sh.getRange(2, 1, last - 1, COL_COUNT).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][COL.ID - 1]) !== String(id)) continue;
+
+    var name = data[i][COL.NAME - 1];
+    if (data[i][COL.STATUS - 1] !== STATUS.STOCK) return { already: true, name: name };
+    return { sheet: sh, row: i + 2, name: name };
+  }
+  return { notFound: true };
+}
+
+/** stockUsedPlan_ が決めた1件を消費済にする。状態と更新日時を1回で書く */
+function stockUsedCommit_(plan) {
+  plan.sheet.getRange(plan.row, COL.STATUS, 1, 2).setValues([[STATUS.USED, nowStamp_()]]);
+  setLastOp_({ type: 'consume', rows: [plan.row] });
 }
 
 /**
@@ -2848,11 +2993,11 @@ function replyShopAdd_(replyToken, note, items) {
 }
 
 /** 材料確認のバブルから1件だけ買い物リストに入れる */
-function handleRecipeAdd_(replyToken, data) {
+function handleBubbleAdd_(replyToken, data) {
   var m = /^(\d+):(\d+)$/.exec(data);
-  var set = m && findRecipeSet_(m[1]);
+  var set = m && findAddSet_(m[1]);
   if (!set) {
-    replyText_(replyToken, RECIPE_STALE_MESSAGE);
+    replyText_(replyToken, ADD_SET_STALE_MESSAGE);
     return;
   }
 
@@ -2874,10 +3019,10 @@ function handleRecipeAdd_(replyToken, data) {
 }
 
 /** 材料確認のバブルから「買うべきもの」をまとめて買い物リストに入れる */
-function handleRecipeAddAll_(replyToken, token) {
-  var set = findRecipeSet_(token);
+function handleBubbleAddAll_(replyToken, token) {
+  var set = findAddSet_(token);
   if (!set) {
-    replyText_(replyToken, RECIPE_STALE_MESSAGE);
+    replyText_(replyToken, ADD_SET_STALE_MESSAGE);
     return;
   }
 
@@ -2901,12 +3046,28 @@ function handleRecipeAddAll_(replyToken, token) {
 function handlePostback_(event) {
   var data = (event.postback && event.postback.data) || '';
 
-  if (data.indexOf(RECIPE_ADD_PREFIX) === 0) {
-    handleRecipeAdd_(event.replyToken, data.substring(RECIPE_ADD_PREFIX.length));
+  if (data.indexOf(ADD_PREFIX) === 0) {
+    handleBubbleAdd_(event.replyToken, data.substring(ADD_PREFIX.length));
     return;
   }
-  if (data.indexOf(RECIPE_ADD_ALL_PREFIX) === 0) {
-    handleRecipeAddAll_(event.replyToken, data.substring(RECIPE_ADD_ALL_PREFIX.length));
+  if (data.indexOf(ADD_ALL_PREFIX) === 0) {
+    handleBubbleAddAll_(event.replyToken, data.substring(ADD_ALL_PREFIX.length));
+    return;
+  }
+
+  // 在庫確認のバブルの「使った」。押された1件だけを消費済にする
+  if (data.indexOf(STOCK_USED_PREFIX) === 0) {
+    var used = stockUsedPlan_(data.substring(STOCK_USED_PREFIX.length));
+    if (used.notFound) {
+      replyText_(event.replyToken, 'この項目は見つかりませんでした。');
+      return;
+    }
+    if (used.already) {
+      replyText_(event.replyToken, used.name + ' はすでに使用済です。');
+      return;
+    }
+    replyFlexMessage_(event.replyToken, '在庫', buildShopCheckBubble_(used.name));
+    commitOrNotify_(function () { stockUsedCommit_(used); }, used.name + ' の使用');
     return;
   }
 
