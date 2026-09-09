@@ -2599,13 +2599,16 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
  * 色は用途で変える。セクション見出しを持つバブル（材料確認・在庫確認）は
  * 白にして、緑はセクションの縦棒とボタンのほうに使う。
  */
-function bubbleHeader_(title, note, titleColor) {
+function bubbleHeader_(title, note, titleColor, pill) {
   var contents = [
-    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 1 }
+    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 0, gravity: 'center' }
   ];
-  if (note) {
-    contents.push({ type: 'text', text: note, size: 'sm', color: SHOP_GRAY, align: 'end', gravity: 'center' });
-  }
+  // 件数は見出しのすぐ右に小さく添える。残りの幅を持たせて、ボタンを右端に寄せる
+  contents.push({
+    type: 'text', text: note || '', size: 'xs', color: SHOP_GRAY,
+    gravity: 'center', margin: 'md', flex: 1
+  });
+  if (pill) contents.push(pill);
 
   return {
     type: 'box',
@@ -2613,8 +2616,9 @@ function bubbleHeader_(title, note, titleColor) {
     backgroundColor: SHOP_HEADER_BG,
     paddingStart: '14px',
     paddingEnd: '14px',
-    paddingTop: '12px',
-    paddingBottom: '12px',
+    // ボタンの有無で高さが変わらないよう、セクション見出しと同じ決め打ちにする
+    height: SECTION_HEADER_H,
+    alignItems: 'center',
     contents: contents
   };
 }
@@ -2698,22 +2702,14 @@ function buildShopListBubble_(todo) {
       { type: 'postback', label: '削除', data: shopBoughtPostbackData_(t.id) }));
   });
 
+  // 「全て削除」は見出しの右のボタンに移した。最下段に横いっぱいのボタンを
+  // 置くより、品目の並びが途切れず読みやすい
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('買い物リスト', '残り' + todo.length + '件'),
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows },
-    footer: {
-      type: 'box',
-      layout: 'vertical',
-      backgroundColor: SHOP_BG,
-      paddingAll: '0px',
-      spacing: 'none',
-      contents: [
-        { type: 'separator', color: SHOP_LINE },
-        bubbleWideButton_('全て削除', { type: 'postback', label: '全て削除', data: SHOP_POSTBACK_ALL })
-      ]
-    }
+    header: bubbleHeader_('買い物リスト', todo.length + '件', SHOP_TEXT,
+      bubblePillButton_('全て削除', { type: 'postback', label: '全て削除', data: SHOP_POSTBACK_ALL })),
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -2896,14 +2892,10 @@ function recipeItemRow_(entry, token, index, actionColor) {
 
 var STOCK_USED_PREFIX = 'stock_used:';
 
-var STOCK_RED = '#F87171';     // 期限切れ
-var STOCK_YELLOW = '#FBBF24';  // 残りわずか
-
 /**
- * 期限の1行と、その色。週次通知と同じしきい値（残り1週間）で色を変える。
- *   超過      … 赤
- *   7日以内   … 黄
- *   それ以外  … グレー（読めればよい補助情報なので目立たせない）
+ * 品名の下に添える期限の1行。
+ * 期限が近いものから順に並べているので、危ないものは色を変えなくても上に来る。
+ * 色を変えないぶん、行の読みやすさが一定に保たれる。
  */
 function stockExpirySub_(it) {
   if (!it.date) return { text: '期限不明', color: SHOP_GRAY };
@@ -2911,9 +2903,8 @@ function stockExpirySub_(it) {
   var days = daysLeft_(it.date);
   var label = it.label === '消費期限' ? '消費期限' : '賞味期限';
   var remain = days < 0 ? (days * -1) + '日超過' : days === 0 ? '今日まで' : '残り' + days + '日';
-  var color = days < 0 ? STOCK_RED : days <= NOTIFY_1W_DAYS ? STOCK_YELLOW : SHOP_GRAY;
 
-  return { text: label + ' ' + it.date + ' ・ ' + remain, color: color };
+  return { text: label + ' ' + it.date + ' ・ ' + remain, color: SHOP_GRAY };
 }
 
 /**
@@ -2924,6 +2915,13 @@ function buildStockCheckBubble_(have, missing, token) {
   var rows = [];
 
   if (have.length) {
+    // 期限が近いものを上に。期限が分からないものは末尾に回す
+    have = have.slice().sort(function (a, b) {
+      if (!a.date) return b.date ? 1 : 0;
+      if (!b.date) return -1;
+      return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+    });
+
     rows.push(bubbleSectionHeader_('在庫あり', have.length, SHOP_GREEN));
     have.forEach(function (it, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
