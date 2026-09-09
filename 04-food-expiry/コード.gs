@@ -2527,8 +2527,12 @@ function shopBoughtCommit_(plan) {
 var SHOP_BG = '#1e2127';
 var SHOP_SECTION_BG = '#262a30'; // セクション見出しの帯。品目の行より1段明るく
 var SHOP_GREEN = '#4ADE80';
-var SHOP_BLUE = '#60A5FA';       // 「買うべきもの」「在庫にありません」の縦棒
+// 「買うべきもの」「在庫にありません」の縦棒。リッチメニュー左列のアイコン
+// （richmenu.py の PALE_BLUE）と同じ色にして、見た目の系統を揃えている
+var SHOP_BLUE = '#93C5FD';
 var SHOP_GRAY = '#9CA3AF';
+// セクション見出しの帯の高さ。ボタンの有無で高さがずれないよう決め打ちにする
+var SECTION_HEADER_H = '44px';
 var SHOP_TEXT = '#F3F4F6';
 var SHOP_LINE = '#33363c';
 var SHOP_POSTBACK_ALL = 'shop_bought_all';
@@ -2616,13 +2620,22 @@ function bubbleHeader_(title, note, titleColor) {
  * 帯の地色を1段明るくして、品目の行と区別する。
  */
 function bubbleSectionHeader_(title, count, barColor, pill) {
-  var left = [
-    // 縦棒。高さは中身に合わせて伸びるので、幅だけ決めておく
-    { type: 'box', layout: 'vertical', flex: 0, width: '6px', backgroundColor: barColor, cornerRadius: '3px', contents: [{ type: 'filler' }] },
+  var contents = [
+    // 縦棒。幅と高さを両方決めること。高さを省くと中身が無いぶん潰れて描画されない
+    {
+      type: 'box',
+      layout: 'vertical',
+      flex: 0,
+      width: '5px',
+      height: '20px',
+      backgroundColor: barColor,
+      cornerRadius: '3px',
+      contents: [{ type: 'filler' }]
+    },
     { type: 'text', text: title, weight: 'bold', size: 'md', color: SHOP_TEXT, flex: 0, gravity: 'center', margin: 'md' },
     { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, gravity: 'center', margin: 'md', flex: 1 }
   ];
-  if (pill) left.push(pill);
+  if (pill) contents.push(pill);
 
   return {
     type: 'box',
@@ -2630,10 +2643,11 @@ function bubbleSectionHeader_(title, count, barColor, pill) {
     backgroundColor: SHOP_SECTION_BG,
     paddingStart: '14px',
     paddingEnd: '14px',
-    paddingTop: '10px',
-    paddingBottom: '10px',
+    // 高さを決め打ちにして、ボタンの有無で帯の高さが変わらないようにする
+    // （ボタンのあるほうだけ縦に広がって、並べたときに揃わないため）
+    height: SECTION_HEADER_H,
     alignItems: 'center',
-    contents: left
+    contents: contents
   };
 }
 
