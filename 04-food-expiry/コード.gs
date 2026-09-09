@@ -2599,6 +2599,8 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
  * 色は用途で変える。セクション見出しを持つバブル（材料確認・在庫確認）は
  * 白にして、緑はセクションの縦棒とボタンのほうに使う。
  */
+// 注意: これはバブルの header ブロックではなく、body の先頭に置く帯として使う。
+// header ブロックに高さを指定すると中身が切られて、見出しもボタンも欠ける
 function bubbleHeader_(title, note, titleColor, pill) {
   var contents = [
     { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 0, gravity: 'center' }
@@ -2695,20 +2697,21 @@ function bubbleWideButton_(label, action) {
 }
 
 function buildShopListBubble_(todo) {
-  var rows = [];
+  // 「全て削除」は見出しの右のボタンに置く。最下段に横いっぱいのボタンを
+  // 置くより、品目の並びが途切れず読みやすい
+  var rows = [
+    bubbleHeader_('買い物リスト', todo.length + '件', SHOP_TEXT,
+      bubblePillButton_('全て削除', { type: 'postback', label: '全て削除', data: SHOP_POSTBACK_ALL }))
+  ];
   todo.forEach(function (t, i) {
     if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
     rows.push(bubbleActionRow_(t.name, '削除',
       { type: 'postback', label: '削除', data: shopBoughtPostbackData_(t.id) }));
   });
 
-  // 「全て削除」は見出しの右のボタンに移した。最下段に横いっぱいのボタンを
-  // 置くより、品目の並びが途切れず読みやすい
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('買い物リスト', todo.length + '件', SHOP_TEXT,
-      bubblePillButton_('全て削除', { type: 'postback', label: '全て削除', data: SHOP_POSTBACK_ALL })),
     body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
@@ -2893,7 +2896,7 @@ function recipeItemRow_(entry, token, index, actionColor) {
 var STOCK_USED_PREFIX = 'stock_used:';
 
 /**
- * 品名の下に添える期限の1行。
+ * 品名の下に添える期限の1行。日付そのものは出さず、残り日数だけにする。
  * 期限が近いものから順に並べているので、危ないものは色を変えなくても上に来る。
  * 色を変えないぶん、行の読みやすさが一定に保たれる。
  */
@@ -2904,7 +2907,7 @@ function stockExpirySub_(it) {
   var label = it.label === '消費期限' ? '消費期限' : '賞味期限';
   var remain = days < 0 ? (days * -1) + '日超過' : days === 0 ? '今日まで' : '残り' + days + '日';
 
-  return { text: label + ' ' + it.date + ' ・ ' + remain, color: SHOP_GRAY };
+  return { text: label + ' ' + remain, color: SHOP_GRAY };
 }
 
 /**
@@ -2982,35 +2985,27 @@ function stockUsedCommit_(plan) {
  * （追加のたびに全件返すと、件数が増えたときトークが埋まるため）。
  */
 function buildShopAddedListBubble_(plan) {
+  // 「全て取消」が消すのは、このバブルに並んでいる分だけ（買い物リスト全体ではない）。
+  // IDはまとめて確保していて必ず連番なので、範囲だけ渡せば足りる
+  var range = plan.ids[0] + '-' + plan.ids[plan.ids.length - 1];
+
+  var rows = [
+    bubbleHeader_('買い物リストに追加', plan.add.length + '件', SHOP_TEXT,
+      bubblePillButton_('全て取消',
+        { type: 'postback', label: '全て取消', data: SHOP_POSTBACK_RANGE + range }))
+  ];
+
   // 今入れた分を取り下げる操作なので、買い物リスト表示の「削除」ではなく「取消」にする
-  var rows = [];
   plan.add.forEach(function (it, i) {
     if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
     rows.push(bubbleActionRow_(it.name, '取消',
       { type: 'postback', label: '取消', data: shopBoughtPostbackData_(plan.ids[i]) }));
   });
 
-  // 「全て取消」が消すのは、このバブルに並んでいる分だけ（買い物リスト全体ではない）。
-  // IDはまとめて確保していて必ず連番なので、範囲だけ渡せば足りる
-  var range = plan.ids[0] + '-' + plan.ids[plan.ids.length - 1];
-
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('買い物リストに追加', plan.add.length + '件'),
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows },
-    footer: {
-      type: 'box',
-      layout: 'vertical',
-      backgroundColor: SHOP_BG,
-      paddingAll: '0px',
-      spacing: 'none',
-      contents: [
-        { type: 'separator', color: SHOP_LINE },
-        bubbleWideButton_('全て取消',
-          { type: 'postback', label: '全て取消', data: SHOP_POSTBACK_RANGE + range })
-      ]
-    }
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
