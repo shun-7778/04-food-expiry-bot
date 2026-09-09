@@ -255,7 +255,7 @@ var HELP_MESSAGE = [
   '■ 在庫確認',
   '「在庫確認 醤油、みりん」のように送ると、それぞれ',
   '在庫にあるかどうかを返します。あるものは期限を',
-  '色付き（超過=赤／残り1週間=黄）で示し、「使った」で',
+  '色付き（超過=赤／残り1週間=黄）で示し、「使用済」で',
   'その場で消費できます。ないものは「追加」で買い物',
   'リストに入れられます。',
   '',
@@ -2876,10 +2876,11 @@ function buildRecipeBubble_(missing, have, token) {
     });
   }
 
+  // 見出し帯は置かない。何の返信かは押したボタンで分かるので、
+  // セクションの見出し（買うべきもの）が一番上に来るほうが情報が早く読める
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('材料確認', '', SHOP_TEXT),
     body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
@@ -2923,19 +2924,19 @@ function buildStockCheckBubble_(have, missing, token) {
   var rows = [];
 
   if (have.length) {
-    rows.push(bubbleSectionHeader_('在庫にあります', have.length, SHOP_GREEN));
+    rows.push(bubbleSectionHeader_('在庫あり', have.length, SHOP_GREEN));
     have.forEach(function (it, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
       rows.push(bubbleActionRow_(
         it.item_name + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
-        '使った',
-        { type: 'postback', label: '使った', data: STOCK_USED_PREFIX + it.id },
+        '使用済',
+        { type: 'postback', label: '使用済', data: STOCK_USED_PREFIX + it.id },
         stockExpirySub_(it)));
     });
   }
 
   if (missing.length) {
-    rows.push(bubbleSectionHeader_('在庫にありません', missing.length, SHOP_BLUE,
+    rows.push(bubbleSectionHeader_('在庫なし', missing.length, SHOP_BLUE,
       bubblePillButton_('全て追加', { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token })));
     missing.forEach(function (e, i) {
       if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
@@ -2943,10 +2944,10 @@ function buildStockCheckBubble_(have, missing, token) {
     });
   }
 
+  // 材料確認と同じく見出し帯は置かない（セクションの見出しが一番上に来る）
   return {
     type: 'bubble',
     size: 'mega',
-    header: bubbleHeader_('在庫確認', '', SHOP_TEXT),
     body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
