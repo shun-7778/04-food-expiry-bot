@@ -2524,8 +2524,13 @@ function shopBoughtCommit_(plan) {
  * 1つずつ付き、押しても入力欄に文字は入らず自分の発言も残らない。
  * 押した後の反応は handlePostback_ 側で個別に返す（このバブル自体は編集できない）。
  */
+// 背景は3段。下に行くほど暗くして、上下の関係が見た目で分かるようにしている
+//   バブル上部の見出し帯 … 一番明るい
+//   セクション見出しの帯 … 中間
+//   品目の行           … 一番暗い（バブルの地色）
 var SHOP_BG = '#1e2127';
-var SHOP_SECTION_BG = '#262a30'; // セクション見出しの帯。品目の行より1段明るく
+var SHOP_SECTION_BG = '#262a30';
+var SHOP_HEADER_BG = '#2e333a';
 var SHOP_GREEN = '#4ADE80';
 // 「買うべきもの」「在庫にありません」の縦棒。リッチメニュー左列のアイコン
 // （richmenu.py の PALE_BLUE）と同じ色にして、見た目の系統を揃えている
@@ -2605,7 +2610,7 @@ function bubbleHeader_(title, note, titleColor) {
   return {
     type: 'box',
     layout: 'horizontal',
-    backgroundColor: SHOP_BG,
+    backgroundColor: SHOP_HEADER_BG,
     paddingStart: '14px',
     paddingEnd: '14px',
     paddingTop: '12px',
