@@ -2536,8 +2536,10 @@ var SHOP_GREEN = '#4ADE80';
 // （richmenu.py の PALE_BLUE）と同じ色にして、見た目の系統を揃えている
 var SHOP_BLUE = '#93C5FD';
 var SHOP_GRAY = '#9CA3AF';
-// セクション見出しの帯の高さ。ボタンの有無で高さがずれないよう決め打ちにする
-var SECTION_HEADER_H = '44px';
+// セクション見出しの帯の高さ。ボタンの有無で高さがずれないよう決め打ちにする。
+// 丸いボタン（md の文字＋上下の余白＋枠）が収まる高さにしてあるので、
+// ボタンの文字を大きくするならここも合わせて上げること
+var SECTION_HEADER_H = '52px';
 var SHOP_TEXT = '#F3F4F6';
 var SHOP_LINE = '#33363c';
 var SHOP_POSTBACK_ALL = 'shop_bought_all';
@@ -2603,13 +2605,12 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
 // header ブロックに高さを指定すると中身が切られて、見出しもボタンも欠ける
 function bubbleHeader_(title, note, titleColor, pill) {
   var contents = [
-    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 0, gravity: 'center' }
+    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 0, gravity: 'center' },
+    { type: 'text', text: note || '', size: 'xs', color: SHOP_GRAY, flex: 0, gravity: 'center', margin: 'md' },
+    // 伸び縮みする余白。幅が足りないときはここが先に潰れるので、
+    // 見出しや件数の文字が欠けない
+    { type: 'filler' }
   ];
-  // 件数は見出しのすぐ右に小さく添える。残りの幅を持たせて、ボタンを右端に寄せる
-  contents.push({
-    type: 'text', text: note || '', size: 'xs', color: SHOP_GRAY,
-    gravity: 'center', margin: 'md', flex: 1
-  });
   if (pill) contents.push(pill);
 
   return {
@@ -2644,7 +2645,9 @@ function bubbleSectionHeader_(title, count, barColor, pill) {
       contents: [{ type: 'filler' }]
     },
     { type: 'text', text: title, weight: 'bold', size: 'md', color: SHOP_TEXT, flex: 0, gravity: 'center', margin: 'md' },
-    { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, gravity: 'center', margin: 'md', flex: 1 }
+    { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, flex: 0, gravity: 'center', margin: 'md' },
+    // 伸び縮みする余白。幅が足りないときはここが先に潰れる
+    { type: 'filler' }
   ];
   if (pill) contents.push(pill);
 
@@ -2662,7 +2665,11 @@ function bubbleSectionHeader_(title, count, barColor, pill) {
   };
 }
 
-/** 見出し帯の右に置く、緑の枠線だけの丸いボタン */
+/**
+ * 見出し帯の右に置く、緑の枠線だけの丸いボタン。
+ * 文字は行の「追加」「使用済」と同じ md。枠のぶん小さく見えないよう揃えている
+ * （そのぶん帯は高くなるので、SECTION_HEADER_H もあわせて決めてある）
+ */
 function bubblePillButton_(label, action) {
   return {
     type: 'box',
@@ -2673,11 +2680,11 @@ function bubblePillButton_(label, action) {
     cornerRadius: '999px',
     paddingStart: '14px',
     paddingEnd: '14px',
-    paddingTop: '6px',
-    paddingBottom: '6px',
+    paddingTop: '5px',
+    paddingBottom: '5px',
     action: action,
     contents: [
-      { type: 'text', text: label, color: SHOP_GREEN, size: 'xs', align: 'center' }
+      { type: 'text', text: label, color: SHOP_GREEN, size: 'md', align: 'center' }
     ]
   };
 }
@@ -2989,8 +2996,10 @@ function buildShopAddedListBubble_(plan) {
   // IDはまとめて確保していて必ず連番なので、範囲だけ渡せば足りる
   var range = plan.ids[0] + '-' + plan.ids[plan.ids.length - 1];
 
+  // 見出しは「買い物リストに追加」だと、件数と丸いボタンを足した幅が
+  // バブルに収まらない。何のリストかは押したボタンで分かるので短くする
   var rows = [
-    bubbleHeader_('買い物リストに追加', plan.add.length + '件', SHOP_TEXT,
+    bubbleHeader_('リストに追加', plan.add.length + '件', SHOP_TEXT,
       bubblePillButton_('全て取消',
         { type: 'postback', label: '全て取消', data: SHOP_POSTBACK_RANGE + range }))
   ];
