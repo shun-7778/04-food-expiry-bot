@@ -93,7 +93,9 @@ function webTab_(tab) {
  * 中身だけを枠に収めて見せるための1枚を挟んでいる。
  * 表示先の URL は公開リポジトリに置かず、ここからパラメータで渡す。
  */
-var WEB_FRAME_URL = 'https://shun-7778.github.io/food-expiry-bot/';
+// ⚠ GitHub のリポジトリ名を変えると、この URL も変わる（Pages は /<リポジトリ名>/ で配信される）。
+// 変えたらここを直し、setupRichMenu() を実行し直すこと。メニューのリンクにこの URL が焼き込まれるため
+var WEB_FRAME_URL = 'https://shun-7778.github.io/04-food-expiry-bot/';
 
 /**
  * 画面のURL。LINE の「リンク」コマンドと、GASエディタからの確認で使う。
