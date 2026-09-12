@@ -3871,6 +3871,41 @@ function lineApiIgnore404_(method, url) {
   return res;
 }
 
+/**
+ * いま LINE 側がどうなっているかを見る。GASエディタから実行する。読むだけで何も変えない。
+ *
+ * ちらつきを調べるときに使う。メニューが2つ以上残っていたり、既定と個別割り当ての
+ * 両方が設定されていたりすると、開いた直後に片方からもう片方へ切り替わって見える。
+ */
+function showRichMenuStatus() {
+  var list = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
+  var menus = list.richmenus || [];
+  console.log('登録されているリッチメニュー: ' + menus.length + '件'
+    + (menus.length > 1 ? '  ← 2件以上あると切り替わって見えることがある' : ''));
+  menus.forEach(function (m) {
+    console.log('  ' + m.richMenuId + '  name=' + m.name + '  selected=' + m.selected);
+  });
+
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/user/all/richmenu', {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
+    muteHttpExceptions: true
+  });
+  console.log('既定のリッチメニュー: '
+    + (res.getResponseCode() === 200 ? res.getContentText() + '  ← 個別割り当てと二重になっている'
+      : 'なし（個別割り当てのみ。これが今の想定）'));
+
+  allowedUserIds_().forEach(function (uid) {
+    var r = UrlFetchApp.fetch('https://api.line.me/v2/bot/user/' + encodeURIComponent(uid) + '/richmenu', {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
+      muteHttpExceptions: true
+    });
+    console.log('個別割り当て ' + uid + ': '
+      + (r.getResponseCode() === 200 ? r.getContentText() : 'なし（HTTP ' + r.getResponseCode() + '）'));
+  });
+}
+
 /** リッチメニューを全部消す。表示を止めたいときにエディタから実行する */
 function deleteRichMenus() {
   var list = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
