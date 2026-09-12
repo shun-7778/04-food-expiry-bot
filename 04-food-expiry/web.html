@@ -23,9 +23,10 @@
   --shadow: 0 3px 10px rgba(16, 24, 40, .18);
   --shadow-lift: 0 6px 16px rgba(16, 24, 40, .26);
 
-  /* 期限の3段階。左の帯・日数・絞り込みボタンで同じ色を使う */
+  /* 期限の3段階。左の帯・日数・絞り込みボタンで同じ色を使う。
+     mark は点や帯のような面で出すところ用。文字は地の上で読めるよう一段濃くする */
   --over-bg: #fdecec;   --over-fg: #d92d20;
-  --soon-bg: #fdf4e3;   --soon-fg: #b45309;
+  --soon-bg: #fef8e1;   --soon-fg: #a16207;   --soon-mark: #eab308;
   --ok-bg:   #e9f7ef;   --ok-fg:   #0f7a45;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -121,7 +122,7 @@ body {
 .chip .dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
 .chip .cnt { font-size: 17px; font-weight: 800; line-height: 1.1; }
 .chip.over .dot { background: var(--over-fg); }
-.chip.soon .dot { background: var(--soon-fg); }
+.chip.soon .dot { background: var(--soon-mark); }
 .chip.ok .dot { background: var(--ok-fg); }
 .chip.all.on { background: var(--pill); border-color: #b9c2cd; color: var(--text); }
 .chip.over.on { background: var(--over-bg); border-color: var(--over-fg); color: var(--over-fg); }
@@ -129,7 +130,6 @@ body {
 .chip.ok.on { background: var(--ok-bg); border-color: var(--ok-fg); color: var(--ok-fg); }
 
 .sec { font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 2px 4px; }
-.hintbar { font-size: 11px; color: var(--sub); margin: 0 2px 7px; }
 .loadingbar {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   color: var(--sub); font-size: 12px; font-weight: 700; padding: 10px 0 2px;
@@ -157,7 +157,7 @@ body {
 .card .bar { flex: 0 0 auto; width: 4px; height: 31px; border-radius: 999px; background: var(--line); }
 .card .bar.shop { background: var(--blue); }
 .card .bar.over { background: var(--over-fg); }
-.card .bar.soon { background: var(--soon-fg); }
+.card .bar.soon { background: var(--soon-mark); }
 .card .bar.ok { background: var(--ok-fg); }
 .card .body { flex: 1; min-width: 0; }
 .card .name { font-weight: 700; }
@@ -173,7 +173,7 @@ body {
 .card .days .u { font-size: 10px; font-weight: 700; }
 /* 済みの行。その場に残したまま、地の色を落として一目で区別できるようにする。
    枠を破線にして「まだ確定していない・戻せる」感じを出す */
-.swipe.done { box-shadow: none; }
+.swipe.undo { box-shadow: none; }
 .card.done { background: var(--pill); border: 1px dashed #c4ccd6; }
 .card.done .name { color: var(--sub); font-weight: 600; text-decoration: line-through; }
 .card.done .meta { color: var(--sub); }
@@ -213,7 +213,7 @@ body {
     <div class="chips">
       <button class="chip all on" id="f-all"><span class="top">すべて</span><span class="cnt" id="c-all">0</span></button>
       <button class="chip over" id="f-over"><span class="top"><span class="dot"></span>期限切れ</span><span class="cnt" id="c-over">0</span></button>
-      <button class="chip soon" id="f-soon"><span class="top"><span class="dot"></span>3日以内</span><span class="cnt" id="c-soon">0</span></button>
+      <button class="chip soon" id="f-soon"><span class="top"><span class="dot"></span>7日以内</span><span class="cnt" id="c-soon">0</span></button>
       <button class="chip ok" id="f-ok"><span class="top"><span class="dot"></span>余裕あり</span><span class="cnt" id="c-ok">0</span></button>
     </div>
   </div>
@@ -225,14 +225,11 @@ body {
 
   <section id="panel-shop">
     <div class="sec">未購入</div>
-    <div class="hintbar">右にスワイプ＝購入済み　／　済みの行を右にスワイプ＝取消</div>
     <div id="list-todo"></div>
   </section>
 
   <section id="panel-stock" hidden>
     <div class="sec">期限が近い順</div>
-    <div class="hintbar">右にスワイプ＝使用済み　／　左にスワイプ＝使用済み＋買い物リストへ</div>
-    <div class="hintbar">済みの行を右にスワイプ＝取消</div>
     <div id="list-stock"></div>
   </section>
 </div>
@@ -259,6 +256,7 @@ var pending = 0;      // 書き込み待ちの件数。0 になるまでサー�
 var waiting = {};     // 書き込み待ちの品目。その行に「読み込み中」を出す
 var tempSeq = 0;      // 追加した直後の、まだ ID が無い品目に振る仮の番号
 var filter = '';   // '' / 'over' / 'soon' / 'ok'
+var SOON_DAYS = 7;   // 「期限が近い」とみなす残り日数。絞り込みのボタンの文言と揃えること
 
 // この画面で操作したぶんだけを控える。読み込み直すと消えるので、
 // 「購入済み」「使用済み」にはその場で操作した分しか並ばない
@@ -319,11 +317,14 @@ function load() {
 
 // ---------------------------------------------------------------- 期限の区分
 
-/** 期限までの日数を3段階に分ける。期限が分からないものはどれにも入れない */
+/**
+ * 期限までの日数を3段階に分ける。期限が分からないものはどれにも入れない。
+ * 「近い」の境目は7日。週次通知の「残り1週間」（NOTIFY_1W_DAYS）と揃えてある。
+ */
 function level(it) {
   if (it.days === null || it.days === undefined) return '';
   if (it.days < 0) return 'over';
-  if (it.days <= 3) return 'soon';
+  if (it.days <= SOON_DAYS) return 'soon';
   return 'ok';
 }
 
