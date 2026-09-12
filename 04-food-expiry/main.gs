@@ -6,7 +6,9 @@
  * 前提: スクリプトプロパティに以下を設定しておくこと
  *   LINE_CHANNEL_ACCESS_TOKEN : LINE Developers の長期チャネルアクセストークン
  *   ANTHROPIC_API_KEY         : Anthropic コンソールで発行した API キー
- *   ALLOWED_USER_ID           : (任意) 自分の LINE userId。設定すると他人からの投稿を無視する
+ *   ALLOWED_USER_IDS          : (任意) 使ってよい人の LINE userId をカンマ区切りで。
+ *                               設定すると、それ以外からの投稿を無視する。週次通知の宛先も兼ねる
+ *   ALLOWED_USER_ID           : (任意) 上の1人版。両方あれば両方を許す
  */
 
 /**
@@ -46,8 +48,10 @@ var COL = {
   RAW: 11,        // 原文（写真の印字、または発話の該当部分）
   STATUS: 12,     // 在庫 / 消費済 / 破棄 / 取消
   UPDATED: 13,    // 状態を最後に変えた日時
-  NOTIFIED_1M: 14, // 残り1か月の通知を送った日
-  NOTIFIED_1W: 15  // 残り1週間の通知を送った日
+  // 14・15列目は、以前「残り1か月／1週間を1回だけ通知する」ために使っていた印。
+  // 今は毎週再掲するので読み書きしない。既存シートの列を保つために定義だけ残す
+  NOTIFIED_1M: 14,
+  NOTIFIED_1W: 15
 };
 var COL_COUNT = 15;
 
@@ -93,7 +97,8 @@ var NOTIFY_1W_DAYS = 7;
  * LAST_OP / PENDING / SHOP_NEXT_ID / RECIPE_SETS は実行中に書き換えるので
  * ここには入れないこと（毎回そのまま読む）。
  */
-var PROP_FIXED_KEYS_ = ['SPREADSHEET_ID', 'LINE_CHANNEL_ACCESS_TOKEN', 'ANTHROPIC_API_KEY', 'ALLOWED_USER_ID'];
+var PROP_FIXED_KEYS_ = ['SPREADSHEET_ID', 'LINE_CHANNEL_ACCESS_TOKEN', 'ANTHROPIC_API_KEY',
+  'ALLOWED_USER_ID', 'ALLOWED_USER_IDS'];
 var PROP_CACHE_ = null;
 
 function prop_(key, required) {
@@ -115,13 +120,30 @@ function prop_(key, required) {
 
 /**
  * LINE Messaging API の Webhook 受け口。
- * 注意: GAS の doPost は HTTP ヘッダーを取得できないため X-Line-Signature の
- * 検証はできない。代わりに ALLOWED_USER_ID による送信者チェックで代用する。
+ *
+ * このデプロイは webhook を受けるために「全員がアクセス可能」で公開されているので、
+ * URL を知っている人は誰でもここに POST できてしまう。GAS の doPost は HTTP ヘッダーを
+ * 取れず X-Line-Signature を検証できないため、代わりに URL のクエリ ?s= に置いた秘密で
+ * 本物かを判定する（security.gs の webhookRequestOk_）。
+ *
+ * 本文の source.userId は送信者が自由に書ける値なので、それ単独では認証にならない。
+ * ALLOWED_USER_ID の判定は、秘密が漏れたときに備えた二枚目の壁として残してある。
  */
 function doPost(e) {
   try {
+    if (!webhookRequestOk_(e)) {
+      console.warn('秘密の合わない POST を無視しました');
+      return webhookResponse_();
+    }
+
+    // ここは本物の /exec で動いている。外から開くURLを組み立てるのに要るので控えておく
+    rememberExecUrl_();
+
     var body = JSON.parse(e.postData.contents);
     var events = body.events || [];
+
+    // シートも Claude も触る前に、何より先に出す
+    startLoading_(events);
 
     // 写真は複数枚まとめて送られることがある。同じ webhook 呼び出しに
     // 含まれる image イベントはまとめて1回のレシピ照合として扱う。
@@ -140,24 +162,146 @@ function doPost(e) {
   } catch (err) {
     console.error('doPost failed: ' + err.stack);
   }
-  // LINE には常に 200 を返す（エラーを返すと再送され続けるため）
+  return webhookResponse_();
+}
+
+/**
+ * webhook への返事。中身は常に同じにしておく。
+ * 受け付けたか弾いたかを返り値で区別できると、秘密を総当たりする手掛かりになるため。
+ * LINE には常に 200 を返す（エラーを返すと再送され続ける）。
+ */
+function webhookResponse_() {
   return ContentService.createTextOutput(JSON.stringify({ ok: true }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/** ALLOWED_USER_ID が設定されていれば、そのユーザー以外からの投稿を弾く */
+/**
+ * webhook の最初の1件を見てローディング表示を出す。
+ * 写真を複数枚送っても返信は1回なので、ここも 1回だけ呼ぶ。
+ * 入力欄に差し込むだけのリッチメニュー（'fill'）は、まだ送信されていないので除く。
+ */
+function startLoading_(events) {
+  for (var i = 0; i < events.length; i++) {
+    var ev = events[i];
+    if (ev.type !== 'message' && ev.type !== 'postback') continue;
+    if (ev.type === 'postback' && ((ev.postback && ev.postback.data) || '') === 'fill') continue;
+    if (!isAllowedSender_(ev)) continue;
+
+    showLoading_(ev.source && ev.source.userId);
+    return;
+  }
+}
+
+// ---------------------------------------------------------------- 利用者
+
+/**
+ * 使ってよい人の LINE userId。買い物リストと在庫は全員で1つを共有する。
+ *
+ * ALLOWED_USER_IDS にカンマ区切りで並べる。1人だけなら従来どおり
+ * ALLOWED_USER_ID でもよく、両方あれば両方を許す（設定を書き換えずに人を増やせる）。
+ * どちらも空なら誰でも使えてしまうので、webhook の秘密だけが頼りになる。必ず設定すること。
+ */
+function allowedUserIds_() {
+  var raw = (prop_('ALLOWED_USER_IDS', false) || '') + ',' + (prop_('ALLOWED_USER_ID', false) || '');
+  var seen = {};
+  var ids = [];
+
+  raw.split(',').forEach(function (part) {
+    var id = part.trim();
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    ids.push(id);
+  });
+  return ids;
+}
+
+/**
+ * この実行で相手をしている人。doPost の入口で決まる。
+ *
+ * Apps Script は webhook 1回ごとに実行が独立していて、変数が次の実行へ持ち越されない。
+ * そのため、ここに1人分だけ持たせておけば取り違えは起きない。
+ * 「番号で選ぶ」「取消」を人ごとに分けるのに使う。
+ */
+var CURRENT_USER_ = '';
+
+function setCurrentUser_(event) {
+  CURRENT_USER_ = (event && event.source && event.source.userId) || '';
+}
+
+/**
+ * 人ごとに分けて持つスクリプトプロパティのキー。
+ * 誰か分からないときは名前だけのキーに落とす（1人で使っていた頃と同じ形）。
+ */
+function userKey_(name) {
+  return CURRENT_USER_ ? name + ':' + CURRENT_USER_ : name;
+}
+
+/** 「id」と送られたかどうか。許可の判定より先に見るので、ここだけは誰の分も通る */
+function isIdCommand_(event) {
+  return event.type === 'message'
+    && event.message && event.message.type === 'text'
+    && String(event.message.text || '').trim().toLowerCase() === 'id';
+}
+
+/**
+ * シートへの追記を順番待ちにする。
+ *
+ * 追記はどれも「今の最終行を読む → その下に書く」の2段階で、IDの採番も
+ * 「今の番号を読む → 次の番号を書く」になっている。2人が同時に操作すると
+ * この隙間で割り込まれ、同じ行を上書きしたり同じIDが2件できたりする。
+ * IDはバブルのボタンが行を指すのに使うので、重複すると別の品目を消しかねない。
+ *
+ * 待つのは最大20秒。それ以上は返信が間に合わないので、諦めて利用者に伝える。
+ */
+var LOCK_HELD_ = false;
+
+function withLock_(fn) {
+  // すでに囲いの中（appendRows_ から stockReserveIds_ を呼ぶ形）なら、そのまま実行する。
+  // 同じ実行の中で取り直そうとすると、自分が持っている錠を自分で待つことになるため
+  if (LOCK_HELD_) return fn();
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    throw new Error('ほかの操作の途中です。少し待ってからもう一度試してください。');
+  }
+
+  LOCK_HELD_ = true;
+  try {
+    return fn();
+  } finally {
+    LOCK_HELD_ = false;
+    lock.releaseLock();
+  }
+}
+
+/** 許可した人以外からの投稿を弾く。未設定なら誰でも通す */
 function isAllowedSender_(event) {
-  var allowed = prop_('ALLOWED_USER_ID', false);
-  return !allowed || (event.source && event.source.userId === allowed);
+  var allowed = allowedUserIds_();
+  if (!allowed.length) return true;
+
+  var id = event && event.source && event.source.userId;
+  return !!id && allowed.indexOf(id) >= 0;
 }
 
 function handleEvent_(event) {
   if (event.type !== 'message' && event.type !== 'postback') return;
 
+  // 「id」だけは許可前でも答える。新しく使う人には自分の userId を知る手段がなく、
+  // それが分からないと ALLOWED_USER_IDS に追記できず、設定を始められないため。
+  // 返すのは本人の userId だけで、在庫も買い物リストも見せない（Claude も呼ばない）
+  if (isIdCommand_(event)) {
+    replyText_(event.replyToken,
+      'あなたの userId:\n' + ((event.source && event.source.userId) || '(取得不可)'));
+    return;
+  }
+
   if (!isAllowedSender_(event)) {
     console.warn('許可外のユーザーからの投稿を無視: ' + (event.source && event.source.userId));
     return;
   }
+
+  // 以降の「番号で選ぶ」「取消」はこの人のぶんだけを見る
+  setCurrentUser_(event);
 
   if (event.type === 'postback') {
     handlePostback_(event);
@@ -195,6 +339,9 @@ function handleEvent_(event) {
  * （1件ずつ返信すると同じ内容が写真の枚数分届いてしまうため）。
  */
 function handleRecipeImages_(events) {
+  // doPost から handleEvent_ を通さずに呼ばれるので、ここでも利用者を決める
+  setCurrentUser_(events[0]);
+
   clearPending_(); // 写真が来たら選択待ちは打ち切る
   var replyToken = events[events.length - 1].replyToken;
 
@@ -271,7 +418,8 @@ var HELP_MESSAGE = [
   '「牛乳使った」「ヨーグルト食べた」「豆腐捨てた」',
   'いずれも消費済として記録します。',
   '「片栗粉2つ捨てた」「牛乳全部使った」もまとめて可',
-  '迷う候補があるときだけ番号で聞きます（例: 1,3）',
+  '期限違いが複数あるときは、どれを使ったか',
+  'ボタンで選べるバブルを返します。',
   '',
   '■ 通知',
   '毎週土曜の朝、期限が近いものをお知らせします。',
@@ -383,8 +531,9 @@ function runCommand_(cmd) {
 
 function handleText_(event, text) {
   // Claude を呼ばずに済む固定コマンドは先に処理する
-  if (text === 'id') {
-    replyText_(event.replyToken, 'あなたの userId:\n' + (event.source.userId || '(取得不可)'));
+  if (text === 'リンク' || text === 'link') {
+    replyText_(event.replyToken, '買い物リストと在庫の画面:\n' + webUrl_()
+      + '\n\n開けないときはこちら:\n' + webDirectUrl_());
     return;
   }
   if (!text || text === 'ヘルプ' || text === 'help' || text === '使い方') {
@@ -399,19 +548,16 @@ function handleText_(event, text) {
       replyText_(event.replyToken, cancelPending_());
       return;
     }
-    var answer = pending.kind === 'register' ? parseRegisterAnswer_(text) : parseChoiceList_(text);
+    // 保留する質問は登録の重複確認だけ（消費の選択はバブルのボタンで受ける）
+    var answer = parseRegisterAnswer_(text);
     if (answer !== null) {
-      replyText_(event.replyToken, pending.kind === 'register'
-        ? resolveRegister_(answer)
-        : resolvePending_(answer));
+      replyText_(event.replyToken, resolveRegister_(answer));
       return;
     }
     // 回答と解釈できない入力が来たら質問を打ち切る。
     // 黙って捨てると「答えたのに無視された」ように見えるので、必ず断りを入れる。
     clearPending_();
-    note = pending.kind === 'register'
-      ? '（先ほどの重複確認は取り消しました。登録していません）\n\n'
-      : '（先ほどの選択は取り消しました。記録は変えていません）\n\n';
+    note = '（先ほどの重複確認は取り消しました。登録していません）\n\n';
   }
 
   if (text === '取消' || text === '取り消し' || text === 'とりけし') {
@@ -580,16 +726,23 @@ var QUICK_REPLY_MAX = 13;
 /**
  * 返信の中身。文字列だけの返信と、ボタン付きの返信を同じ形で扱う。
  * ボタンを押すと label と同じテキストが送られてくるので、
- * 受け側（parseChoiceList_ など）は手入力と区別せずそのまま処理できる。
+ * 受け側（parseRegisterAnswer_ など）は手入力と区別せずそのまま処理できる。
  */
 function asReply_(reply) {
   return typeof reply === 'string' ? { text: reply, labels: null } : reply;
 }
 
+/** 返信の本文。バブルだけの返信は text を持たないので空文字にそろえる */
+function replyBody_(r) {
+  return typeof r.text === 'string' ? r.text : '';
+}
+
 /** 返信の先頭に断り書きを足す。ボタンはそのまま保つ */
 function prefixReply_(note, reply) {
   var r = asReply_(reply);
-  return note ? { text: note + r.text, labels: r.labels } : r;
+  if (!note) return r;
+  // バブル付きの返信でも、断り書きを前のテキストに残す
+  return { text: note + replyBody_(r), labels: r.labels, altText: r.altText, flex: r.flex };
 }
 
 /**
@@ -616,11 +769,49 @@ function replyText_(replyToken, reply) {
   if (!replyToken) return;
 
   var r = asReply_(reply);
-  var message = { type: 'text', text: r.text.substring(0, 4900) };
-  if (r.labels && r.labels.length) {
-    message.quickReply = buildQuickReply_(r.labels);
+  var body = replyBody_(r);
+  var messages = [];
+
+  // 本文があるときだけテキストを付ける（空文字を送ると LINE の API がエラーになる）
+  if (body) {
+    var message = { type: 'text', text: body.substring(0, 4900) };
+    if (r.labels && r.labels.length) message.quickReply = buildQuickReply_(r.labels);
+    messages.push(message);
   }
-  replyMessages_(replyToken, [message]);
+  if (r.flex) {
+    messages.push({ type: 'flex', altText: String(r.altText || 'お知らせ').substring(0, 400), contents: r.flex });
+  }
+  if (!messages.length) return;
+
+  replyMessages_(replyToken, messages);
+}
+
+// インジケータの最大表示秒数。5の倍数（5〜60）。返信を送った時点で消える
+var LOADING_SECONDS = 20;
+
+/**
+ * トークに「…」のローディング表示を出す。
+ * Claude やスプレッドシートを見に行く間、反応が無いように見えるのを防ぐだけで、
+ * 応答が速くなるわけではない。表示だけの機能なので、失敗しても本筋は止めない。
+ * 1対1のトーク専用（chatId にユーザーID を渡す）。
+ */
+function showLoading_(userId) {
+  if (!userId) return;
+
+  try {
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
+      payload: JSON.stringify({ chatId: userId, loadingSeconds: LOADING_SECONDS }),
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 202) {
+      console.warn('ローディング表示に失敗 (HTTP ' + res.getResponseCode() + '): ' + res.getContentText());
+    }
+  } catch (err) {
+    console.warn('ローディング表示に失敗: ' + err.message);
+  }
 }
 
 /** Flex メッセージ1件で返信する。altText は通知やトーク一覧に出る代替テキスト */
@@ -920,6 +1111,8 @@ function parseItemNames_(text) {
 
 /** Messages API を叩き、structured output の JSON を返す共通処理 */
 function callClaude_(content, schema, model) {
+  assertClaudeRate_(); // 課金が青天井にならないよう、回数の上限を先に見る
+
   var useModel = model || MODEL_VISION;
   var outputConfig = { format: { type: 'json_schema', schema: schema } };
 
@@ -948,8 +1141,10 @@ function callClaude_(content, schema, model) {
   });
 
   if (res.getResponseCode() !== 200) {
-    throw new Error('Claude API エラー (HTTP ' + res.getResponseCode() + '): '
-      + res.getContentText().substring(0, 300));
+    // 応答本文はそのまま利用者に返さない（内部の事情が混ざるため）。詳しくはログに残す
+    console.error('Claude API エラー (HTTP ' + res.getResponseCode() + '): '
+      + res.getContentText().substring(0, 500));
+    throw new Error('読み取りに失敗しました (HTTP ' + res.getResponseCode() + ')');
   }
 
   var body = JSON.parse(res.getContentText());
@@ -1183,6 +1378,7 @@ function withDate_(name, date, label) {
 /** シート1行を、表示用のアイテムオブジェクトに変換する */
 function rowToItem_(row) {
   return {
+    id: String(row[COL.ID - 1] || ''),   // 週次通知のバブルから「使用済」を押すのに使う
     item_name: row[COL.NAME - 1],
     position: '',
     found: true,
@@ -1197,11 +1393,11 @@ function rowToItem_(row) {
 
 /** 直前の操作を記録しておき、「取消」で戻せるようにする */
 function setLastOp_(op) {
-  PropertiesService.getScriptProperties().setProperty('LAST_OP', JSON.stringify(op));
+  PropertiesService.getScriptProperties().setProperty(userKey_('LAST_OP'), JSON.stringify(op));
 }
 
 function getLastOp_() {
-  var s = prop_('LAST_OP', false);
+  var s = prop_(userKey_('LAST_OP'), false);
   return s ? JSON.parse(s) : null;
 }
 
@@ -1226,13 +1422,16 @@ function clampQty_(q, max) {
  * 買い物リストと同じ考え方で、行の並び替えや削除の影響を受けないようにする。
  */
 function stockReserveIds_(n) {
-  var props = PropertiesService.getScriptProperties();
-  var next = Number(props.getProperty('STOCK_NEXT_ID')) || (stockMaxId_() + 1);
-  props.setProperty('STOCK_NEXT_ID', String(next + n));
+  // 読んで足して書くまでを囲う。割り込まれると同じIDを2回配ってしまう
+  return withLock_(function () {
+    var props = PropertiesService.getScriptProperties();
+    var next = Number(props.getProperty('STOCK_NEXT_ID')) || (stockMaxId_() + 1);
+    props.setProperty('STOCK_NEXT_ID', String(next + n));
 
-  var ids = [];
-  for (var i = 0; i < n; i++) ids.push(next + i);
-  return ids;
+    var ids = [];
+    for (var i = 0; i < n; i++) ids.push(next + i);
+    return ids;
+  });
 }
 
 function stockMaxId_() {
@@ -1253,30 +1452,35 @@ function stockMaxId_() {
 function appendRows_(sh, items, source) {
   if (!items.length) return [];
 
-  var startRow = sh.getLastRow() + 1;
-  var stamp = nowStamp_();
-  var ids = stockReserveIds_(items.length);
+  // 最終行の取得から書き込みまでを囲う。途中で割り込まれると同じ行に重ねて書いてしまう
+  return withLock_(function () {
+    var startRow = sh.getLastRow() + 1;
+    var stamp = nowStamp_();
+    var ids = stockReserveIds_(items.length);
 
-  var values = items.map(function (it, idx) {
-    var row = new Array(COL_COUNT).fill('');
-    row[COL.ID - 1] = ids[idx];
-    row[COL.REG_DATE - 1] = todayStamp_();
-    row[COL.REG_TIME - 1] = timeStamp_();
-    row[COL.NAME - 1] = it.item_name || '(名称不明)';
-    row[COL.CATEGORY - 1] = it.category || '';
-    row[COL.DATE - 1] = it.date;
-    row[COL.PRECISION - 1] = it.date_precision || 'day';
-    row[COL.LABEL - 1] = normalizeLabel_(it.label);
-    row[COL.CONFIDENCE - 1] = it.confidence || 'high';
-    row[COL.SOURCE - 1] = source;
-    row[COL.RAW - 1] = it.raw_text || '';
-    row[COL.STATUS - 1] = STATUS.STOCK;
-    row[COL.UPDATED - 1] = stamp;
-    return row;
+    var values = items.map(function (it, idx) {
+      var row = new Array(COL_COUNT).fill('');
+      row[COL.ID - 1] = ids[idx];
+      row[COL.REG_DATE - 1] = todayStamp_();
+      row[COL.REG_TIME - 1] = timeStamp_();
+      row[COL.NAME - 1] = it.item_name || '(名称不明)';
+      row[COL.CATEGORY - 1] = it.category || '';
+      row[COL.DATE - 1] = it.date;
+      row[COL.PRECISION - 1] = it.date_precision || 'day';
+      row[COL.LABEL - 1] = normalizeLabel_(it.label);
+      row[COL.CONFIDENCE - 1] = it.confidence || 'high';
+      row[COL.SOURCE - 1] = source;
+      row[COL.RAW - 1] = it.raw_text || '';
+      row[COL.STATUS - 1] = STATUS.STOCK;
+      row[COL.UPDATED - 1] = stamp;
+      return row;
+    });
+
+    sh.getRange(startRow, 1, values.length, COL_COUNT).setValues(values);
+    // 登録後のバブルの「登録取消」がこの ID で行を探す
+    items.forEach(function (it, idx) { it.stock_id = ids[idx]; });
+    return values.map(function (_, i) { return startRow + i; });
   });
-
-  sh.getRange(startRow, 1, values.length, COL_COUNT).setValues(values);
-  return values.map(function (_, i) { return startRow + i; });
 }
 
 /**
@@ -1347,18 +1551,37 @@ function finishRegister_(sh, session) {
   return buildRegisterReport_(session, true) || '登録するものがありませんでした。';
 }
 
+/**
+ * 登録結果の返信を組み立てる。
+ * 最終の返信はバブル（各行に「登録取消」）で返し、※の断り書きがあれば
+ * バブルの前にテキストとして添える。
+ * 重複確認の質問に添える見出し（isFinal が false）は、質問文と繋げるため
+ * 今までどおりテキストのままにする。
+ */
 function buildRegisterReport_(session, isFinal) {
-  var parts = [];
-  if (session.registered.length) {
-    parts.push(formatItems_(session.registered, session.registered.length + '件を登録しました'));
-  }
+  var notes = [];
   if (session.ng.length) {
-    parts.push('※ 期限が不明で登録できなかったもの: ' + session.ng.join('、'));
+    notes.push('※ 期限が不明で登録できなかったもの: ' + session.ng.join('、'));
   }
   if (isFinal && session.skipped) {
-    parts.push('※ 重複として ' + session.skipped + '件は登録しませんでした。');
+    notes.push('※ 重複として ' + session.skipped + '件は登録しませんでした。');
   }
-  return parts.join('\n\n');
+
+  if (!isFinal) {
+    var parts = [];
+    if (session.registered.length) {
+      parts.push(formatItems_(session.registered, session.registered.length + '件を登録しました'));
+    }
+    return parts.concat(notes).join('\n\n');
+  }
+
+  if (!session.registered.length) return notes.join('\n\n');
+
+  return {
+    text: notes.join('\n\n'),
+    altText: '登録しました ' + session.registered.length + '件',
+    flex: buildRegisteredBubble_(session.registered)
+  };
 }
 
 function formatDuplicateQuestion_(confirm) {
@@ -1557,8 +1780,11 @@ function withStockInfo_(it, stockRow) {
  * いって同じ食材とは限らず、部分一致だと別物を誤って「ある」と判定してしまう。
  * Claude の意味照合には元々「似ているだけの別物で代用しない」という指示が
  * 入っているため、そちらに任せる。レシピ照合・在庫確認の両方から使う。
+ *
+ * all を立てると、同じ品名の在庫が複数あるときにそのすべてを返す。
+ * 在庫確認は期限ごとに見たいので all、材料確認はあるかないかだけなので 1件にする。
  */
-function matchNamesToStock_(items) {
+function matchNamesToStock_(items, all) {
   var stock = currentStockRows_();
   if (!stock.length) return { have: [], missing: items };
 
@@ -1567,8 +1793,12 @@ function matchNamesToStock_(items) {
 
   items.forEach(function (it) {
     var key = normalizeName_(it.item_name);
-    var hit = key && stock.filter(function (s) { return normalizeName_(s.name) === key; })[0];
-    if (hit) have.push(withStockInfo_(it, hit)); else unresolved.push(it);
+    var hits = key ? stock.filter(function (s) { return normalizeName_(s.name) === key; }) : [];
+    if (!hits.length) {
+      unresolved.push(it);
+      return;
+    }
+    (all ? hits : hits.slice(0, 1)).forEach(function (hit) { have.push(withStockInfo_(it, hit)); });
   });
 
   var missing = [];
@@ -1583,7 +1813,15 @@ function matchNamesToStock_(items) {
     unresolved.forEach(function (it) {
       var m = matches.filter(function (mm) { return mm.said === it.item_name && mm.row > 0; })[0];
       var row = m && stock.filter(function (s) { return s.row === m.row; })[0];
-      if (row) have.push(withStockInfo_(it, row)); else missing.push(it);
+      if (!row) {
+        missing.push(it);
+        return;
+      }
+      // 意味照合は1行しか返さないので、all のときは同じ品名の行をここで揃える
+      var rows = all
+        ? stock.filter(function (s) { return normalizeName_(s.name) === normalizeName_(row.name); })
+        : [row];
+      rows.forEach(function (r) { have.push(withStockInfo_(it, r)); });
     });
   }
 
@@ -1625,7 +1863,8 @@ function replyStockCheck_(replyToken, note, items) {
   var asked = items.map(function (it) {
     return { item_name: it.name, category: it.category || '' };
   });
-  var r = matchNamesToStock_(asked);
+  // 同じ品名が複数あれば期限ごとに全部並べる
+  var r = matchNamesToStock_(asked, true);
 
   // ない側の「追加」は材料確認と同じ仕組み。postback には控えの番号だけを入れる
   var missing = r.missing.map(recipeEntry_);
@@ -1643,7 +1882,7 @@ function replyStockCheck_(replyToken, note, items) {
 
 /**
  * 「牛乳使った」等に対応して在庫を消す。
- * 同名が複数あるときは期限が近いものを1件だけ対象にする。
+ * 期限違いの同名が複数あるときは、バブルでどれを使ったか選んでもらう。
  */
 function consumeItems_(items) {
   if (!items.length) return '対象の食材を読み取れませんでした。';
@@ -1679,7 +1918,7 @@ function consumeItems_(items) {
     }
 
     candidates.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-    // 何件処理するかは advanceQueue_ が判断する（自動で片付くならそこで片付く）
+    // 何件処理するかは resolveQueue_ が判断する（自動で片付くならそこで片付く）
     session.queue.push({ said: it.item_name, choices: candidates, need: clampQty_(it.quantity, 99) });
   });
 
@@ -1726,99 +1965,80 @@ function allSameItem_(list) {
 }
 
 /**
- * 候補が複数ある質問を先頭から処理する。
- * 尋ねる必要がないものはここで片付ける:
+ * 候補を順に片付ける。聞く必要がないものはここで処理する:
  *   - すでに消した行を除いて0件 … 見つからなかった扱い
- *   - 候補が必要数以下 … 全部そのまま処理する（「2つ捨てた」で在庫が2件など）
- *   - 名前も期限も同じものが並ぶだけ … どれを選んでも同じなので先頭から必要数だけ処理する
- * それ以外は質問文を返す。
+ *   - 候補が1件だけ … そのまま処理する
+ *   - 個数が指定されている … 期限が近い順にその個数だけ処理する
+ *   - 名前も期限も同じものが並ぶだけ … どれを選んでも同じなので先頭を処理する
+ * 残った（期限違いが複数ある）ものを、バブルで選んでもらう分として返す。
  */
-function advanceQueue_(sh, session) {
+function resolveQueue_(sh, session) {
+  var ambiguous = [];
+
   while (session.queue.length) {
-    var q = session.queue[0];
+    var q = session.queue.shift();
     var need = q.need || 1;
-    q.choices = q.choices.filter(function (c) { return session.changed.indexOf(c.row) < 0; });
+    var choices = q.choices.filter(function (c) { return session.changed.indexOf(c.row) < 0; });
 
-    if (!q.choices.length) {
+    if (!choices.length) {
       session.missed.push(q.said);
-      session.queue.shift();
       continue;
     }
 
-    if (q.choices.length <= need || allSameItem_(q.choices)) {
-      q.choices.slice(0, need).forEach(function (c) { markRow_(sh, c, session); });
-      session.queue.shift();
+    // 期限が近い順に並んでいるので、先頭から必要数だけ取ればよい
+    if (choices.length === 1 || need > 1 || allSameItem_(choices)) {
+      choices.slice(0, need).forEach(function (c) { markRow_(sh, c, session); });
       continue;
     }
 
-    return formatQuestion_(q);
+    ambiguous.push({ said: q.said, choices: choices });
   }
-  return null;
+
+  return ambiguous;
 }
 
-function formatQuestion_(q) {
-  var need = q.need || 1;
-
-  var lines = ['「' + q.said + '」に該当する在庫が ' + q.choices.length + '件あります。'];
-  lines.push(need > 1
-    ? '消費した ' + need + '件を、番号をカンマ区切りで答えてください。（例: 1,3）'
-    : '消費したものを番号で答えてください。');
-  lines.push('');
-
-  q.choices.forEach(function (c, i) {
-    lines.push((i + 1) + '. ' + withDate_(c.name, c.date, c.label));
-  });
-
-  lines.push('');
-  lines.push('（すべてなら「全部」、やめる場合は「やめる」）');
-
-  // 1件だけ選ぶ場合はボタンで済ませられる。
-  // 複数選ぶ場合はタップでは表せない（1つ押した時点で確定してしまう）ので、
-  // 番号のボタンは出さず、カンマ区切りの手入力に委ねる。
-  var labels = [];
-  if (need === 1) {
-    var max = Math.min(q.choices.length, QUICK_REPLY_MAX - 2);
-    for (var i = 0; i < max; i++) labels.push(String(i + 1));
-  }
-  labels.push('全部', 'やめる');
-
-  return { text: lines.join('\n'), labels: labels };
-}
-
-/** 済んだ分の報告文を作る。何もなければ空文字 */
-function buildSessionReport_(session, isFinal) {
+/**
+ * 済んだ分の報告文を作る。何もなければ空文字。
+ * withBubble を立てると、このあとに続く選択バブルの分と混ざらないよう断っておく。
+ */
+function buildSessionReport_(session, withBubble) {
   var lines = [];
   if (session.done.length) {
-    lines.push('消費として記録しました（' + session.done.length + '件）');
-    lines.push('');
-    session.done.forEach(function (d, i) { lines.push((i + 1) + '. ' + d); });
+    // 消した品名は並べず、件数だけを返す。
+    lines.push((withBubble ? '下記以外は' : '') + '在庫から削除しました（' + session.done.length + '件）');
   }
   if (session.missed.length) {
     if (lines.length) lines.push('');
-    lines.push('※ 在庫に見つかりませんでした: ' + session.missed.join('、'));
-    if (!session.done.length && isFinal) {
-      lines.push('　「在庫」と送ると登録済みの一覧を確認できます。');
-    }
+    // 見出しと品名を行で分ける。複数あるときは読点でつなぐ
+    lines.push('在庫に見つかりませんでした。');
+    lines.push(session.missed.join('、'));
   }
   return lines.join('\n');
 }
 
-/** 質問が残っていれば保留して問い返し、すべて片付いたら結果を返す */
+/**
+ * 片付いた分を報告し、期限違いが複数あって決められなかったものは
+ * バブルで選んでもらう。番号での問い返しはしないので、選択待ちの状態は持たない
+ * （バブルを放置しても失効せず、あとから押してもその場で消せる）。
+ */
 function finishSession_(sh, session) {
-  var question = advanceQueue_(sh, session);
-
-  if (question) {
-    savePending_(session);
-    var head = buildSessionReport_(session, false);
-    return head ? { text: head + '\n\n' + question.text, labels: question.labels } : question;
-  }
+  var ambiguous = resolveQueue_(sh, session);
 
   clearPending_();
   if (session.changed.length) {
     setLastOp_({ type: 'consume', rows: session.changed });
   }
+
+  if (ambiguous.length) {
+    return {
+      text: buildSessionReport_(session, true),
+      altText: 'どれを使ったか選んでください',
+      flex: buildConsumeChoiceBubble_(ambiguous)
+    };
+  }
+
   // 空文字を返すと LINE の返信 API がエラーになり、何も返らなくなるので必ず何か返す
-  return buildSessionReport_(session, true) || '対象の食材を読み取れませんでした。';
+  return buildSessionReport_(session) || '対象の食材を読み取れませんでした。';
 }
 
 // ---------------------------------------------------------------- 選択待ちの状態
@@ -1827,11 +2047,11 @@ var PENDING_TTL_MS = 10 * 60 * 1000; // 古い質問に後から番号だけ返�
 
 function savePending_(session) {
   session.ts = Date.now();
-  PropertiesService.getScriptProperties().setProperty('PENDING', JSON.stringify(session));
+  PropertiesService.getScriptProperties().setProperty(userKey_('PENDING'), JSON.stringify(session));
 }
 
 function getPending_() {
-  var s = prop_('PENDING', false);
+  var s = prop_(userKey_('PENDING'), false);
   if (!s) return null;
   var session = JSON.parse(s);
   if (Date.now() - (session.ts || 0) > PENDING_TTL_MS) {
@@ -1842,7 +2062,7 @@ function getPending_() {
 }
 
 function clearPending_() {
-  PropertiesService.getScriptProperties().deleteProperty('PENDING');
+  PropertiesService.getScriptProperties().deleteProperty(userKey_('PENDING'));
 }
 
 /** 全角英数を半角にし、記号と空白を落とす */
@@ -1857,31 +2077,6 @@ function toPlain_(text) {
 function parseChoice_(text) {
   var m = toPlain_(text).match(/^(\d{1,2})(番|番目|つ目|個目|です|でお願いします|にします)?$/);
   return m ? parseInt(m[1], 10) : null;
-}
-
-/**
- * 消費・破棄の候補選択への回答。
- * 「1」「1,3」「1 3」「全部」に対応する。番号として読めなければ null。
- */
-function parseChoiceList_(text) {
-  var t = String(text)
-    .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
-    .replace(/[、，,。．・とや]/g, ' ')
-    .trim();
-
-  if (/^(全部|すべて|全て|ぜんぶ|ぜんぶです)$/.test(t.replace(/\s/g, ''))) return 'all';
-
-  var parts = t.split(/\s+/).filter(function (s) { return s; });
-  if (!parts.length) return null;
-
-  var nums = [];
-  for (var i = 0; i < parts.length; i++) {
-    var m = parts[i].match(/^(\d{1,2})(番|番目|つ目|個目|です)?$/);
-    if (!m) return null;
-    var n = parseInt(m[1], 10);
-    if (nums.indexOf(n) < 0) nums.push(n);
-  }
-  return nums;
 }
 
 var YES_PATTERN = /^(1|登録する|登録|する|はい|うん|ok|おっけー|オッケー|了解|買った|2つ目|2つ目を買った|追加|追加する|そう|yes|y)$/;
@@ -1934,41 +2129,6 @@ function parseConsumeFast_(text) {
   return name ? { text: name } : null;
 }
 
-/**
- * 選ばれた候補を確定する。
- * selection は番号の配列、または全件を表す 'all'。
- */
-function resolvePending_(selection) {
-  var session = getPending_();
-  if (!session || !session.queue.length) {
-    clearPending_();
-    return '選択の対象がありません。';
-  }
-
-  var q = session.queue[0];
-  var picks;
-
-  if (selection === 'all') {
-    picks = q.choices.slice();
-  } else {
-    var bad = selection.filter(function (n) { return n < 1 || n > q.choices.length; });
-    if (bad.length) {
-      savePending_(session);
-      var question = formatQuestion_(q);
-      return {
-        text: '1〜' + q.choices.length + ' の番号で答えてください。\n\n' + question.text,
-        labels: question.labels
-      };
-    }
-    picks = selection.map(function (n) { return q.choices[n - 1]; });
-  }
-
-  var sh = sheet_();
-  picks.forEach(function (c) { markRow_(sh, c, session); });
-  session.queue.shift();
-  return finishSession_(sh, session);
-}
-
 /** 選択・確認を中止する。すでに記録した分はそのまま残す */
 function cancelPending_() {
   var session = getPending_();
@@ -2009,12 +2169,7 @@ function undoLast_() {
   op.rows.forEach(function (row) {
     var i = row - 2;
     if (i < 0 || i >= data.length) return;
-    var name = data[i][COL.NAME - 1];
-    // 登録の取り消しは期限を添えて何を取り消したか分かるようにする。
-    // 消費の取り消し（在庫に戻す）は期限を出さない。
-    names.push(op.type === 'register'
-      ? withDate_(name, normalizeYmd_(data[i][COL.DATE - 1]), data[i][COL.LABEL - 1])
-      : name);
+    names.push(data[i][COL.NAME - 1]);
     cells[i] = [back, stamp];
   });
 
@@ -2026,13 +2181,10 @@ function undoLast_() {
 
   if (!names.length) return '取り消せる操作がありません。';
 
-  var head = (op.type === 'register' ? '直前の登録を取り消しました' : '直前の消費を取り消して在庫に戻しました')
-    + '（' + names.length + '件）';
-  var body = names.length > 1
-    ? names.map(function (n, i) { return (i + 1) + '. ' + n; }).join('\n')
-    : names[0];
-
-  return head + '\n\n' + body;
+  // 品名は並べず、件数だけを返す
+  return op.type === 'register'
+    ? '直前の登録を取り消しました（' + names.length + '件）'
+    : '在庫に戻しました（' + names.length + '件）';
 }
 
 /** 買い物リスト側の取り消し。追加は取消印、購入済は未購入に戻す */
@@ -2065,8 +2217,12 @@ function undoShopping_(op) {
   PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
   if (!names.length) return '取り消せる操作がありません。';
 
+  if (op.type === 'shop_clear') {
+    // 全件削除の取り消しは件数だけ返す（品名は並べない）
+    return '買い物リストをもとに戻しました（' + names.length + '件）';
+  }
+
   var head = op.type === 'shop_add' ? '直前の追加を取り消しました'
-    : op.type === 'shop_clear' ? '買い物リストを元に戻しました'
     : '買い物リストに戻しました';
 
   return head + '（' + names.length + '件）\n' + names.join('、');
@@ -2081,71 +2237,114 @@ function undoShopping_(op) {
  * 期限切れのものは処分の報告を受けるまで毎週先頭に再掲する。
  * 該当がなければ push を送らない（LINE の無料通数を消費しないため）。
  */
+/** 期限の近い順。期限が分からないものは末尾に回す（一覧の並びは全部これで揃える） */
+function sortByDate_(items) {
+  return items.slice().sort(function (a, b) {
+    if (!a.date) return b.date ? 1 : 0;
+    if (!b.date) return -1;
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+}
+
+/** 通知やトーク一覧に出る代替テキスト。バブルを開かなくても件数だけは分かるようにする */
+function weeklyAltText_(sections) {
+  var parts = sections.filter(function (sec) { return sec.items.length; })
+    .map(function (sec) { return sec.title + ' ' + sec.items.length + '件'; });
+  return '食材の期限: ' + parts.join(' / ');
+}
+
 function notifyWeekly() {
+  var sections = weeklyNotifySections_();
+  if (!sections) { console.log('通知対象なし。push をスキップ'); return; }
+
+  pushFlex_(weeklyAltText_(sections), buildWeeklyBubble_(sections));
+  console.log('通知しました: ' + sections.map(function (sec) {
+    return sec.title + sec.items.length;
+  }).join(' / '));
+}
+
+/**
+ * 通知に載せる3区分を作る。対象が1件も無ければ null。
+ *
+ * 期限が近いものは、使用済にするまで毎週出し続ける。
+ * バブルに「使用済」ボタンが付いてからは、通知は読むものではなく
+ * その場で片づけるものになったので、片づくまで残るほうが都合がよい。
+ * （以前は残り1週間・残り1か月を1回だけ出し、シートの NOTIFIED_1M /
+ * NOTIFIED_1W に印を付けて重複を避けていた。今はその2列を読まない。）
+ *
+ * シートには何も書かないので、エディタから何度実行しても中身は変わらない。
+ */
+function weeklyNotifySections_() {
   var sh = sheet_();
   var last = sh.getLastRow();
-  if (last < 2) { console.log('在庫なし。通知をスキップ'); return; }
+  if (last < 2) return null;
 
   var data = sh.getRange(2, 1, last - 1, COL_COUNT).getValues();
-  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
-
   var expired = [], week = [], month = [];
 
-  for (var i = 0; i < data.length; i++) {
-    var row = data[i];
-    if (row[COL.STATUS - 1] !== STATUS.STOCK) continue;
+  data.forEach(function (row) {
+    if (row[COL.STATUS - 1] !== STATUS.STOCK) return;
 
     var date = normalizeYmd_(row[COL.DATE - 1]);
-    if (!date) continue;
+    if (!date) return;
 
     var days = daysLeft_(date);
     var item = rowToItem_(row);
-    var sheetRow = i + 2;
+    if (days < 0) expired.push(item);
+    else if (days <= NOTIFY_1W_DAYS) week.push(item);
+    else if (days <= NOTIFY_1M_DAYS) month.push(item);
+  });
 
-    if (days < 0) {
-      expired.push(item);
-    } else if (days <= NOTIFY_1W_DAYS) {
-      if (row[COL.NOTIFIED_1W - 1]) continue;
-      week.push(item);
-      // 残り7日を切ると1か月の予告はもう出番がないので、あわせて済みにする
-      sh.getRange(sheetRow, COL.NOTIFIED_1M).setValue(today);
-      sh.getRange(sheetRow, COL.NOTIFIED_1W).setValue(today);
-    } else if (days <= NOTIFY_1M_DAYS) {
-      if (row[COL.NOTIFIED_1M - 1]) continue;
-      month.push(item);
-      sh.getRange(sheetRow, COL.NOTIFIED_1M).setValue(today);
-    }
-  }
+  if (!expired.length && !week.length && !month.length) return null;
 
-  if (!expired.length && !week.length && !month.length) {
-    console.log('通知対象なし。push をスキップ');
-    return;
-  }
-
-  var parts = [];
-  if (expired.length) parts.push(formatItems_(expired, '■ 期限切れ（' + expired.length + '件）'));
-  if (week.length) parts.push(formatItems_(week, '■ 残り1週間（' + week.length + '件）'));
-  if (month.length) parts.push(formatItems_(month, '■ 残り1か月（' + month.length + '件）'));
-
-  pushText_(parts.join('\n\n'));
-  console.log('通知しました: 期限切れ' + expired.length + ' / 1週間' + week.length + ' / 1か月' + month.length);
+  // 期限の近い順に並べてから区分ごとに積む。縦棒の色で急ぎ具合が分かるようにする
+  return [
+    { title: '期限切れ', items: sortByDate_(expired), color: SHOP_RED },
+    { title: '残り1週間', items: sortByDate_(week), color: SHOP_YELLOW },
+    { title: '残り1か月', items: sortByDate_(month), color: SHOP_GREEN }
+  ];
 }
 
 /** 自分宛に push 送信する（返信と違い LINE の無料通数を消費する） */
 function pushText_(text) {
-  var to = prop_('ALLOWED_USER_ID', false);
-  if (!to) {
-    throw new Error('通知先が未設定です。スクリプトプロパティ ALLOWED_USER_ID に自分の userId を設定してください。');
-  }
+  pushMessages_([{ type: 'text', text: text.substring(0, 4900) }]);
+}
 
-  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+/**
+ * 許可した人「全員」へ送る。週次通知に使う。
+ * 買い物リストも在庫も共有なので、期限の知らせは全員が受け取るほうが都合がよい。
+ */
+function pushMessages_(messages) {
+  var to = allowedUserIds_();
+  if (!to.length) {
+    throw new Error('通知先が未設定です。スクリプトプロパティ ALLOWED_USER_IDS に userId を設定してください。');
+  }
+  sendPush_(to, messages);
+}
+
+/** 1人だけに送る。操作した本人にだけ伝えたいとき（書き込み失敗の知らせなど）に使う */
+function pushTextTo_(userId, text) {
+  if (!userId) { pushText_(text); return; }   // 誰か分からないときは全員に送って取りこぼさない
+  sendPush_([userId], [{ type: 'text', text: text.substring(0, 4900) }]);
+}
+
+/**
+ * push の実体。宛先が1人なら push、複数なら multicast を使う。
+ * multicast は1回の呼び出しで全員に届くので、人数ぶん往復せずに済む。
+ */
+function sendPush_(to, messages) {
+  var single = to.length === 1;
+  var url = single
+    ? 'https://api.line.me/v2/bot/message/push'
+    : 'https://api.line.me/v2/bot/message/multicast';
+
+  var res = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
-    payload: JSON.stringify({
-      to: to,
-      messages: [{ type: 'text', text: text.substring(0, 4900) }]
-    }),
+    payload: JSON.stringify(single
+      ? { to: to[0], messages: messages }
+      : { to: to, messages: messages }),
     muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) {
@@ -2220,13 +2419,16 @@ function shopTodoRows_(sh) {
  * 1品ずつ採番するとプロパティの読み書きが件数ぶん発生するため、まとめて取る。
  */
 function shopReserveIds_(n) {
-  var props = PropertiesService.getScriptProperties();
-  var next = Number(props.getProperty('SHOP_NEXT_ID')) || (shopMaxId_() + 1);
-  props.setProperty('SHOP_NEXT_ID', String(next + n));
+  // 読んで足して書くまでを囲う。割り込まれると同じIDを2回配ってしまう
+  return withLock_(function () {
+    var props = PropertiesService.getScriptProperties();
+    var next = Number(props.getProperty('SHOP_NEXT_ID')) || (shopMaxId_() + 1);
+    props.setProperty('SHOP_NEXT_ID', String(next + n));
 
-  var ids = [];
-  for (var i = 0; i < n; i++) ids.push(next + i);
-  return ids;
+    var ids = [];
+    for (var i = 0; i < n; i++) ids.push(next + i);
+    return ids;
+  });
 }
 
 function shopMaxId_() {
@@ -2286,24 +2488,30 @@ function shopAddPlan_(items) {
 function shopAddCommit_(plan) {
   if (!plan.add.length) return;
 
-  var stamp = nowStamp_();
-  var today = todayStamp_();
-  var values = plan.add.map(function (it, i) {
-    var row = new Array(SHOP_COL_COUNT).fill('');
-    row[SHOP_COL.ID - 1] = plan.ids[i];
-    row[SHOP_COL.ADDED - 1] = today;
-    row[SHOP_COL.NAME - 1] = it.name;
-    row[SHOP_COL.CATEGORY - 1] = it.category;
-    row[SHOP_COL.STATUS - 1] = SHOP_STATUS.TODO;
-    row[SHOP_COL.UPDATED - 1] = stamp;
-    return row;
-  });
-  plan.sheet.getRange(plan.startRow, 1, values.length, SHOP_COL_COUNT).setValues(values);
+  withLock_(function () {
+    // 行の位置は plan を作った時点ではなく、書く直前に取り直す。
+    // 返信を先に送る作りなので、その間に相手が追加していると行が重なるため
+    var startRow = plan.sheet.getLastRow() + 1;
+    var stamp = nowStamp_();
+    var today = todayStamp_();
 
-  setLastOp_({
-    type: 'shop_add',
-    sheet: 'shopping',
-    rows: values.map(function (_, i) { return plan.startRow + i; })
+    var values = plan.add.map(function (it, i) {
+      var row = new Array(SHOP_COL_COUNT).fill('');
+      row[SHOP_COL.ID - 1] = plan.ids[i];
+      row[SHOP_COL.ADDED - 1] = today;
+      row[SHOP_COL.NAME - 1] = it.name;
+      row[SHOP_COL.CATEGORY - 1] = it.category;
+      row[SHOP_COL.STATUS - 1] = SHOP_STATUS.TODO;
+      row[SHOP_COL.UPDATED - 1] = stamp;
+      return row;
+    });
+    plan.sheet.getRange(startRow, 1, values.length, SHOP_COL_COUNT).setValues(values);
+
+    setLastOp_({
+      type: 'shop_add',
+      sheet: 'shopping',
+      rows: values.map(function (_, i) { return startRow + i; })
+    });
   });
 }
 
@@ -2487,8 +2695,8 @@ function shopClear_() {
   var todo = shopClearInternal_();
   if (!todo) return '買い物リストはすでに空です。';
 
-  return '買い物リストを空にしました（' + todo.length + '件）\n'
-    + todo.map(function (t) { return t.name; }).join('、')
+  // ボタン版の全件削除と揃えて、品名は並べず件数だけを返す
+  return '買い物リストを全て削除しました（' + todo.length + '件）'
     + '\n\n戻す場合は「取消」と送ってください。';
 }
 
@@ -2530,6 +2738,105 @@ function shopBoughtCommit_(plan) {
   setLastOp_({ type: 'shop_bought', sheet: 'shopping', rows: [plan.row] });
 }
 
+// ---------------------------------------------------------------- 週次通知（Flexバブル）
+
+// バブルに並べる品目の上限。Flex メッセージには JSON の大きさに上限があり、
+// 期限切れは使用済にするまで毎週出続けるので、溜まっても送れなくならないようにする。
+// 1行おおよそ1KB。40行なら上限に対して十分な余裕がある
+var WEEKLY_MAX_ROWS = 40;
+
+/**
+ * 土曜朝の通知バブル。期限の近いものを区分ごとに並べ、その場で「使用済」を押せる。
+ *
+ * 材料確認・在庫確認のバブルと同じ作りにしてある。違いは次の2点。
+ *   - まとめて処理するボタン（「全て追加」にあたるもの）は置かない。
+ *     通知は不意に届くので、1タップで在庫がまとめて消えると事故になるため。
+ *   - 日付は出さず、残日数だけを品名の右に添える。一覧として見るときは
+ *     「あと何日か」だけ分かればよく、日付は在庫確認の画面で見られる。
+ */
+function buildWeeklyBubble_(sections) {
+  var rows = [];
+  var left = WEEKLY_MAX_ROWS;
+  var omitted = 0;
+
+  sections.forEach(function (sec) {
+    if (!sec.items.length) return;
+
+    // まとめ処理のボタンは渡さない（第4引数なし）。件数は省いた分も含めた全体を出す
+    rows.push(bubbleSectionHeader_(sec.title, sec.items.length, sec.color));
+
+    var shown = left > 0 ? sec.items.slice(0, left) : [];
+    omitted += sec.items.length - shown.length;
+    left -= shown.length;
+
+    shown.forEach(function (it, i) {
+      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      rows.push(weeklyItemRow_(it, sec.color));
+    });
+  });
+
+  if (omitted) rows.push(weeklyOmittedRow_(omitted));
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+/** 入りきらなかった分の断り書き。押せる行ではないので区切り線も付けない */
+function weeklyOmittedRow_(count) {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    paddingTop: '12px',
+    paddingBottom: '12px',
+    contents: [{
+      type: 'text',
+      text: 'ほか' + count + '件は「在庫確認」の画面で見てください。',
+      color: SHOP_GRAY,
+      size: 'xs',
+      wrap: true
+    }]
+  };
+}
+
+/**
+ * 通知バブルの1行。品名の右に残日数、さらに右に「使用済」。
+ * 残日数の色は区分の色に合わせる（縦棒と同じ赤・黄）。
+ */
+function weeklyItemRow_(it, color) {
+  // 読み取り確度の ⚠ は付けない。通知は一覧として眺めるものなので、
+  // 品名と残日数だけに絞る（怪しいものは在庫確認の画面で確かめられる）
+  var name = it.item_name || '(食材名不明)';
+  var sub = { text: weeklyRemainText_(it), color: color || SHOP_GRAY, side: true };
+
+  return bubbleActionRow_(name, '使用済',
+    { type: 'postback', label: '使用済', data: STOCK_USED_PREFIX + it.id }, sub);
+}
+
+/**
+ * 「残り3日」「12日超過」。日付そのものは出さない。
+ * 月までしか読めていない在庫は「約」を頭に付ける（日付を出さないので、
+ * 日付側に付けていた「頃」をここへ移した形）。
+ */
+function weeklyRemainText_(it) {
+  if (!it.date) return '期限不明';
+
+  var days = daysLeft_(it.date);
+  var approx = it.date_precision === 'month' ? '約' : '';
+  if (days < 0) return approx + (days * -1) + '日超過';
+  if (days === 0) return '今日まで';
+  return '残り' + approx + days + '日';
+}
+
+/** 通知先へ Flex メッセージを push する。pushText_ の Flex 版 */
+function pushFlex_(altText, contents) {
+  pushMessages_([{ type: 'flex', altText: String(altText).substring(0, 400), contents: contents }]);
+}
+
 // ---------------------------------------------------------------- 買い物リスト（Flexバブル）
 
 /**
@@ -2549,6 +2856,9 @@ var SHOP_GREEN = '#4ADE80';
 // （richmenu.py の PALE_BLUE）と同じ色にして、見た目の系統を揃えている
 var SHOP_BLUE = '#93C5FD';
 var SHOP_GRAY = '#9CA3AF';
+// 週次通知の縦棒。期限切れ＝赤、期限が近い＝黄。残り1か月は急ぎではないので緑のまま
+var SHOP_RED = '#F87171';
+var SHOP_YELLOW = '#FBBF24';
 // セクション見出しの帯の高さ。ボタンの有無で高さがずれないよう決め打ちにする。
 // 丸いボタン（md の文字＋上下の余白＋枠）が収まる高さにしてあるので、
 // ボタンの文字を大きくするならここも合わせて上げること
@@ -2567,8 +2877,23 @@ function shopBoughtPostbackData_(id) { return 'shop_bought:' + id; }
  * 持たせた box に action を付けて代用している（緑文字のまま、タップ領域は保てる）。
  */
 function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
+  // sub.side を付けると、品名の下ではなく右隣に置く（週次通知の「残り3日」など）。
+  // 日付を出さず残日数だけを添えるので、1行に収めたほうが一覧として読みやすい
+  var label = sub && sub.side
+    ? {
+      type: 'box',
+      layout: 'horizontal',
+      flex: 1,
+      alignItems: 'center',
+      contents: [
+        // 折り返さず1行に収める（長い品名は末尾が「…」になる）。
+        // 縦に伸びると一覧として追いにくく、行ごとの高さも揃わなくなるため
+        { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: false },
+        { type: 'text', text: sub.text, color: sub.color, size: 'xs', flex: 0, margin: 'md', gravity: 'center' }
+      ]
+    }
   // 品名の下に小さく添える行（在庫確認の期限など）。無いときは品名だけ
-  var label = sub
+  : sub
     ? {
       type: 'box',
       layout: 'vertical',
@@ -2587,8 +2912,10 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
     layout: 'horizontal',
     paddingStart: '14px',
     paddingEnd: '4px',
-    paddingTop: sub ? '10px' : '0px',
-    paddingBottom: sub ? '10px' : '0px',
+    // 余白を足すのは品名の下に添える形（縦積み）のときだけ。
+    // 横並びは1行で収まるので、ボタン側の余白だけで高さが決まる
+    paddingTop: sub && !sub.side ? '10px' : '0px',
+    paddingBottom: sub && !sub.side ? '10px' : '0px',
     alignItems: 'center',
     contents: [
       label,
@@ -2675,6 +3002,27 @@ function bubbleSectionHeader_(title, count, barColor, pill) {
     height: SECTION_HEADER_H,
     alignItems: 'center',
     contents: contents
+  };
+}
+
+/**
+ * 縦線のない見出し帯。在庫/買い物のように2種類を並べない場面用で、
+ * 色で区別する必要がないため帯の高さだけを揃えている。
+ */
+function bubblePlainHeader_(title, count, pill) {
+  return {
+    type: 'box',
+    layout: 'horizontal',
+    backgroundColor: SHOP_SECTION_BG,
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    height: SECTION_HEADER_H,
+    alignItems: 'center',
+    contents: [
+      { type: 'text', text: String(title), weight: 'bold', size: 'md', color: SHOP_TEXT, flex: 0, gravity: 'center' },
+      { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, flex: 0, gravity: 'center', margin: 'md' },
+      { type: 'filler' }
+    ].concat(pill ? [pill] : [])
   };
 }
 
@@ -2786,24 +3134,6 @@ function buildShopEmptyBubble_() {
       paddingAll: '14px',
       contents: [
         { type: 'text', text: '買い物リストが空になりました', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true }
-      ]
-    }
-  };
-}
-
-function buildShopRemovedBubble_(title, todo) {
-  return {
-    type: 'bubble',
-    size: 'kilo',
-    body: {
-      type: 'box',
-      layout: 'vertical',
-      backgroundColor: SHOP_BG,
-      paddingAll: '14px',
-      spacing: 'sm',
-      contents: [
-        { type: 'text', text: title + '（' + todo.length + '件）', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true },
-        { type: 'text', text: todo.map(function (t) { return t.name; }).join('、'), color: SHOP_TEXT, size: 'md', wrap: true }
       ]
     }
   };
@@ -2978,6 +3308,139 @@ function buildStockCheckBubble_(have, missing, token) {
   };
 }
 
+var STOCK_UNREG_PREFIX = 'stock_unreg:';
+
+/**
+ * 登録直後の行に添える期限の1行。ここだけは日付も出す
+ * （読み取った日付が合っているかをその場で確かめられるように）。
+ */
+function registeredExpirySub_(it) {
+  if (!it.date) return { text: '期限不明', color: SHOP_GRAY };
+
+  var days = daysLeft_(it.date);
+  var label = it.label === '消費期限' ? '消費期限' : '賞味期限';
+  var approx = it.date_precision === 'month' ? '頃' : '';
+  var remain = days < 0 ? (days * -1) + '日超過' : days === 0 ? '今日まで' : '残り' + days + '日';
+
+  // 中黒を挨むと行が折り返されやすいので、区切りは空白だけにする
+  return { text: label + ' ' + it.date + approx + '  ' + remain, color: SHOP_GRAY };
+}
+
+/**
+ * 登録した分を並べたバブル。在庫確認と同じ行の形で、各行に「登録取消」を付ける。
+ * 品名や期限を取り違えていたときに、その場で取り消せるようにするため。
+ */
+function buildRegisteredBubble_(items) {
+  // 期限が近いものを上に。期限が分からないものは末尾に回す
+  var sorted = items.slice().sort(function (a, b) {
+    if (!a.date) return b.date ? 1 : 0;
+    if (!b.date) return -1;
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+
+  var rows = [bubblePlainHeader_('登録しました', sorted.length)];
+  sorted.forEach(function (it, i) {
+    if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+    rows.push(bubbleActionRow_(
+      (it.item_name || '(名称不明)') + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
+      '登録取消',
+      { type: 'postback', label: '登録取消', data: STOCK_UNREG_PREFIX + it.stock_id },
+      registeredExpirySub_(it)));
+  });
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+var STOCK_USED_ALL_PREFIX = 'stock_used_ids:';
+
+/**
+ * 「使用済 牛乳」の候補が期限違いで複数あったときのバブル。
+ * 登録直後のバブルと同じ行の形で並べ、品名ごとの見出しに「全て使用済」を置く。
+ */
+function buildConsumeChoiceBubble_(groups) {
+  var rows = [];
+
+  groups.forEach(function (g) {
+    var ids = g.choices.map(function (c) { return c.id; }).join(',');
+    // 見出しには品名を出さない（行に同じ品名が並ぶので重複する）
+    rows.push(bubblePlainHeader_('使用済を選択', g.choices.length,
+      bubblePillButton_('全て使用済',
+        { type: 'postback', label: '全て使用済', data: STOCK_USED_ALL_PREFIX + ids })));
+    g.choices.forEach(function (c, i) {
+      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      rows.push(bubbleActionRow_(c.name, '使用済',
+        { type: 'postback', label: '使用済', data: STOCK_USED_PREFIX + c.id },
+        registeredExpirySub_(c)));
+    });
+  });
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+/**
+ * postback「全て使用済」用。渡された ID のうち、まだ在庫にある行を集める。
+ */
+function stockUsedIdsPlan_(idList) {
+  var ids = String(idList).split(',').filter(function (v) { return v; });
+  if (!ids.length) return { rows: [] };
+
+  var sh = sheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return { rows: [] };
+
+  var data = sh.getRange(2, 1, last - 1, COL_COUNT).getValues();
+  var rows = [];
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][COL.STATUS - 1] !== STATUS.STOCK) continue;
+    if (ids.indexOf(String(data[i][COL.ID - 1])) < 0) continue;
+    rows.push(i + 2);
+  }
+  return { sheet: sh, rows: rows };
+}
+
+/** stockUsedIdsPlan_ が集めた行をまとめて消費済にする。読み1回・書き1回にする */
+function stockUsedIdsCommit_(plan) {
+  var stamp = nowStamp_();
+  plan.rows.forEach(function (row) {
+    plan.sheet.getRange(row, COL.STATUS, 1, 2).setValues([[STATUS.USED, stamp]]);
+  });
+  setLastOp_({ type: 'consume', rows: plan.rows });
+}
+
+/**
+ * postback「登録取消」用。IDで1件だけ取消にする下ごしらえ。
+ * 使用済と同じく、ここでは書かずに返信を先に送る。
+ */
+function stockUnregisterPlan_(id) {
+  var sh = sheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return { notFound: true };
+
+  var data = sh.getRange(2, 1, last - 1, COL_COUNT).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][COL.ID - 1]) !== String(id)) continue;
+
+    var name = data[i][COL.NAME - 1];
+    if (data[i][COL.STATUS - 1] !== STATUS.STOCK) return { already: true, name: name };
+    return { sheet: sh, row: i + 2, name: name };
+  }
+  return { notFound: true };
+}
+
+/** stockUnregisterPlan_ が決めた1件を取消にする。行は消さない */
+function stockUnregisterCommit_(plan) {
+  plan.sheet.getRange(plan.row, COL.STATUS, 1, 2).setValues([[STATUS.CANCELED, nowStamp_()]]);
+  PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
+}
+
 /**
  * postback「使った」ボタン用。IDで1件だけ消費済にする下ごしらえ。
  * 買い物リストと同じく、ここでは書かずに返信を先に送る。
@@ -3133,6 +3596,34 @@ function handlePostback_(event) {
     return;
   }
 
+  // 登録バブルの「登録取消」。押された1件だけを取消にする
+  if (data.indexOf(STOCK_UNREG_PREFIX) === 0) {
+    var unreg = stockUnregisterPlan_(data.substring(STOCK_UNREG_PREFIX.length));
+    if (unreg.notFound) {
+      replyText_(event.replyToken, 'この項目は見つかりませんでした。');
+      return;
+    }
+    if (unreg.already) {
+      replyText_(event.replyToken, unreg.name + ' はすでに在庫にありません。');
+      return;
+    }
+    replyText_(event.replyToken, '登録を取り消しました（1件）');
+    commitOrNotify_(function () { stockUnregisterCommit_(unreg); }, unreg.name + ' の登録取消');
+    return;
+  }
+
+  // 選択バブルの「全て使用済」。その品名の候補をまとめて消費済にする
+  if (data.indexOf(STOCK_USED_ALL_PREFIX) === 0) {
+    var usedAll = stockUsedIdsPlan_(data.substring(STOCK_USED_ALL_PREFIX.length));
+    if (!usedAll.rows.length) {
+      replyText_(event.replyToken, 'この分はすでに在庫にありません。');
+      return;
+    }
+    replyText_(event.replyToken, '在庫から削除しました（' + usedAll.rows.length + '件）');
+    commitOrNotify_(function () { stockUsedIdsCommit_(usedAll); }, '全て使用済');
+    return;
+  }
+
   // 在庫確認のバブルの「使った」。押された1件だけを消費済にする
   if (data.indexOf(STOCK_USED_PREFIX) === 0) {
     var used = stockUsedPlan_(data.substring(STOCK_USED_PREFIX.length));
@@ -3144,7 +3635,7 @@ function handlePostback_(event) {
       replyText_(event.replyToken, used.name + ' はすでに使用済です。');
       return;
     }
-    replyFlexMessage_(event.replyToken, '在庫', buildShopCheckBubble_(used.name));
+    replyText_(event.replyToken, '在庫から削除しました（1件）');
     commitOrNotify_(function () { stockUsedCommit_(used); }, used.name + ' の使用');
     return;
   }
@@ -3155,8 +3646,8 @@ function handlePostback_(event) {
       replyText_(event.replyToken, '買い物リストはすでに空です。');
       return;
     }
-    replyFlexMessage_(event.replyToken, '買い物リスト',
-      buildShopRemovedBubble_('買い物リストを全て削除しました', clear.todo));
+    // 削除した品名は並べず、件数だけを普通のテキストで返す
+    replyText_(event.replyToken, '買い物リストを全て削除しました（' + clear.todo.length + '件）');
     commitOrNotify_(function () { shopBulkDoneCommit_(clear); }, '買い物リストの全件削除');
     return;
   }
@@ -3169,8 +3660,8 @@ function handlePostback_(event) {
       replyText_(event.replyToken, 'この追加はすでに取り消し済みです。');
       return;
     }
-    replyFlexMessage_(event.replyToken, '買い物リスト',
-      buildShopRemovedBubble_('追加を取り消しました', part.todo));
+    // 取り消した品名は並べず、件数だけを普通のテキストで返す
+    replyText_(event.replyToken, '追加を取り消しました（' + part.todo.length + '件）');
     commitOrNotify_(function () { shopBulkDoneCommit_(part); }, '追加の取り消し');
     return;
   }
@@ -3203,7 +3694,7 @@ function commitOrNotify_(commit, label) {
   } catch (err) {
     console.error('返信後の書き込みに失敗: ' + err.stack);
     try {
-      pushText_('※ ' + label + 'を記録できませんでした。\n'
+      pushTextTo_(CURRENT_USER_, '※ ' + label + 'を記録できませんでした。\n'
         + 'もう一度ボタンを押すか、時間をおいて試してください。\n' + err.message);
     } catch (pushErr) {
       console.error('失敗通知の push にも失敗: ' + pushErr.stack);
@@ -3237,17 +3728,25 @@ var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * 3;
  *   fill       … 押すと入力欄に差し込まれる。続きを打って自分で送る
  *   send       … 押すとそのまま送信される。続けて入力するものがない操作に使う
  *   cameraRoll … 押すと写真選択画面が開く（レシピ写真を選んで送る用）
+ *   webTab     … 押すとブラウザの画面が開く（'shop' = 買い物, 'stock' = 在庫）
+ *
+ * 最上段の2つはブラウザの画面へ飛ばす。一覧を見て消すだけならトーク内のバブルより
+ * 画面のほうが速く、スワイプでの操作もできるため。
+ * 材料確認（写真）は毎日は使わないので最下段に置いた。
+ *
+ * ⚠ webTab の URL には画面トークンが入る。リッチメニューは作った時点の URL を抱えるので、
+ * rotateWebToken() でトークンを作り直したら setupRichMenu() も実行し直すこと。
  *
  * 「買い物リストを全部削除」はメニューから外した。買い物リスト表示の
  * バブル最下段に「全て削除」があり、そちらのほうが誤爆しにくいため
  * （文字で「買い物リストを全部削除」と送る経路は残してある）。
  */
 var RICHMENU_CELLS = [
-  { col: 0, row: 0, cameraRoll: true },                      // 材料確認
-  { col: 0, row: 1, send: '買い物リスト表示' },
-  { col: 0, row: 2, fill: '買い物リスト追加\n' },
-  { col: 0, row: 3, fill: '買い物リスト削除\n' },
-  { col: 1, row: 0, fill: '在庫確認\n' },
+  { col: 0, row: 0, webTab: 'shop', label: '買い物リスト表示' },
+  { col: 0, row: 1, fill: '買い物リスト追加\n' },
+  { col: 0, row: 2, fill: '買い物リスト削除\n' },
+  { col: 0, row: 3, cameraRoll: true },                      // 材料確認
+  { col: 1, row: 0, webTab: 'stock', label: '在庫確認' },
   { col: 1, row: 1, fill: '期限登録\n' },
   { col: 1, row: 2, fill: '使用済\n' },
   { col: 1, row: 3, send: '取消' }
@@ -3269,16 +3768,18 @@ function buildRichMenu_() {
           width: RICHMENU_COL_W,
           height: h
         },
-        action: cell.send
-          ? { type: 'message', text: cell.send }
-          : cell.cameraRoll
-            ? { type: 'cameraRoll', label: '材料確認' }
-            : {
-              type: 'postback',
-              data: 'fill',   // 使わないが postback には必須
-              inputOption: 'openKeyboard',
-              fillInText: cell.fill
-            }
+        action: cell.webTab
+          ? { type: 'uri', label: cell.label, uri: webUrl_(cell.webTab) }
+          : cell.send
+            ? { type: 'message', text: cell.send }
+            : cell.cameraRoll
+              ? { type: 'cameraRoll', label: '材料確認' }
+              : {
+                type: 'postback',
+                data: 'fill',   // 使わないが postback には必須
+                inputOption: 'openKeyboard',
+                fillInText: cell.fill
+              }
       };
     })
   };
@@ -3304,6 +3805,19 @@ function lineApi_(method, url, options) {
  * 古いものは消してから作るので、何度実行しても増えない。
  */
 function setupRichMenu() {
+  // メニューには画面のURLを焼き込むので、先に本物の /exec が分かっているか確かめる
+  console.log('公開URL: ' + assertExecUrl_());
+
+  // 誰に配るかが決まっていないと、トークン入りのリンクの配り先を絞れない
+  var users = allowedUserIds_();
+  if (!users.length) {
+    throw new Error('ALLOWED_USER_IDS（または ALLOWED_USER_ID）が未設定です。\n'
+      + 'メニューには画面のURLが入るため、配る相手を決めずには作れません。');
+  }
+  RICHMENU_CELLS.forEach(function (cell) {
+    if (cell.webTab) console.log(cell.label + ' → ' + webUrl_(cell.webTab));
+  });
+
   var old = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
   (old.richmenus || []).forEach(function (m) {
     lineApi_('delete', 'https://api.line.me/v2/bot/richmenu/' + m.richMenuId);
@@ -3325,8 +3839,36 @@ function setupRichMenu() {
   });
   console.log('画像をアップロード: ' + Math.round(png.getBytes().length / 1024) + 'KB');
 
-  lineApi_('post', 'https://api.line.me/v2/bot/user/all/richmenu/' + id);
-  console.log('既定のリッチメニューに設定しました。トークを開き直すと出ます。');
+  // 既定（全ユーザー）には割り当てない。
+  // メニューの「買い物リスト表示」「在庫確認」は画面トークン入りのURLを抱えているので、
+  // 既定にすると Bot を友だち追加しただけの人にもそのリンクが配られ、
+  // ALLOWED_USER_IDS を通らずに買い物リストと在庫を読み書きされてしまう。
+  lineApiIgnore404_('delete', 'https://api.line.me/v2/bot/user/all/richmenu');
+
+  users.forEach(function (uid) {
+    lineApi_('post', 'https://api.line.me/v2/bot/user/' + encodeURIComponent(uid) + '/richmenu/' + id);
+    console.log('割り当て: ' + uid);
+  });
+  console.log(users.length + '人に設定しました。トークを開き直すと出ます。');
+  console.log('※ 使う人を増やしたら、ALLOWED_USER_IDS に追記したうえで、この関数をもう一度実行すること。');
+}
+
+/**
+ * 404 を失敗と見なさない lineApi_。
+ * 「既定のリッチメニューを外す」は、もともと設定が無いときに 404 を返すため。
+ */
+function lineApiIgnore404_(method, url) {
+  var res = UrlFetchApp.fetch(url, {
+    method: method,
+    headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  if (code !== 200 && code !== 404) {
+    throw new Error('LINE API 失敗 (HTTP ' + code + ') ' + url + '\n'
+      + res.getContentText().substring(0, 300));
+  }
+  return res;
 }
 
 /** リッチメニューを全部消す。表示を止めたいときにエディタから実行する */

@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<!-- URL にトークンが入っているので、外部へ出す通信に Referer として付けさせない。
+     HtmlService の addMetaTag() は viewport など決まったタグしか受け付けないため、ここに直接置く -->
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#eef1f5">
+<style>
+:root {
+  --green: #06C755;          /* LINE のブランド色 */
+  --blue: #2f80ed;
+  --bg: #eef1f5;             /* 画面の地。品目の白が浮く程度の薄さ */
+  --card: #ffffff;
+  --pill: #e4e8ee;           /* 選んでいないタブ */
+  --dark: #06C755;           /* 選んでいるタブ */
+  --slate: #5b6b7f;          /* 締め色。黒より軽い */
+  --text: #1f2328;
+  --sub: #6b7280;
+  --line: #e3e7ec;
+  /* 線ではなく落ち影で境界を出す */
+  --shadow: 0 3px 10px rgba(16, 24, 40, .18);
+  --shadow-lift: 0 6px 16px rgba(16, 24, 40, .26);
+
+  /* 期限の3段階。左の帯・日数・絞り込みボタンで同じ色を使う */
+  --over-bg: #fdecec;   --over-fg: #d92d20;
+  --soon-bg: #fdf4e3;   --soon-fg: #b45309;
+  --ok-bg:   #e9f7ef;   --ok-fg:   #0f7a45;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* overscroll-behavior は既定（auto）のままにする。contain にすると、
+   一覧が画面より長いときに上端での引き下げがこのページで止まってしまい、
+   LINE内蔵ブラウザを下スワイプで閉じられなくなる（在庫タブだけ閉じられない、という形で出る） */
+html, body { background: var(--bg); }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 15px;
+  min-height: 100vh;
+  padding-bottom: 104px;   /* 下に浮かせたタブのぶん */
+}
+.wrap { padding: 0 12px 12px; max-width: 640px; margin: 0 auto; }
+
+/* ---- 上のひとかたまり（入力欄）は、スクロールしても残す ---- */
+.sticky {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--bg); padding: 12px 12px 10px;
+  /* 下の品目が透けて重なって見えないよう、地の色で覆っておく */
+}
+/* 固定部分の下端に地の色をぼかして流し、切れ目が線に見えないようにする */
+.sticky::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -14px; height: 14px;
+  background: linear-gradient(var(--bg), rgba(238, 241, 245, 0));
+  pointer-events: none;
+}
+.sticky > * { max-width: 640px; margin: 0 auto; }
+
+/* ---- タブ。指が届きやすいよう、下に浮かせて置く ---- */
+.tabbar {
+  position: fixed; left: 12px; right: 12px; z-index: 6;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  max-width: 640px; margin: 0 auto;
+  background: var(--card); border-radius: 999px; padding: 6px 10px 6px 6px;
+  box-shadow: 0 8px 28px rgba(16, 24, 40, .38);
+}
+.tabs { display: flex; align-items: center; gap: 6px; }
+.reload {
+  flex: 0 0 auto; width: 34px; border: none; border-radius: 999px;
+  background: none; color: var(--sub); font-size: 18px; cursor: pointer;
+}
+.reload.loading { animation: spin .8s linear infinite; opacity: .6; }
+.tab {
+  flex: 1; padding: 12px 8px; border: none; border-radius: 999px; cursor: pointer;
+  background: var(--pill); color: var(--sub);
+  font-family: inherit; font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.tab { background: none; color: var(--sub); }
+.tab.on { background: var(--dark); color: #fff; }
+.tab .n {
+  font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: var(--pill); color: var(--sub);
+}
+.tab.on .n { background: rgba(0,0,0,.16); color: #fff; }
+
+.addbox { display: flex; gap: 8px; }
+.search { position: relative; }
+.search input { padding-right: 42px; }
+.search .clear {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: var(--line); color: var(--sub);
+  font-size: 15px; line-height: 1; font-family: inherit; cursor: pointer;
+}
+.addbox input, .search input {
+  flex: 1; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); color: var(--text); box-shadow: var(--shadow);
+  /* 16px 未満だと iOS が入力時に拡大するので、ここは下げない */
+  font-size: 16px;
+}
+.addbox input::placeholder, .search input::placeholder { color: var(--sub); }
+.addbox button {
+  padding: 0 18px; border: none; border-radius: 12px; background: var(--green); color: #fff;
+  font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+
+/* ---- 期限ごとの絞り込み。横一列の小さなボタンにして場所を取らない ---- */
+.head { margin-top: 0; }
+.chips { display: flex; gap: 8px; margin-top: 8px; }
+.chip {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  border: 1px solid transparent; border-radius: 12px; padding: 8px 10px;
+  background: var(--card); color: var(--text);
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  box-shadow: var(--shadow); cursor: pointer;
+}
+.chip .top { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.chip .dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+.chip .cnt { font-size: 17px; font-weight: 800; line-height: 1.1; }
+.chip.over .dot { background: var(--over-fg); }
+.chip.soon .dot { background: var(--soon-fg); }
+.chip.ok .dot { background: var(--ok-fg); }
+.chip.all.on { background: var(--pill); border-color: #b9c2cd; color: var(--text); }
+.chip.over.on { background: var(--over-bg); border-color: var(--over-fg); color: var(--over-fg); }
+.chip.soon.on { background: var(--soon-bg); border-color: var(--soon-fg); color: var(--soon-fg); }
+.chip.ok.on { background: var(--ok-bg); border-color: var(--ok-fg); color: var(--ok-fg); }
+
+.sec { font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 2px 4px; }
+.hintbar { font-size: 11px; color: var(--sub); margin: 0 2px 7px; }
+.loadingbar {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  color: var(--sub); font-size: 12px; font-weight: 700; padding: 10px 0 2px;
+}
+
+/* ---- 品目。1件ずつ白いカードにして、左の帯で期限の近さを示す ---- */
+.swipe { position: relative; overflow: hidden; border-radius: 11px; margin-bottom: 8px; box-shadow: var(--shadow); }
+.act {
+  position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+  display: flex; align-items: center; padding: 0 18px;
+  color: #fff; font-size: 13px; font-weight: 700; opacity: 0;
+}
+.act.right { background: var(--green); justify-content: flex-start; }
+/* 戻す側は、消したときの緑と区別してグレーにする */
+.swipe.undo .act.right { background: var(--sub); }
+.act.left {
+  background: var(--blue); justify-content: flex-end;
+  text-align: right; white-space: pre-line; line-height: 1.25;
+}
+.card {
+  position: relative; display: flex; align-items: center; gap: 11px;
+  background: var(--card); padding: 10px 13px; touch-action: pan-y;
+}
+.card.slide { transition: transform .22s ease-out, opacity .22s ease-out; }
+.card .bar { flex: 0 0 auto; width: 4px; height: 31px; border-radius: 999px; background: var(--line); }
+.card .bar.shop { background: var(--blue); }
+.card .bar.over { background: var(--over-fg); }
+.card .bar.soon { background: var(--soon-fg); }
+.card .bar.ok { background: var(--ok-fg); }
+.card .body { flex: 1; min-width: 0; }
+.card .name { font-weight: 700; }
+.card .meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.card .days {
+  flex: 0 0 auto; min-width: 55px; text-align: center; border-radius: 9px; padding: 5px 6px;
+  background: var(--line); color: var(--sub);
+}
+.card .days.over { background: var(--over-bg); color: var(--over-fg); }
+.card .days.soon { background: var(--soon-bg); color: var(--soon-fg); }
+.card .days.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.card .days .d { font-size: 17px; font-weight: 800; line-height: 1.1; }
+.card .days .u { font-size: 10px; font-weight: 700; }
+/* 済みの行。その場に残したまま、地の色を落として一目で区別できるようにする。
+   枠を破線にして「まだ確定していない・戻せる」感じを出す */
+.swipe.done { box-shadow: none; }
+.card.done { background: var(--pill); border: 1px dashed #c4ccd6; }
+.card.done .name { color: var(--sub); font-weight: 600; text-decoration: line-through; }
+.card.done .meta { color: var(--sub); }
+/* 左の色帯の代わりに置くチェック。帯と同じ幅を取って行の頭が揃うようにする */
+.card .check {
+  flex: 0 0 auto; width: 4px; display: flex; align-items: center; justify-content: center;
+  color: var(--sub); font-size: 15px; line-height: 1;
+}
+.empty { color: var(--sub); font-size: 13px; padding: 18px 14px; text-align: center; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); }
+.notice { background: var(--card); border-left: 3px solid var(--green); padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 10px; box-shadow: var(--shadow); }
+/* 読み込み中は、その品目の右に小さく出す */
+.card .status { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; color: var(--sub); font-size: 12px; }
+.spin {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--sub);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="sticky">
+  <div class="head" id="head-shop">
+    <div class="addbox">
+      <input id="add-name" type="text" placeholder="➕ 品名を追加" autocomplete="off">
+      <button id="add-btn">追加</button>
+    </div>
+  </div>
+
+  <div class="head" id="head-stock" hidden>
+    <div class="search">
+      <input id="stock-q" type="search" placeholder="🔍 在庫を検索" autocomplete="off">
+      <button class="clear" id="stock-clear" hidden>✕</button>
+    </div>
+    <div class="chips">
+      <button class="chip all on" id="f-all"><span class="top">すべて</span><span class="cnt" id="c-all">0</span></button>
+      <button class="chip over" id="f-over"><span class="top"><span class="dot"></span>期限切れ</span><span class="cnt" id="c-over">0</span></button>
+      <button class="chip soon" id="f-soon"><span class="top"><span class="dot"></span>3日以内</span><span class="cnt" id="c-soon">0</span></button>
+      <button class="chip ok" id="f-ok"><span class="top"><span class="dot"></span>余裕あり</span><span class="cnt" id="c-ok">0</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="loadingbar" id="loadingbar" hidden><span class="spin"></span>更新中…</div>
+  <div id="notice" class="notice" hidden></div>
+
+  <section id="panel-shop">
+    <div class="sec">未購入</div>
+    <div class="hintbar">右にスワイプ＝購入済み　／　済みの行を右にスワイプ＝取消</div>
+    <div id="list-todo"></div>
+  </section>
+
+  <section id="panel-stock" hidden>
+    <div class="sec">期限が近い順</div>
+    <div class="hintbar">右にスワイプ＝使用済み　／　左にスワイプ＝使用済み＋買い物リストへ</div>
+    <div class="hintbar">済みの行を右にスワイプ＝取消</div>
+    <div id="list-stock"></div>
+  </section>
+</div>
+
+<div class="tabbar">
+  <div class="tabs">
+    <button class="tab on" id="tab-shop">買い物<span class="n" id="n-shop"></span></button>
+    <button class="tab" id="tab-stock">在庫<span class="n" id="n-stock"></span></button>
+    <button class="reload" id="reload" title="更新">↻</button>
+  </div>
+</div>
+
+<!-- URL のトークン。JS の文字列に直接埋めると HtmlService の
+     エスケープでクォートが壊れるため、テキストとして置いて読み出す -->
+<span id="k" hidden><?= token ?></span>
+<!-- 最初に開くタブ。リッチメニューの「買い物リスト表示」「在庫確認」から飛んだときに使う -->
+<span id="t" hidden><?= tab ?></span>
+
+<script>
+var TOKEN = document.getElementById('k').textContent.trim();
+var START_TAB = document.getElementById('t').textContent.trim();
+var state = null;
+var pending = 0;      // 書き込み待ちの件数。0 になるまでサーバーの結果で描き直さない
+var waiting = {};     // 書き込み待ちの品目。その行に「読み込み中」を出す
+var tempSeq = 0;      // 追加した直後の、まだ ID が無い品目に振る仮の番号
+var filter = '';   // '' / 'over' / 'soon' / 'ok'
+
+// この画面で操作したぶんだけを控える。読み込み直すと消えるので、
+// 「購入済み」「使用済み」にはその場で操作した分しか並ばない
+var doneShop = [];
+var doneStock = [];
+
+function $(id) { return document.getElementById(id); }
+
+function fail(err) {
+  showLoading(false);
+  pending = 0;
+  waiting = {};
+  showNotice('通信に失敗しました: ' + (err && err.message ? err.message : err));
+  load();   // 画面だけ進んでいる恐れがあるので、シートの中身を取り直す
+}
+
+/**
+ * 書き込みの結果を受け取る。まだ他の書き込みが飛んでいる間は描き直さない
+ * （先に投げたぶんの古い結果で、今の画面を巻き戻してしまわないようにする）。
+ */
+function opDone(data) {
+  pending--;
+  if (pending > 0) return;
+  apply(data);
+}
+
+function opFail(err) {
+  pending--;
+  fail(err);
+}
+
+function showNotice(text) {
+  var el = $('notice');
+  if (!text) { el.hidden = true; return; }
+  el.textContent = text;
+  el.hidden = false;
+}
+
+function apply(data) {
+  showLoading(false);
+  waiting = {};      // 待っていた分は、この結果に含まれている
+  state = data;
+  showNotice(data.notice || '');
+  render();
+}
+
+/** 読み込み中かどうかの見せ方。更新ボタンを回し、一覧の上にも出す */
+function showLoading(on) {
+  $('reload').className = 'reload' + (on ? ' loading' : '');
+  $('reload').disabled = on;
+  $('loadingbar').hidden = !on;
+}
+
+function load() {
+  showLoading(true);
+  google.script.run.withSuccessHandler(apply).withFailureHandler(fail).webData(TOKEN);
+}
+
+// ---------------------------------------------------------------- 期限の区分
+
+/** 期限までの日数を3段階に分ける。期限が分からないものはどれにも入れない */
+function level(it) {
+  if (it.days === null || it.days === undefined) return '';
+  if (it.days < 0) return 'over';
+  if (it.days <= 3) return 'soon';
+  return 'ok';
+}
+
+// ---------------------------------------------------------------- 描画
+
+function render() {
+  if (!state) return;
+
+  $('n-shop').textContent = state.shop.todo.length;
+  $('n-stock').textContent = state.stock.items.length;
+
+  renderList($('list-todo'), shopRows(), shopCard, '買うものはありません');
+
+  renderStats();
+  renderList($('list-stock'), stockRows(), stockCard, '該当する在庫がありません');
+}
+
+function renderStats() {
+  var count = { over: 0, soon: 0, ok: 0 };
+  state.stock.items.forEach(function (it) {
+    var lv = level(it);
+    if (lv) count[lv]++;
+  });
+
+  $('c-all').textContent = state.stock.items.length;
+  $('c-over').textContent = count.over;
+  $('c-soon').textContent = count.soon;
+  $('c-ok').textContent = count.ok;
+
+  $('f-all').className = 'chip all' + (filter ? '' : ' on');
+  ['over', 'soon', 'ok'].forEach(function (lv) {
+    $('f-' + lv).className = 'chip ' + lv + (filter === lv ? ' on' : '');
+  });
+}
+
+/**
+ * 並べるもの。済みにした行も一覧から抜かず、同じ基準で一緒に並べて元の位置に残す。
+ * （済みの行はサーバーの返事には含まれないので、doneShop / doneStock に控えたものを混ぜる）
+ */
+function shopRows() {
+  return state.shop.todo.concat(doneShop)
+    .sort(function (a, b) { return Number(a.id) - Number(b.id); });
+}
+
+function stockRows() {
+  return state.stock.items.concat(doneStock).filter(passesStockFilter).sort(byExpiry);
+}
+
+/** 検索欄と絞り込みボタンの両方を通ったか */
+function passesStockFilter(it) {
+  var q = $('stock-q').value.trim().toLowerCase();
+  if (filter && level(it) !== filter) return false;
+  if (!q) return true;
+  return (it.name + ' ' + (it.category || '')).toLowerCase().indexOf(q) >= 0;
+}
+
+/** 期限の近い順。期限が分からないものは末尾に回す */
+function byExpiry(a, b) {
+  if (!a.date) return b.date ? 1 : 0;
+  if (!b.date) return -1;
+  return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+}
+
+function renderList(box, items, build, emptyText) {
+  box.textContent = '';
+  if (!items.length) {
+    if (emptyText) {
+      var e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = emptyText;
+      box.appendChild(e);
+    }
+    return;
+  }
+  items.forEach(function (it) { box.appendChild(build(it)); });
+}
+
+/**
+ * 1枚のカードを組み立てる。opt は次のとおり:
+ *   name / meta … 表示するもの
+ *   level … 期限の区分（左の帯と日数の色）
+ *   days  … { d: '94', u: '日超過' } 右端の表示。無ければ出さない
+ *   waiting … 書き込み待ちなら、右端に「読み込み中」を出す
+ *   done  … 済みの見た目にするか（品名を薄く、帯をグレーに）
+ *   right / left … スワイプしたときの { label, run }
+ */
+function card(opt) {
+  var wrap = document.createElement('div');
+  wrap.className = 'swipe' + (opt.done ? ' undo' : '');
+
+  var right = actionLayer('right', opt.right);
+  var left = actionLayer('left', opt.left);
+  if (right) wrap.appendChild(right);
+  if (left) wrap.appendChild(left);
+
+  var el = document.createElement('div');
+  el.className = 'card' + (opt.done ? ' done' : '');
+
+  if (opt.done) {
+    // 済みの行は期限の色帯を出さない。代わりにチェックを置く
+    var check = document.createElement('div');
+    check.className = 'check';
+    check.textContent = '✓';
+    el.appendChild(check);
+  } else {
+    var bar = document.createElement('div');
+    bar.className = 'bar' + (opt.level ? ' ' + opt.level : '');
+    el.appendChild(bar);
+  }
+
+  var body = document.createElement('div');
+  body.className = 'body';
+
+  var name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = opt.name;
+  body.appendChild(name);
+
+  if (opt.meta) {
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = opt.meta;
+    body.appendChild(meta);
+  }
+  el.appendChild(body);
+
+  if (opt.waiting) {
+    var st = document.createElement('div');
+    st.className = 'status';
+    var sp = document.createElement('span');
+    sp.className = 'spin';
+    st.appendChild(sp);
+    st.appendChild(document.createTextNode('読み込み中'));
+    el.appendChild(st);
+  } else if (opt.days) {
+    var days = document.createElement('div');
+    days.className = 'days' + (opt.level ? ' ' + opt.level : '');
+    var d = document.createElement('div');
+    d.className = 'd';
+    d.textContent = opt.days.d;
+    var u = document.createElement('div');
+    u.className = 'u';
+    u.textContent = opt.days.u;
+    days.appendChild(d);
+    days.appendChild(u);
+    el.appendChild(days);
+  }
+
+  wrap.appendChild(el);
+  attachSwipe(el, right, left, opt.right, opt.left);
+  return wrap;
+}
+
+function actionLayer(side, action) {
+  if (!action) return null;
+  var el = document.createElement('div');
+  el.className = 'act ' + side;
+  el.textContent = action.label;
+  return el;
+}
+
+/**
+ * スワイプ操作。横に一定以上動かしたらその向きの操作を実行する。
+ * 縦に動かしているときは画面のスクロールを邪魔しないよう何もしない。
+ */
+function attachSwipe(el, rightEl, leftEl, rightAction, leftAction) {
+  if (!rightAction && !leftAction) return;
+
+  var THRESHOLD = 70;   // これ以上動かしたら実行
+  var startX = 0, startY = 0, dx = 0, dragging = false, decided = false;
+
+  el.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    dx = 0;
+    dragging = true;
+    decided = false;
+    el.classList.remove('slide');
+  }, { passive: true });
+
+  el.addEventListener('touchmove', function (e) {
+    if (!dragging) return;
+    var mx = e.touches[0].clientX - startX;
+    var my = e.touches[0].clientY - startY;
+
+    // 最初の動きが縦なら、そのままスクロールに任せる
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      decided = true;
+      if (Math.abs(my) > Math.abs(mx)) { dragging = false; return; }
+    }
+
+    if (mx > 0 && !rightAction) mx = 0;
+    if (mx < 0 && !leftAction) mx = 0;
+
+    dx = Math.max(-140, Math.min(140, mx));
+    el.style.transform = 'translateX(' + dx + 'px)';
+    if (rightEl) rightEl.style.opacity = dx > 0 ? Math.min(1, dx / THRESHOLD) : 0;
+    if (leftEl) leftEl.style.opacity = dx < 0 ? Math.min(1, -dx / THRESHOLD) : 0;
+  }, { passive: true });
+
+  el.addEventListener('touchend', function () {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.add('slide');
+
+    var run = dx >= THRESHOLD ? rightAction : dx <= -THRESHOLD ? leftAction : null;
+    if (run) {
+      // 指を離した勢いのまま抜けていき、消えきってから移す（一瞬で入れ替わると流れが見えない）
+      el.style.transform = 'translateX(' + (dx > 0 ? 1 : -1) * 420 + 'px)';
+      el.style.opacity = '0';
+      setTimeout(run.run, 220);
+      return;
+    }
+
+    el.style.transform = 'translateX(0)';
+    if (rightEl) rightEl.style.opacity = 0;
+    if (leftEl) leftEl.style.opacity = 0;
+  });
+}
+
+// ---------------------------------------------------------------- 1件ぶんの見た目
+
+function shopCard(it) {
+  if (it.done) {
+    return card({
+      done: true,
+      name: it.name,
+      meta: '購入済み',
+      waiting: !!waiting[it.id],
+      right: { label: '取消', run: function () { undoShop(it); } }
+    });
+  }
+
+  return card({
+    level: 'shop',
+    name: it.name,
+    waiting: !!waiting[it.id],
+    meta: it.added ? mmdd(it.added) + ' 追加' : '',
+    right: { label: '購入済み', run: function () { buyShop(it); } }
+  });
+}
+
+function stockCard(it) {
+  if (it.done) {
+    return card({
+      done: true,
+      name: it.name,
+      // 左になぞった分は買い物リストにも入れているので、取り消す範囲が伝わるよう書き分ける
+      meta: it.toShop ? '使用済み＋買い物リスト登録' : '使用済み',
+      waiting: !!waiting[it.id],
+      right: { label: '取消', run: function () { undoStock(it); } }
+    });
+  }
+
+  return card({
+    name: it.name,
+    waiting: !!waiting[it.id],
+    meta: stockMeta(it),
+    level: level(it),
+    days: daysBox(it),
+    right: { label: '使用済み', run: function () { useStock(it, false); } },
+    left: { label: '使用済み＋\n買い物リストへ', run: function () { useStock(it, true); } }
+  });
+}
+
+/** 「戻す」を押した分を控えから外す */
+function dropFrom(list, item) {
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id === item.id) { list.splice(i, 1); return; }
+  }
+}
+
+function stockMeta(it) {
+  var parts = [];
+  if (it.date) parts.push((it.label === '消費期限' ? '消費' : '賞味') + ' ' + it.date + (it.approx ? '頃' : ''));
+  else parts.push('期限不明');
+  if (it.regDate) parts.push(mmdd(it.regDate) + ' 登録');
+  return parts.join(' ・ ');
+}
+
+function daysBox(it) {
+  if (it.days === null || it.days === undefined) return { d: '—', u: '期限不明' };
+  if (it.days < 0) return { d: String(-it.days), u: '日超過' };
+  if (it.days === 0) return { d: '0', u: '今日まで' };
+  return { d: String(it.days), u: '日残り' };
+}
+
+function mmdd(ymd) {
+  var m = /^\d{4}-(\d{2})-(\d{2})$/.exec(ymd || '');
+  return m ? Number(m[1]) + '/' + Number(m[2]) : (ymd || '');
+}
+
+// ---------------------------------------------------------------- 操作
+
+/** 一覧から1件外す。シートの返事を待たずに画面を切り替えるために使う */
+function takeOut(list, id) {
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id === id) return list.splice(i, 1)[0];
+  }
+  return null;
+}
+
+/** 書き込みを1件投げる。画面はもう切り替わっている前提 */
+function send(method, args) {
+  pending++;
+  var runner = google.script.run.withSuccessHandler(opDone).withFailureHandler(opFail);
+  runner[method].apply(runner, [TOKEN].concat(args));
+}
+
+function buyShop(it) {
+  // 一覧からは抜くが doneShop に控える。サーバーの返事にはもう含まれないので、
+  // これが無いと済みの行がその場から消えてしまう
+  takeOut(state.shop.todo, it.id);
+  it.done = true;
+  doneShop.push(it);
+  waiting[it.id] = true;
+  render();                       // 先に画面を動かす
+  send('webSetShop', [it.id, true]);
+}
+
+/** toShop を立てると、使用済みにしたうえで買い物リストにも入れる */
+function useStock(it, toShop) {
+  takeOut(state.stock.items, it.id);
+  it.done = true;
+  it.toShop = !!toShop;
+  it.shopId = '';
+  doneStock.push(it);
+  waiting[it.id] = true;
+  render();
+
+  if (!toShop) { send('webSetStock', [it.id, true]); return; }
+
+  // 買い物リストに足した1件の ID を控える。取り消すとき、この操作で足した分だけを狙うため。
+  // 書き込みが重なると opDone は最後の返事しか使わないので、ここは個別の受け口で拾う
+  pending++;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      it.shopId = (data && data.addedShopId) || '';
+      opDone(data);
+    })
+    .withFailureHandler(opFail)
+    .webUseAndAdd(TOKEN, it.id);
+}
+
+/** 「戻す」。こちらも画面を先に戻してから書き込む */
+function undoShop(it) {
+  dropFrom(doneShop, it);
+  delete it.done;
+  state.shop.todo.push(it);
+  waiting[it.id] = true;
+  render();
+  send('webSetShop', [it.id, false]);
+}
+
+function undoStock(it) {
+  dropFrom(doneStock, it);
+  var toShop = it.toShop;
+  var shopId = it.shopId;
+  delete it.done;
+  delete it.toShop;
+  delete it.shopId;
+
+  state.stock.items.push(it);
+  waiting[it.id] = true;
+  render();
+
+  // 左になぞった分は買い物リストにも入れているので、そちらも一緒に取り消す
+  if (toShop) send('webUndoUseAndAdd', [it.id, shopId || '']);
+  else send('webSetStock', [it.id, false]);
+}
+
+function add() {
+  var input = $('add-name');
+  var name = input.value.trim();
+  if (!name) return;
+
+  input.value = '';
+  input.blur();                     // 追加したらキーボードは閉じる
+
+  // ID はシート側で採番するので、それまでは仮の1件を並べておく
+  var temp = { id: 'tmp' + (++tempSeq), name: name, added: '' };
+  state.shop.todo.push(temp);
+  waiting[temp.id] = true;
+  render();
+
+  send('webAddShop', [name]);
+}
+
+$('add-btn').addEventListener('click', add);
+$('add-name').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') add();
+});
+$('stock-q').addEventListener('input', function () {
+  $('stock-clear').hidden = !$('stock-q').value;
+  render();
+});
+$('stock-q').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') $('stock-q').blur();   // 探したらキーボードは閉じる
+});
+$('stock-clear').addEventListener('click', function () {
+  $('stock-q').value = '';
+  $('stock-clear').hidden = true;
+  $('stock-q').blur();
+  render();
+});
+
+['over', 'soon', 'ok'].forEach(function (lv) {
+  $('f-' + lv).addEventListener('click', function () {
+    filter = filter === lv ? '' : lv;   // もう一度押したら絞り込みを解く
+    render();
+  });
+});
+
+$('f-all').addEventListener('click', function () {
+  filter = '';
+  render();
+});
+
+$('reload').addEventListener('click', function () {
+  // 枠の中で location.reload() すると白い画面になるので、中身だけ取り直す
+  doneShop = [];
+  doneStock = [];
+  waiting = {};
+  load();
+});
+
+$('tab-shop').addEventListener('click', function () { switchTab('shop'); });
+$('tab-stock').addEventListener('click', function () { switchTab('stock'); });
+
+function switchTab(name) {
+  var shop = name === 'shop';
+  $('tab-shop').className = 'tab' + (shop ? ' on' : '');
+  $('tab-stock').className = 'tab' + (shop ? '' : ' on');
+  $('head-shop').hidden = !shop;
+  $('head-stock').hidden = shop;
+  $('panel-shop').hidden = !shop;
+  $('panel-stock').hidden = shop;
+  showNotice('');
+
+  // 切り替えたら必ず先頭から見せる。前のタブで下まで見ていた位置が残っていると、
+  // 一覧の途中から始まって迷ううえ、ブラウザを閉じる下スワイプも効かなくなる
+  window.scrollTo(0, 0);
+}
+
+// 開く先のタブ。URL の ?tab=stock で在庫から始められる（既定は買い物）
+if (START_TAB === 'stock') switchTab('stock');
+
+// 埋め込みが何かの拍子に空だったときは、開いているURLの ?k= から拾い直す
+if (TOKEN) {
+  load();
+} else if (google.script.url) {
+  google.script.url.getLocation(function (loc) {
+    TOKEN = (loc && loc.parameter && loc.parameter.k) || '';
+    load();
+  });
+} else {
+  showNotice('リンクが正しくありません。LINEで「リンク」と送って開き直してください。');
+}
+</script>
+</body>
+</html>

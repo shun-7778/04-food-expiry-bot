@@ -1,7 +1,10 @@
-# clasp が GAS へ送るのは コード.gs / RichMenuImage.gs / appsscript.json だけ。
+# clasp が GAS へ送るのは main.gs / webapp.gs / security.gs / web.html / RichMenuImage.gs / appsscript.json だけ。
 # まず全部を除外し、送るものだけを許可する（.gitignore と同じ方針）。
 **/**
 
-!コード.gs
+!main.gs
+!webapp.gs
+!security.gs
+!web.html
 !RichMenuImage.gs
 !appsscript.json

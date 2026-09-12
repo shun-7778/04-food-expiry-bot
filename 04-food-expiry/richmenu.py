@@ -4,7 +4,7 @@
 2列×4行のダーク基調。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
 トークのバブル（買い物リスト・材料確認）と同じ暗い配色に合わせてある。
 色の役割は次のとおり。
-  ペールブルー … 左列（材料確認・買い物リスト表示／追加／削除）
+  ペールブルー … 左列（買い物リスト表示／追加／削除・材料確認）
   緑           … 右列の在庫まわり（在庫確認・期限登録・使用済）
   グレー       … 取消（在庫にも買い物リストにも属さないので中間色）
 """
@@ -142,15 +142,15 @@ def icon_undo(cx, cy, s, c, lw):
 
 # ---------------------------------------------------------------- 配置
 #
-# 並びは コード.gs の RICHMENU_CELLS と一致させること。
+# 並びは main.gs の RICHMENU_CELLS と一致させること。
 # 左列を上から、次に右列を上から見ていく順で並べる。
 # (col, row, 見出し, アイコン, 色, 文字色)
 
 CELLS = [
-    (0, 0, "材料確認",       icon_camera,        PALE_BLUE, TEXT),
-    (0, 1, "買い物リスト表示", icon_list,          PALE_BLUE, TEXT),
-    (0, 2, "買い物リスト追加", icon_plus_circle,   PALE_BLUE, TEXT),
-    (0, 3, "買い物リスト削除", icon_trash,         PALE_BLUE, TEXT),
+    (0, 0, "買い物リスト表示", icon_list,          PALE_BLUE, TEXT),
+    (0, 1, "買い物リスト追加", icon_plus_circle,   PALE_BLUE, TEXT),
+    (0, 2, "買い物リスト削除", icon_trash,         PALE_BLUE, TEXT),
+    (0, 3, "材料確認",       icon_camera,        PALE_BLUE, TEXT),
     (1, 0, "在庫確認",       icon_box,           GREEN,     TEXT),
     (1, 1, "期限登録",       icon_calendar_plus, GREEN,     TEXT),
     (1, 2, "使用済",         icon_check_circle,  GREEN,     TEXT),
