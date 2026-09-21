@@ -6,9 +6,12 @@
 <!-- URL にトークンが入っているので、外部へ出す通信に Referer として付けさせない。
      HtmlService の addMetaTag() は viewport など決まったタグしか受け付けないため、ここに直接置く -->
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#eef1f5">
+<meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181d" media="(prefers-color-scheme: dark)">
 <style>
 :root {
+  color-scheme: light dark;   /* 検索欄やスクロールバーも端末の設定に合わせる */
+
   --green: #06C755;          /* LINE のブランド色 */
   --blue: #2f80ed;
   --bg: #eef1f5;             /* 画面の地。品目の白が浮く程度の薄さ */
@@ -28,6 +31,44 @@
   --over-bg: #fdecec;   --over-fg: #d92d20;
   --soon-bg: #fef8e1;   --soon-fg: #a16207;   --soon-mark: #eab308;
   --ok-bg:   #e9f7ef;   --ok-fg:   #0f7a45;
+
+  --bg-fade: rgba(238, 241, 245, 0);   /* 固定部分の下に流すぼかし。--bg の透明版 */
+  --edge: #b9c2cd;                     /* 選んだ「すべて」の枠 */
+  --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
+
+  /* 写真1枚（レシピ1つ）から入った品目のまとまりを示す色。
+     レシピIDの順に使い回すので、色数より多い料理があれば一巡して同じ色に戻る */
+  --r0: #0f9d58;   --r1: #8b5cf6;   --r2: #ef7c1b;   --r3: #e0457b;   --r4: #0f9aa8;
+  --dash: #c4ccd6;                     /* 済みの行の破線 */
+}
+
+/* ---- 端末がダークモードのときだけ、色を差し替える。形と配置はそのまま ---- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181d;
+    --card: #1e232b;
+    --pill: #2b323d;
+    --slate: #9aa4b2;
+    --text: #e8ebef;
+    --sub: #98a2b3;
+    --line: #2e3641;
+    /* 暗い地では落ち影が効かないので、濃くして輪郭を保つ */
+    --shadow: 0 3px 10px rgba(0, 0, 0, .45);
+    --shadow-lift: 0 6px 16px rgba(0, 0, 0, .6);
+
+    /* 3段階の色。暗い地に置くので、面は沈めて文字は明るく起こす */
+    --over-bg: #3b1d1d;   --over-fg: #ff7a70;
+    --soon-bg: #352b12;   --soon-fg: #e8b93a;   --soon-mark: #eab308;
+    --ok-bg:   #16301f;   --ok-fg:   #4ec27d;
+
+    --bg-fade: rgba(21, 24, 29, 0);
+    --edge: #3d4552;
+    --src-bg: #223247;
+
+    /* 暗い地では沈むので、どれも一段明るくする */
+    --r0: #3ec27d;   --r1: #a78bfa;   --r2: #ff9f45;   --r3: #ff6f9c;   --r4: #35bccb;
+    --dash: #3d4552;
+  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* overscroll-behavior は既定（auto）のままにする。contain にすると、
@@ -53,7 +94,7 @@ body {
 /* 固定部分の下端に地の色をぼかして流し、切れ目が線に見えないようにする */
 .sticky::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: -14px; height: 14px;
-  background: linear-gradient(var(--bg), rgba(238, 241, 245, 0));
+  background: linear-gradient(var(--bg), var(--bg-fade));
   pointer-events: none;
 }
 .sticky > * { max-width: 640px; margin: 0 auto; }
@@ -65,6 +106,12 @@ body {
   max-width: 640px; margin: 0 auto;
   background: var(--card); border-radius: 999px; padding: 6px 10px 6px 6px;
   box-shadow: 0 8px 28px rgba(16, 24, 40, .38);
+  transition: opacity .15s, transform .15s;
+}
+/* 検索している間は、一覧を隠さないよう下へ逃がす */
+.tabbar.away {
+  opacity: 0; pointer-events: none;
+  transform: translateY(calc(100% + 24px));
 }
 .tabs { display: flex; align-items: center; gap: 6px; }
 .reload {
@@ -124,12 +171,44 @@ body {
 .chip.over .dot { background: var(--over-fg); }
 .chip.soon .dot { background: var(--soon-mark); }
 .chip.ok .dot { background: var(--ok-fg); }
-.chip.all.on { background: var(--pill); border-color: #b9c2cd; color: var(--text); }
+.chip.all.on { background: var(--pill); border-color: var(--edge); color: var(--text); }
 .chip.over.on { background: var(--over-bg); border-color: var(--over-fg); color: var(--over-fg); }
 .chip.soon.on { background: var(--soon-bg); border-color: var(--soon-fg); color: var(--soon-fg); }
 .chip.ok.on { background: var(--ok-bg); border-color: var(--ok-fg); color: var(--ok-fg); }
 
 .sec { font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 2px 4px; }
+/* 料理ごとの見出し。料理名は、その料理の品目の帯と同じ色にして対応を見せる */
+.gsec {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700; margin: 14px 2px 4px;
+}
+.gsec .cnt {
+  flex: 0 0 auto; font-size: 11px; font-weight: 800;
+  background: var(--pill); color: var(--sub); border-radius: 999px; padding: 1px 7px;
+}
+.gsec .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gsec a.t { text-decoration: none; }
+/* 押せることを示す印。見出しの文字より大きくして、指でも狙いやすくする。
+   行の高さは見出しの余白に収まる範囲に留める */
+.gsec .jump {
+  flex: 0 0 auto; margin: -8px 0; padding: 8px 5px;
+  font-size: 22px; line-height: 1; text-decoration: none; color: inherit;
+}
+.gsec.r0 .t, .gsec.r0 .jump { color: var(--r0); }
+.gsec.r1 .t, .gsec.r1 .jump { color: var(--r1); }
+.gsec.r2 .t, .gsec.r2 .jump { color: var(--r2); }
+.gsec.r3 .t, .gsec.r3 .jump { color: var(--r3); }
+.gsec.r4 .t, .gsec.r4 .jump { color: var(--r4); }
+.gsec.none .t { color: var(--sub); }
+
+/* 「個別／料理ごと」の切り替え。絞り込みのボタンと同じ地・同じ丸みで揃える */
+.seg { display: flex; gap: 8px; margin-top: 8px; }
+.seg button {
+  flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 9px 10px;
+  background: var(--pill); color: var(--sub);
+  font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.seg button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
 .loadingbar {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   color: var(--sub); font-size: 12px; font-weight: 700; padding: 10px 0 2px;
@@ -156,12 +235,35 @@ body {
 .card.slide { transition: transform .22s ease-out, opacity .22s ease-out; }
 .card .bar { flex: 0 0 auto; width: 4px; height: 31px; border-radius: 999px; background: var(--line); }
 .card .bar.shop { background: var(--blue); }
+.card .bar.r0 { background: var(--r0); }
+.card .bar.r1 { background: var(--r1); }
+.card .bar.r2 { background: var(--r2); }
+.card .bar.r3 { background: var(--r3); }
+.card .bar.r4 { background: var(--r4); }
 .card .bar.over { background: var(--over-fg); }
 .card .bar.soon { background: var(--soon-mark); }
 .card .bar.ok { background: var(--ok-fg); }
 .card .body { flex: 1; min-width: 0; }
-.card .name { font-weight: 700; }
+/* 品名と分量を1行に。分量は品名と同じ大きさで右端に寄せる
+   （下にグレーで添えると小さくて読みにくいため） */
+.card .line { display: flex; align-items: baseline; gap: 10px; }
+.card .name { min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .amt { flex: 0 0 auto; margin-left: auto; font-weight: 700; color: var(--text); }
+.card.done .amt { color: var(--sub); }
 .card .meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+/* 出どころのレシピ。品名の下に置くと行の高さが変わってしまうので、
+   右端に錠剤として、1行に収めて置く（長い料理名は末尾が「…」になる） */
+.card .src {
+  flex: 0 0 auto; max-width: 45%;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--src-bg);
+  font-size: 12px; font-weight: 700; color: var(--blue);
+  text-decoration: none;
+}
+.card .src .t {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .card .days {
   flex: 0 0 auto; min-width: 55px; text-align: center; border-radius: 9px; padding: 5px 6px;
   background: var(--line); color: var(--sub);
@@ -174,7 +276,7 @@ body {
 /* 済みの行。その場に残したまま、地の色を落として一目で区別できるようにする。
    枠を破線にして「まだ確定していない・戻せる」感じを出す */
 .swipe.undo { box-shadow: none; }
-.card.done { background: var(--pill); border: 1px dashed #c4ccd6; }
+.card.done { background: var(--pill); border: 1px dashed var(--dash); }
 .card.done .name { color: var(--sub); font-weight: 600; text-decoration: line-through; }
 .card.done .meta { color: var(--sub); }
 /* 左の色帯の代わりに置くチェック。帯と同じ幅を取って行の頭が揃うようにする */
@@ -203,6 +305,10 @@ body {
       <input id="add-name" type="text" placeholder="➕ 品名を追加" autocomplete="off">
       <button id="add-btn">追加</button>
     </div>
+    <div class="seg">
+      <button id="seg-list" class="on">個別</button>
+      <button id="seg-recipe">料理ごと</button>
+    </div>
   </div>
 
   <div class="head" id="head-stock" hidden>
@@ -224,7 +330,7 @@ body {
   <div id="notice" class="notice" hidden></div>
 
   <section id="panel-shop">
-    <div class="sec">未購入</div>
+    <div class="sec" id="shop-sec">未購入</div>
     <div id="list-todo"></div>
   </section>
 
@@ -234,7 +340,7 @@ body {
   </section>
 </div>
 
-<div class="tabbar">
+<div class="tabbar" id="tabbar">
   <div class="tabs">
     <button class="tab on" id="tab-shop">買い物<span class="n" id="n-shop"></span></button>
     <button class="tab" id="tab-stock">在庫<span class="n" id="n-stock"></span></button>
@@ -248,6 +354,10 @@ body {
 <!-- 最初に開くタブ。リッチメニューの「買い物リスト表示」「在庫確認」から飛んだときに使う -->
 <span id="t" hidden><?= tab ?></span>
 
+<!-- このURLを開いた人の呼び名。リッチメニューは人ごとに作ってあるので、
+     メニューから開けばここに名前が入る。空なら端末に覚えた分を使う -->
+<span id="p" hidden><?= who ?></span>
+
 <script>
 var TOKEN = document.getElementById('k').textContent.trim();
 var START_TAB = document.getElementById('t').textContent.trim();
@@ -256,6 +366,12 @@ var pending = 0;      // 書き込み待ちの件数。0 になるまでサー�
 var waiting = {};     // 書き込み待ちの品目。その行に「読み込み中」を出す
 var tempSeq = 0;      // 追加した直後の、まだ ID が無い品目に振る仮の番号
 var filter = '';   // '' / 'over' / 'soon' / 'ok'
+// 買い物リストの見せ方。'list'（個別）/ 'recipe'（料理ごと）。
+// 開くたびに個別から始める（覚えない）。料理ごとはその場で切り替えて使う
+var shopView = 'list';
+var who = '';            // この端末を使っている人の呼び名。足したものに残す（起動時に控えから読む）
+var RECIPE_COLORS = 5;   // --r0〜--r4 の数。これを超える料理は色が一巡する
+var order = [];          // 買い物リストを並べる区分の順。サーバーから届く
 var SOON_DAYS = 7;   // 「期限が近い」とみなす残り日数。絞り込みのボタンの文言と揃えること
 
 // この画面で操作したぶんだけを控える。読み込み直すと消えるので、
@@ -264,6 +380,21 @@ var doneShop = [];
 var doneStock = [];
 
 function $(id) { return document.getElementById(id); }
+
+/**
+ * 「あなた」を決める。リッチメニューは人ごとに作ってあるので、
+ * メニューから開けば URL に呼び名が入っている。それを端末に覚えておき、
+ * 名前の付いていないURLで開かれたときは覚えた分を使う。
+ * 端末の控えが使えない設定でも、名前が出ないだけで追加そのものは通る
+ */
+function loadWho() {
+  var fromUrl = document.getElementById('p').textContent.trim();
+  if (fromUrl) {
+    try { localStorage.setItem('WHO', fromUrl); } catch (e) { /* 覚えられなくても続ける */ }
+    return fromUrl;
+  }
+  try { return localStorage.getItem('WHO') || ''; } catch (e) { return ''; }
+}
 
 function fail(err) {
   showLoading(false);
@@ -300,6 +431,9 @@ function apply(data) {
   waiting = {};      // 待っていた分は、この結果に含まれている
   state = data;
   showNotice(data.notice || '');
+  // 呼び名の表から消えた人は、名乗っていない扱いに戻す
+  if (who && data.users && data.users.indexOf(who) < 0) who = '';
+  if (data.order) order = data.order;
   render();
 }
 
@@ -322,6 +456,8 @@ function load() {
  * 「近い」の境目は7日。週次通知の「残り1週間」（NOTIFY_1W_DAYS）と揃えてある。
  */
 function level(it) {
+  // 常備品は期限で追いかけないので、色も絞り込みも「余裕あり」に寄せる
+  if (it.always) return 'ok';
   if (it.days === null || it.days === undefined) return '';
   if (it.days < 0) return 'over';
   if (it.days <= SOON_DAYS) return 'soon';
@@ -336,7 +472,7 @@ function render() {
   $('n-shop').textContent = state.shop.todo.length;
   $('n-stock').textContent = state.stock.items.length;
 
-  renderList($('list-todo'), shopRows(), shopCard, '買うものはありません');
+  renderShop();
 
   renderStats();
   renderList($('list-stock'), stockRows(), stockCard, '該当する在庫がありません');
@@ -364,9 +500,146 @@ function renderStats() {
  * 並べるもの。済みにした行も一覧から抜かず、同じ基準で一緒に並べて元の位置に残す。
  * （済みの行はサーバーの返事には含まれないので、doneShop / doneStock に控えたものを混ぜる）
  */
+/** 区分の並び。一覧に無い区分と、区分の付いていないものは最後に回す */
+function categoryRank(it) {
+  var i = order.indexOf(it.category || '');
+  return i < 0 ? order.length : i;
+}
+
 function shopRows() {
   return state.shop.todo.concat(doneShop)
-    .sort(function (a, b) { return Number(a.id) - Number(b.id); });
+    .sort(function (a, b) {
+      // 店を回る順に並べ、同じ区分の中は足した順（＝ID順）
+      var d = categoryRank(a) - categoryRank(b);
+      return d !== 0 ? d : Number(a.id) - Number(b.id);
+    });
+}
+
+// レシピIDごとの色。groupByRecipe が並びを決めるときに作り直す
+var recipeColor = {};
+
+/** 同じ写真（レシピ）から入った品目に同じ色を割り当てる。手で足したものは青 */
+function recipeLevel(it) {
+  if (!it.recipeId) return 'shop';
+  return recipeColor[it.recipeId] || 'r0';
+}
+
+/**
+ * 買い物リストを描く。個別は1本の並び、料理ごとは料理名の見出しで束ねる。
+ * どちらも同じ品目・同じカードなので、片方で買ったものはもう片方からも消える
+ */
+function renderShop() {
+  var rows = shopRows();
+  $('seg-list').className = shopView === 'recipe' ? '' : 'on';
+  $('seg-recipe').className = shopView === 'recipe' ? 'on' : '';
+
+  // 個別でも帯の色は使うので、色を決める束ね直しは先にやっておく
+  var groups = groupByRecipe(rows);
+
+  if (shopView !== 'recipe') {
+    $('shop-sec').hidden = false;
+    renderList($('list-todo'), rows, shopCard, '買うものはありません');
+    return;
+  }
+
+  // 料理ごとは見出しが料理名になるので、上の「未購入」は出さない
+  $('shop-sec').hidden = true;
+  var box = $('list-todo');
+  box.textContent = '';
+
+  if (!rows.length) {
+    var e = document.createElement('div');
+    e.className = 'empty';
+    e.textContent = '買うものはありません';
+    box.appendChild(e);
+    return;
+  }
+
+  groups.forEach(function (g) {
+    box.appendChild(groupHeader(g));
+    g.items.forEach(function (it) { box.appendChild(shopCard(it)); });
+  });
+}
+
+/**
+ * レシピごとに束ねる。並びは最初に出てきた順（＝ID順）で、
+ * 出どころの無いものは「レシピなし」として最後に置く
+ */
+function groupByRecipe(rows) {
+  var groups = [];
+  var byId = {};
+  var loose = { key: '', title: 'レシピなし', level: 'none', items: [] };
+
+  recipeColor = {};
+  rows.forEach(function (it) {
+    if (!it.recipeId) { loose.items.push(it); return; }
+    var g = byId[it.recipeId];
+    if (!g) {
+      // 色は出てきた順に割り当てる。IDから決めると、たまたま5つ違いの
+      // 料理が隣り合ったときに同じ色になってしまう
+      var level = 'r' + (groups.length % RECIPE_COLORS);
+      recipeColor[it.recipeId] = level;
+      g = {
+        key: it.recipeId,
+        title: (it.recipe && it.recipe.title) || 'レシピ',
+        url: (it.recipe && it.recipe.url) || '',
+        level: level,
+        items: []
+      };
+      byId[it.recipeId] = g;
+      groups.push(g);
+    }
+    g.items.push(it);
+  });
+
+  // 料理の並びは、区分ではなく足した順（＝IDの若い順）で決める。
+  // 中身は rows の並びのままなので、料理の中は店を回る順になる
+  groups.sort(function (a, b) { return minId(a.items) - minId(b.items); });
+
+  if (loose.items.length) groups.push(loose);   // 出どころの無いものは最後
+  return groups;
+}
+
+function minId(items) {
+  var min = Infinity;
+  items.forEach(function (it) {
+    var n = Number(it.id);
+    if (!isNaN(n) && n < min) min = n;
+  });
+  return min;
+}
+
+function groupHeader(g) {
+  var el = document.createElement('div');
+  el.className = 'gsec ' + g.level;
+
+  // リンクがあれば料理名ごと押せるようにする。行を足さないので縦幅は変わらない
+  var t = document.createElement(g.url ? 'a' : 'span');
+  t.className = 't';
+  t.textContent = g.title;
+  if (g.url) {
+    t.href = g.url;
+    t.target = '_blank';
+    t.rel = 'noopener noreferrer';
+  }
+
+  el.appendChild(t);
+
+  if (g.url) {
+    var mark = document.createElement('a');
+    mark.className = 'jump';
+    mark.textContent = '⇗';
+    mark.href = g.url;
+    mark.target = '_blank';
+    mark.rel = 'noopener noreferrer';
+    el.appendChild(mark);
+  }
+
+  var n = document.createElement('span');
+  n.className = 'cnt';
+  n.textContent = g.items.length;
+  el.appendChild(n);
+  return el;
 }
 
 function stockRows() {
@@ -375,10 +648,93 @@ function stockRows() {
 
 /** 検索欄と絞り込みボタンの両方を通ったか */
 function passesStockFilter(it) {
-  var q = $('stock-q').value.trim().toLowerCase();
+  var q = normalizeForSearch($('stock-q').value);
   if (filter && level(it) !== filter) return false;
   if (!q) return true;
-  return (it.name + ' ' + (it.category || '')).toLowerCase().indexOf(q) >= 0;
+  return searchKey(it).indexOf(q) >= 0;
+}
+
+/**
+ * 検索用に文字をならす。全角英数や半角カナをそろえ、大文字を小文字に、
+ * カタカナをひらがなにして、長音・中黒・空白は落とす。
+ * これで「ニンニク」と「にんにく」が同じ形になる
+ */
+function normalizeForSearch(s) {
+  s = (s || '') + '';
+  if (s.normalize) s = s.normalize('NFKC');
+  s = s.toLowerCase();
+  s = s.replace(/[ァ-ヶ]/g, function (c) {          // カタカナ → ひらがな
+    return String.fromCharCode(c.charCodeAt(0) - 0x60);
+  });
+  return s.replace(/[ー・\s]/g, '');
+}
+
+/**
+ * 漢字はかなに直せないので、同じ食材の別の書き方を並べておく。
+ * 一行のうちどれか一つが品名に含まれていれば、その行の言葉すべてで探せる
+ */
+var NAME_ALIASES = [
+  ['にんにく', '大蒜', 'ガーリック', 'garlic'],
+  ['たまねぎ', '玉ねぎ', '玉葱', 'オニオン', 'onion'],
+  ['ねぎ', '葱'],
+  ['にんじん', '人参', 'キャロット', 'carrot'],
+  ['じゃがいも', 'じゃが芋', '馬鈴薯', 'ポテト', 'potato'],
+  ['さつまいも', 'さつま芋'],
+  ['しょうが', '生姜', 'ジンジャー', 'ginger'],
+  ['たまご', '卵', '玉子', 'egg'],
+  ['ぎゅうにゅう', '牛乳', 'ミルク', 'milk'],
+  ['とうふ', '豆腐'],
+  ['なっとう', '納豆'],
+  ['みそ', '味噌'],
+  ['しょうゆ', '醤油', 'しょう油'],
+  ['さとう', '砂糖', 'シュガー', 'sugar'],
+  ['しお', '塩', 'salt'],
+  ['こしょう', '胡椒', 'ペッパー', 'pepper'],
+  ['りょうりしゅ', '料理酒', '日本酒'],
+  ['みりん', '味醂'],
+  ['あぶら', '油', 'サラダ油', 'オイル', 'oil'],
+  ['こめ', '米', 'ごはん', 'ご飯', 'ライス', 'rice'],
+  ['ぶたにく', '豚肉', 'ポーク', 'pork'],
+  ['ぎゅうにく', '牛肉', 'ビーフ', 'beef'],
+  ['とりにく', '鶏肉', '鳥肉', 'チキン', 'chicken'],
+  ['ひきにく', 'ひき肉', '挽肉', 'ミンチ'],
+  ['さかな', '魚', 'fish'],
+  ['えび', '海老', 'シュリンプ', 'shrimp'],
+  ['しゃけ', '鮭', 'サーモン', 'salmon'],
+  ['まぐろ', '鮪', 'ツナ', 'tuna'],
+  ['きゃべつ', 'キャベツ', 'cabbage'],
+  ['はくさい', '白菜'],
+  ['ほうれんそう', 'ほうれん草'],
+  ['なす', '茄子', 'ナスビ'],
+  ['きゅうり', '胡瓜'],
+  ['とまと', 'トマト', 'tomato'],
+  ['しいたけ', '椎茸'],
+  ['えのき', 'えのき茸'],
+  ['きのこ', '茸'],
+  ['だいこん', '大根'],
+  ['ごぼう', '牛蒡'],
+  ['れんこん', '蓮根'],
+  ['かぼちゃ', '南瓜'],
+  ['にら', '韮'],
+  ['ちーず', 'チーズ', 'cheese'],
+  ['ばたー', 'バター', 'butter'],
+  ['ぱん', 'パン', '食パン', 'bread'],
+  ['めん', '麺', 'うどん', 'そば', 'パスタ', 'スパゲッティ']
+];
+
+/** 品名と分類から、探しやすい形の文字列を作る */
+function searchKey(it) {
+  var key = normalizeForSearch(it.name + ' ' + (it.category || ''));
+  for (var i = 0; i < NAME_ALIASES.length; i++) {
+    var group = NAME_ALIASES[i];
+    var hit = false;
+    for (var j = 0; j < group.length; j++) {
+      if (key.indexOf(normalizeForSearch(group[j])) >= 0) { hit = true; break; }
+    }
+    if (!hit) continue;
+    for (var k = 0; k < group.length; k++) key += normalizeForSearch(group[k]);
+  }
+  return key;
 }
 
 /** 期限の近い順。期限が分からないものは末尾に回す */
@@ -438,10 +794,21 @@ function card(opt) {
   var body = document.createElement('div');
   body.className = 'body';
 
+  var line = document.createElement('div');
+  line.className = 'line';
+
   var name = document.createElement('div');
   name.className = 'name';
   name.textContent = opt.name;
-  body.appendChild(name);
+  line.appendChild(name);
+
+  if (opt.amount) {
+    var amt = document.createElement('div');
+    amt.className = 'amt';
+    amt.textContent = opt.amount;
+    line.appendChild(amt);
+  }
+  body.appendChild(line);
 
   if (opt.meta) {
     var meta = document.createElement('div');
@@ -449,7 +816,38 @@ function card(opt) {
     meta.textContent = opt.meta;
     body.appendChild(meta);
   }
-  el.appendChild(body);
+
+  if (opt.src && opt.src.url) {
+    var src = document.createElement('a');
+    src.className = 'src';
+    src.href = opt.src.url;
+    src.target = '_blank';
+    src.rel = 'noopener noreferrer';
+
+    var icon = document.createElement('span');
+    icon.textContent = '🍴';
+    var label = document.createElement('span');
+    label.className = 't';
+    label.textContent = opt.src.title || 'レシピを開く';
+    src.appendChild(icon);
+    src.appendChild(label);
+
+    // 横スワイプ（購入済み／取消）に巻き込まれてリンクが開かないようにする。
+    // 指が動いたらタップとは見なさない
+    var moved = false;
+    src.addEventListener('touchstart', function () { moved = false; });
+    src.addEventListener('touchmove', function () { moved = true; });
+    src.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (moved) e.preventDefault();
+    });
+
+    // 品名の下ではなく行の右に置く。品名だけの行と高さを揃えるため
+    el.appendChild(body);
+    el.appendChild(src);
+  } else {
+    el.appendChild(body);
+  }
 
   if (opt.waiting) {
     var st = document.createElement('div');
@@ -561,10 +959,15 @@ function shopCard(it) {
   }
 
   return card({
-    level: 'shop',
+    // 分量は品名の右。下に小さく添えると読みにくいという声があったため
+    amount: it.amount || '',
+    // 同じ写真から入った品目は同じ色の帯にして、まとまりが見えるようにする
+    level: recipeLevel(it),
     name: it.name,
     waiting: !!waiting[it.id],
-    meta: it.added ? mmdd(it.added) + ' 追加' : '',
+    meta: addedMeta(it),
+    // 料理ごとでは見出しに料理名が出ているので、行ごとの錠剤は重ねない
+    src: shopView === 'recipe' ? null : it.recipe,
     right: { label: '購入済み', run: function () { buyShop(it); } }
   });
 }
@@ -599,15 +1002,23 @@ function dropFrom(list, item) {
   }
 }
 
+/** 「9/13 しゅん追加」。誰が入れたか分からないものは「9/13 追加」 */
+function addedMeta(it) {
+  if (!it.added) return it.by ? it.by + '追加' : '';
+  return mmdd(it.added) + ' ' + (it.by || '') + '追加';
+}
+
 function stockMeta(it) {
   var parts = [];
+  // 常備品は期限の行を出さない。右端の「常備」で足りる
   if (it.date) parts.push((it.label === '消費期限' ? '消費' : '賞味') + ' ' + it.date + (it.approx ? '頃' : ''));
-  else parts.push('期限不明');
+  else if (!it.always) parts.push('期限不明');
   if (it.regDate) parts.push(mmdd(it.regDate) + ' 登録');
   return parts.join(' ・ ');
 }
 
 function daysBox(it) {
+  if (it.always) return { d: '常備', u: '期限なし' };
   if (it.days === null || it.days === undefined) return { d: '—', u: '期限不明' };
   if (it.days < 0) return { d: String(-it.days), u: '日超過' };
   if (it.days === 0) return { d: '0', u: '今日まで' };
@@ -668,7 +1079,7 @@ function useStock(it, toShop) {
       opDone(data);
     })
     .withFailureHandler(opFail)
-    .webUseAndAdd(TOKEN, it.id);
+    .webUseAndAdd(TOKEN, it.id, who);
 }
 
 /** 「戻す」。こちらも画面を先に戻してから書き込む */
@@ -707,30 +1118,149 @@ function add() {
   input.blur();                     // 追加したらキーボードは閉じる
 
   // ID はシート側で採番するので、それまでは仮の1件を並べておく
-  var temp = { id: 'tmp' + (++tempSeq), name: name, added: '' };
+  // 追加日はシート側で入るのでまだ空。名乗っている名前だけは先に出しておく
+  var temp = { id: 'tmp' + (++tempSeq), name: name, added: '', by: who };
   state.shop.todo.push(temp);
   waiting[temp.id] = true;
   render();
 
-  send('webAddShop', [name]);
+  send('webAddShop', [name, who]);
 }
+
+/** 表示の切り替え。この場だけのもので、閉じれば個別に戻る */
+function setShopView(mode) {
+  if (shopView === mode) return;
+  shopView = mode;
+  render();
+}
+
+$('seg-list').addEventListener('click', function () { setShopView('list'); });
+$('seg-recipe').addEventListener('click', function () { setShopView('recipe'); });
 
 $('add-btn').addEventListener('click', add);
 $('add-name').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') add();
 });
+$('add-name').addEventListener('focus', noteFocus);
+$('add-name').addEventListener('blur', updateTabbar);
 $('stock-q').addEventListener('input', function () {
   $('stock-clear').hidden = !$('stock-q').value;
+  updateTabbar();
   render();
 });
 $('stock-q').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') $('stock-q').blur();   // 探したらキーボードは閉じる
 });
+$('stock-q').addEventListener('focus', noteFocus);
+$('stock-q').addEventListener('blur', updateTabbar);
 $('stock-clear').addEventListener('click', function () {
   $('stock-q').value = '';
   $('stock-clear').hidden = true;
   $('stock-q').blur();
+  updateTabbar();
   render();
+});
+
+/**
+ * キーボードが出ているあいだだけ下のタブを引っ込める。
+ * 一覧の一番下が隠れるのと、キーボードに押し上げられるのを避けるため。
+ * キーボードを閉じたらタブは戻す。在庫の検索は言葉を残したまま一覧を
+ * 見ることがあるので、入力欄に文字が残っていても戻す。
+ * 端末の「閉じる」ボタンで閉じたときは入力欄に印が残ったままになるため、
+ * blur ではなく画面の高さでキーボードの開閉を見ている
+ */
+var tabbarTimer = 0;
+var tabbarWaitUntil = 0;   // キーボードが閉じるのを待つのは、長くてもここまで
+var tabbarLastH = -1;      // 前に見た画面の高さ。動きが止まったかを見るため
+var fullHeight = 0;        // キーボードが出ていないときの画面の高さ
+var focusAt = 0;           // 入力欄に入った時刻。キーボードが出るまでの猶予に使う
+var focusHeight = 0;       // 入力欄に入った瞬間の高さ。キーボードの開閉を測る基準
+var KEYBOARD_WAIT = 1200;  // 入力欄に入ってからキーボードが出るのを待つ長さ
+
+function updateTabbar() {
+  var onStock = !$('panel-stock').hidden;
+  var typing = document.activeElement === (onStock ? $('stock-q') : $('add-name'));
+  // 入力欄に入った直後はまだ画面が縮んでいない。ここで一度タブを出すと
+  // すぐに引っ込むことになるので、猶予のあいだは出ている扱いにする
+  var opening = typing && Date.now() - focusAt < KEYBOARD_WAIT;
+  var away = typing && (keyboardOpen() || opening);
+
+  clearTimeout(tabbarTimer);
+  if (away) {
+    showTabbar(false);
+    tabbarWaitUntil = 0;
+    // 端末の「閉じる」ボタンでキーボードを閉じたときは、入力欄に印が残ったままで
+    // resize も来ないことがある。隠しているあいだは自分で見張って戻す
+    tabbarTimer = setTimeout(updateTabbar, 300);
+    return;
+  }
+
+  // 戻すのはキーボードが閉じ切ってから。閉じている最中に出すと、
+  // まだ縮んでいる画面の途中にタブが現れて、そのまま下がるのがちらつきに見える。
+  // 高さがもとに戻り、そのうえで動きが止まったこと（2回続けて同じ値）まで確かめる
+  if (!tabbarWaitUntil) { tabbarWaitUntil = Date.now() + 2000; tabbarLastH = -1; }
+  var h = viewHeight();
+  var settled = !keyboardOpen() && h === tabbarLastH;
+  tabbarLastH = h;
+
+  if (settled || Date.now() > tabbarWaitUntil) {
+    showTabbar(true);
+    tabbarWaitUntil = 0;
+    return;
+  }
+  tabbarTimer = setTimeout(updateTabbar, 100);
+}
+
+/** 入力欄に入った時刻と、そのときの高さを控えてからタブを見直す */
+function noteFocus() {
+  focusAt = Date.now();
+  // 入る瞬間はまだキーボードが出ていない。この高さを基準にすれば、
+  // 端末ごとの余白や、上の帯が縮む作りの影響を受けずに開閉を見られる
+  focusHeight = viewHeight();
+  updateTabbar();
+}
+
+function showTabbar(on) {
+  $('tabbar').className = 'tabbar' + (on ? '' : ' away');
+}
+
+/** 見えている画面の高さ。visualViewport が無ければ窓の高さで代える */
+function viewHeight() {
+  return window.visualViewport ? window.visualViewport.height : window.innerHeight;
+}
+
+/**
+ * キーボードで画面が狭くなっているか。
+ * 端末によって visualViewport だけが縮むものと窓ごと縮むものがあるので、
+ * 「キーボードが無いときの高さ」から縮んだかで見る。
+ * 基準は入力欄に入った瞬間の高さ。無ければ読み込み時の高さで代える
+ */
+function keyboardOpen() {
+  var base = focusHeight || fullHeight;
+  return base - viewHeight() > 120;
+}
+
+/** 文字を打っていないあいだの高さを、キーボードが無いときの高さとして覚える */
+function noteFullHeight() {
+  var el = document.activeElement;
+  if (el === $('add-name') || el === $('stock-q')) return;
+  // 以前は最大値を溜めていたが、一度でも高い状態を見ると以後ずっと
+  // 「キーボードが出ている」と誤られるので、そのときの高さをそのまま持つ
+  fullHeight = viewHeight();
+  focusHeight = 0;
+}
+
+fullHeight = viewHeight();
+window.addEventListener('resize', function () { noteFullHeight(); updateTabbar(); });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', function () {
+    noteFullHeight();
+    updateTabbar();
+  });
+}
+// 画面を回すと高さそのものが変わる。覚え直さないとキーボード扱いになってしまう
+window.addEventListener('orientationchange', function () {
+  setTimeout(function () { fullHeight = viewHeight(); focusHeight = 0; }, 400);
 });
 
 ['over', 'soon', 'ok'].forEach(function (lv) {
@@ -765,11 +1295,15 @@ function switchTab(name) {
   $('panel-shop').hidden = !shop;
   $('panel-stock').hidden = shop;
   showNotice('');
+  updateTabbar();
 
   // 切り替えたら必ず先頭から見せる。前のタブで下まで見ていた位置が残っていると、
   // 一覧の途中から始まって迷ううえ、ブラウザを閉じる下スワイプも効かなくなる
   window.scrollTo(0, 0);
 }
+
+// このURLに入っている呼び名。無ければ、前にこの端末で覚えた分
+who = loadWho();
 
 // 開く先のタブ。URL の ?tab=stock で在庫から始められる（既定は買い物）
 if (START_TAB === 'stock') switchTab('stock');

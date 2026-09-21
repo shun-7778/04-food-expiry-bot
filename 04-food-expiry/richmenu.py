@@ -1,14 +1,28 @@
 # -*- coding: utf-8 -*-
 """リッチメニュー画像を生成する。
 
-2列×4行のダーク基調。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
-トークのバブル（買い物リスト・材料確認）と同じ暗い配色に合わせてある。
+2列×4行。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
 色の役割は次のとおり。
-  ペールブルー … 左列（買い物リスト表示／追加／削除・材料確認）
-  緑           … 右列の在庫まわり（在庫確認・期限登録・使用済）
-  グレー       … 取消（在庫にも買い物リストにも属さないので中間色）
+  ペールブルー／青 … 左列（買い物リスト表示／追加／削除・材料確認）
+  緑               … 右列の在庫まわり（在庫確認・期限登録・使用済）
+  グレー           … 取消（在庫にも買い物リストにも属さないので中間色）
+
+配色は2通りある。使う人ごとにどちらを貼るかを選べるよう、2枚を別々に作る。
+
+  python richmenu.py                 → richmenu.png       + RichMenuImage.gs
+  python richmenu.py --theme light   → richmenu-light.png + RichMenuImageLight.gs
+
+下地は LINE のトーク画面そのものの色に合わせてある。リッチメニューは
+下のメニューバーと接して出るので、そこと同じ色にすると継ぎ目が見えない。
+実機のスクリーンショットから拾った値は次のとおり。
+  ダーク: トーク背景 #121212 ／ メニューバー #1E1E1E ／ ヘッダ #2A2A2A
+  ライト: メニューバー #FFFFFF ／ 面 #F7F8FA
 """
+import base64
+import io
 import math
+import os
+import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -16,14 +30,50 @@ W, H = 2500, 1686
 COLS = 2
 ROWS = 4
 
-BG = (18, 20, 23)            # 画像全体の下地
-TILE = (32, 36, 41)          # タイルの面
-TILE_EDGE = (52, 58, 65)     # タイルの縁。面との差は小さく、輪郭だけ分かる程度
-TEXT = (243, 244, 246)
+THEMES = {
+    # 下地は LINE のメニューバーと同じ #1E1E1E。タイルはヘッダと同じ #2A2A2A に置き、
+    # LINE 自身が使っている明るさの段差にそのまま乗せる
+    'dark': {
+        'bg': (30, 30, 30),
+        'tile': (42, 42, 42),
+        'edge': (58, 58, 58),        # 面との差は小さく、輪郭だけ分かる程度
+        'text': (237, 237, 237),
+        'green': (74, 222, 128),     # 暗い地では LINE 緑は沈むので、明るい緑を使う
+        'blue': (147, 197, 253),
+        'gray': (156, 163, 175),
+    },
+    # 白地では明るい緑や水色は飛んでしまうので、濃いほうへ振る。
+    # LINE のブランド緑 #06C755 は白の上では 2.3:1 しかなく、線画では細って見えるため使わない。
+    # ここの緑は 5.4:1、青は 5.0:1。どちらも文字と同じ基準（4.5:1）を満たす濃さ
+    'light': {
+        'bg': (255, 255, 255),
+        'tile': (243, 245, 248),
+        'edge': (214, 219, 226),
+        'text': (23, 27, 33),
+        'green': (7, 122, 62),
+        'blue': (29, 111, 208),
+        'gray': (75, 85, 99),
+    },
+}
 
-GREEN = (74, 222, 128)
-PALE_BLUE = (147, 197, 253)  # 左列。買い物リストと材料確認をひとまとまりに見せる
-GRAY = (156, 163, 175)
+# ---- 引数。--theme のほかに、出力先を1つだけ位置引数で渡せる
+argv = sys.argv[1:]
+THEME = 'dark'
+if '--theme' in argv:
+    i = argv.index('--theme')
+    THEME = argv[i + 1]
+    del argv[i:i + 2]
+if THEME not in THEMES:
+    raise SystemExit('--theme は %s のいずれか' % ' / '.join(sorted(THEMES)))
+
+pal = THEMES[THEME]
+BG = pal['bg']
+TILE = pal['tile']
+TILE_EDGE = pal['edge']
+TEXT = pal['text']
+GREEN = pal['green']
+PALE_BLUE = pal['blue']      # 左列。買い物リストと材料確認をひとまとまりに見せる
+GRAY = pal['gray']
 
 MARGIN = 26                  # タイルどうしの隙間
 RADIUS = 34
@@ -187,12 +237,13 @@ for col, row, title, icon, color, text_color in CELLS:
 
 # ---------------------------------------------------------------- 出力
 
-import base64
-import io
-import os
-import sys
-
-out = sys.argv[1] if len(sys.argv) > 1 else "richmenu.png"
+# 配色ごとに、画像も .gs も別々の名前にする。GAS 側は2つの変数を見て貼り分ける
+NAMES = {
+    'dark':  ('richmenu.png',       'RichMenuImage.gs',      'RICHMENU_IMAGE_BASE64'),
+    'light': ('richmenu-light.png', 'RichMenuImageLight.gs', 'RICHMENU_IMAGE_LIGHT_BASE64'),
+}
+png_name, gs_name, var_name = NAMES[THEME]
+out = argv[0] if argv else png_name
 
 # 平坦な塗りなのでパレット化すると見た目を保ったまま半分以下になる。
 # コードに base64 で埋め込むぶん、小さいほうが扱いやすい。
@@ -204,17 +255,17 @@ print("%s %dx%d %.1f KB" % (out, W, H, os.path.getsize(out) / 1024))
 b64 = base64.b64encode(open(out, "rb").read()).decode()
 CHUNK = 500
 NL = chr(10)
-gs = os.path.join(os.path.dirname(out) or ".", "RichMenuImage.gs")
+gs = os.path.join(os.path.dirname(out) or ".", gs_name)
 with io.open(gs, "w", encoding="utf-8") as f:
     f.write(NL.join([
         u"/**",
-        u" * リッチメニューの画像（%dx%d PNG）を base64 で埋め込んだもの。" % (W, H),
-        u" * 手で編集しないこと。richmenu.py が richmenu.png と一緒に生成する。",
+        u" * リッチメニューの画像（%dx%d PNG・%s）を base64 で埋め込んだもの。" % (W, H, THEME),
+        u" * 手で編集しないこと。richmenu.py が %s と一緒に生成する。" % png_name,
         u" *",
         u" * Drive を使わずに済ませるためにコードへ持たせている。",
         u" * setupRichMenu() から参照する。",
         u" */",
-        u"var RICHMENU_IMAGE_BASE64 = [",
+        u"var %s = [" % var_name,
     ] + [u"  '" + b64[i:i + CHUNK] + u"'," for i in range(0, len(b64), CHUNK)]
       + [u"].join('');", u""]))
 print("%s base64 %.1f KB" % (gs, len(b64) / 1024))

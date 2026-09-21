@@ -41,7 +41,7 @@ var COL = {
   NAME: 4,        // 食材名
   CATEGORY: 5,    // 区分（CATEGORIES のいずれか）
   DATE: 6,        // 期限 (YYYY-MM-DD)
-  PRECISION: 7,   // day / month
+  PRECISION: 7,   // day / month / always（always は期限を持たない常備品）
   LABEL: 8,       // 賞味期限 / 消費期限
   CONFIDENCE: 9,  // high / medium / low
   SOURCE: 10,     // 写真 / テキスト
@@ -64,6 +64,51 @@ var STATUS = { STOCK: '在庫', USED: '消費済', DISCARDED: '破棄', CANCELED
 // 食材の大区分。多いとClaudeの分類がブレるので7つに絞ってある
 var CATEGORIES = ['野菜・フルーツ', '肉・魚介', '卵・乳製品', '調味料', '主食・加工食品', '飲料・菓子', '日用品'];
 
+/**
+ * 買い物リストを並べる順。店を回る順に合わせてある。
+ * 「肉・魚介」は魚と肉を分けて持っていないので、魚も肉と同じ場所に出る。
+ * 粉類・乾物・主食は調味料の隣（「主食・加工食品」）にまとめている。
+ * 画面が並べ替えに使うので、CATEGORIES に区分を足したらここにも足すこと
+ */
+var CATEGORY_ORDER = ['野菜・フルーツ', '肉・魚介', '調味料', '主食・加工食品',
+  '卵・乳製品', '飲料・菓子', '日用品'];
+
+var CATEGORY_SCHEMA = {
+  type: 'object',
+  properties: {
+    category: { type: 'string', description: '次のいずれか1つ: ' + CATEGORIES.join(' / ') }
+  },
+  required: ['category'],
+  additionalProperties: false
+};
+
+/**
+ * 品名から区分だけを決める。画面から手で足した品目に使う。
+ * 並べ替えは区分で決まるので、ここが空だと一覧の最後に回ってしまう。
+ * 判定できなくても追加そのものは通す（区分が空になるだけ）
+ */
+function categorizeName_(name) {
+  var clean = String(name || '').trim();
+  if (!clean) return '';
+
+  try {
+    var r = callClaude_([{
+      type: 'text',
+      text: '買い物リストに足す品物の区分を1つ選んでください。\n'
+        + '品名: ' + clean + '\n'
+        + '区分: ' + CATEGORIES.join(' / ') + '\n'
+        + '迷ったときの目安: 豆腐・納豆・こんにゃくなどの日配品は「卵・乳製品」、'
+        + '乾物・缶詰・冷凍食品・粉類は「主食・加工食品」。食べ物でなければ「日用品」。'
+    }], CATEGORY_SCHEMA, MODEL_TEXT);
+
+    var c = r && r.category;
+    return CATEGORIES.indexOf(c) >= 0 ? c : '';
+  } catch (err) {
+    console.warn('区分を判定できませんでした（' + clean + '）: ' + err.message);
+    return '';
+  }
+}
+
 // ---------------------------------------------------------------- 買い物リスト定義
 
 var SHOP_SHEET_NAME = '買い物リスト';
@@ -77,17 +122,45 @@ var SHOP_COL = {
   NAME: 3,     // 品名
   CATEGORY: 4, // 区分（CATEGORIES のいずれか）
   STATUS: 5,   // 未購入 / 購入済 / 取消
-  UPDATED: 6   // 状態を最後に変えた日時
+  UPDATED: 6,  // 状態を最後に変えた日時
+  RECIPE: 7,   // 出どころのレシピID（レシピシートの行を指す）。手で足した品目では空
+  AMOUNT: 8,   // 分量（レシピに書かれていたもの。「大さじ2」など）。無ければ空
+  ADDED_BY: 9  // 足した人の呼び名。USER_NAMES に無い人や、名乗っていない画面からは空
 };
-var SHOP_COL_COUNT = 6;
+var SHOP_COL_COUNT = 9;
 
-var SHOP_HEADERS = ['ID', '追加日', '品名', '区分', '状態', '更新日時'];
+var SHOP_HEADERS = ['ID', '追加日', '品名', '区分', '状態', '更新日時', 'レシピID', '分量', '登録者'];
 
 var SHOP_STATUS = { TODO: '未購入', DONE: '購入済', CANCELED: '取消' };
+
+// ---- レシピ。写真から材料を登録したとき、その出どころを1行だけ残す。
+// 買い物リストの各行には ID だけを持たせる（URL を行ごとに複製しない）。
+// 同じレシピから7品目足しても URL は1か所にあり、料理名の置き場もここになる
+var RECIPE_SHEET_NAME = 'レシピ';
+
+var RECIPE_COL = {
+  ID: 1,       // 連番ID。買い物リストの レシピID 列がこれを指す
+  ADDED: 2,    // 登録日時
+  TITLE: 3,    // 料理名（写真から読み取ったもの。読めなければ空）
+  URL: 4,      // リールなどのリンク。本人が送ってきたもの
+  USER: 5      // 登録した人の userId
+};
+var RECIPE_COL_COUNT = 5;
+
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者'];
 
 // 通知のしきい値（日数）
 var NOTIFY_1M_DAYS = 30;
 var NOTIFY_1W_DAYS = 7;
+
+// 水や米のように、期限で追いかけず切らさず置いておくもの。
+// 期限の列は空のまま、精度の列にこの印を入れて見分ける（列を増やさずに済む）
+var PRECISION_ALWAYS = 'always';
+
+/** 期限を持たない「常にあるもの」か */
+function isAlways_(it) {
+  return !!it && it.date_precision === PRECISION_ALWAYS;
+}
 
 // ---------------------------------------------------------------- 設定読み出し
 
@@ -226,6 +299,36 @@ var CURRENT_USER_ = '';
 
 function setCurrentUser_(event) {
   CURRENT_USER_ = (event && event.source && event.source.userId) || '';
+  THEME_CACHE_ = null;   // 相手が変われば配色も変わる
+}
+
+/**
+ * 買い物リストに残す呼び名の対応表。
+ * スクリプトプロパティ USER_NAMES に「Uxxxx:しゅん,Uyyyy:あや」の形で書く。
+ * LINE の表示名は本名のことが多く行が長くなるので、自動では取らずここだけを見る。
+ * 書かれていない人は空（今までどおり「9/13 追加」とだけ出る）。
+ */
+function userNameMap_() {
+  var map = {};
+  String(prop_('USER_NAMES', false) || '').split(',').forEach(function (pair) {
+    var i = pair.indexOf(':');
+    if (i <= 0) return;
+    var id = pair.slice(0, i).trim();
+    var name = pair.slice(i + 1).trim();
+    if (id && name) map[id] = name;
+  });
+  return map;
+}
+
+/** 画面の「あなた」の選択肢に出す呼び名の一覧 */
+function userNames_() {
+  var map = userNameMap_();
+  return Object.keys(map).map(function (id) { return map[id]; });
+}
+
+/** 今この操作をしている人の呼び名。LINE 経由でないときや未登録なら空 */
+function userName_() {
+  return (CURRENT_USER_ && userNameMap_()[CURRENT_USER_]) || '';
 }
 
 /**
@@ -234,6 +337,41 @@ function setCurrentUser_(event) {
  */
 function userKey_(name) {
   return CURRENT_USER_ ? name + ':' + CURRENT_USER_ : name;
+}
+
+/**
+ * その人の配色。'dark'（既定）か 'light'。
+ *
+ * LINE は端末のダークモード設定を Bot に渡してくれないので、自動では切り替えられない。
+ * 本人に選んでもらい、その選択をここに覚えておく。
+ * バブルの色とリッチメニューの画像の、両方がこの値で決まる。
+ */
+function userTheme_() {
+  var v = PropertiesService.getScriptProperties().getProperty(userKey_('THEME'));
+  return v === 'light' ? 'light' : 'dark';
+}
+
+function setUserTheme_(theme) {
+  PropertiesService.getScriptProperties().setProperty(userKey_('THEME'),
+    theme === 'light' ? 'light' : 'dark');
+  THEME_CACHE_ = null;
+}
+
+/**
+ * 別の人になりきって処理する。週次通知のように、
+ * 1回の実行で複数人ぶんを人それぞれの配色で組み立てるときに使う。
+ */
+function withUser_(userId, fn) {
+  var prevUser = CURRENT_USER_;
+  var prevTheme = THEME_CACHE_;
+  CURRENT_USER_ = userId;
+  THEME_CACHE_ = null;
+  try {
+    return fn();
+  } finally {
+    CURRENT_USER_ = prevUser;
+    THEME_CACHE_ = prevTheme;
+  }
 }
 
 /** 「id」と送られたかどうか。許可の判定より先に見るので、ここだけは誰の分も通る */
@@ -348,9 +486,12 @@ function handleRecipeImages_(events) {
   try {
     var seen = {};
     var items = [];
+    var dish = '';
     events.forEach(function (ev) {
       var image = fetchLineImage_(ev.message.id);
       var result = extractRecipeItems_(image.base64, image.mimeType);
+      // 料理名は最初に読み取れたものを採る（複数枚でも料理は1つという前提）
+      if (!dish && result && result.dish_name) dish = String(result.dish_name).trim();
       ((result && result.items) || []).forEach(function (it) {
         if (!it.item_name) return;
         var key = normalizeName_(it.item_name);
@@ -365,7 +506,7 @@ function handleRecipeImages_(events) {
       return;
     }
 
-    replyRecipeMatch_(replyToken, items);
+    replyRecipeMatch_(replyToken, items, dish);
   } catch (err) {
     console.error('レシピ照合に失敗: ' + err.stack);
     replyText_(replyToken, '読み取りに失敗しました。\n' + err.message);
@@ -407,6 +548,12 @@ var HELP_MESSAGE = [
   'リストに入れられます。',
   '',
   '■ 材料確認（レシピ照合）',
+  'インスタの共有ボタンでリールを送ってから、続けて',
+  'レシピの写真を送ると、そこから足した品目にリンクが',
+  '付きます。付くのは次に送った写真1回だけです。',
+  '画面の買い物リストで料理名を押すと開けます。',
+  '違うレシピに付いたときは、一覧の「外す」を押して',
+  'ください。すでに足した品目からも外れます。',
   'レシピの写真を送ると、材料を在庫と突き合わせて',
   '「買うべきもの」「家にあるもの」に分けて返します。',
   '各行の「追加」を押すとその場で買い物リストに入り、',
@@ -424,6 +571,12 @@ var HELP_MESSAGE = [
   '■ 通知',
   '毎週土曜の朝、期限が近いものをお知らせします。',
   '1品につき残り1か月と残り1週間の2回だけです。',
+  '',
+  '■ 配色（人ごとに選べます）',
+  '「白」… 白基調（明るい壁紙の人向け）',
+  '「黒」… 黒基調（既定）',
+  'バブルと下のメニューが、選んだほうに変わります。',
+  '設定は自分だけに効き、ほかの人の見え方は変わりません。',
   '',
   '■ 買い物リスト',
   '「買い物リストに牛乳と卵を追加」',
@@ -529,6 +682,158 @@ function runCommand_(cmd) {
   return registerItems_(items, 'テキスト');
 }
 
+// ---------------------------------------------------------------- レシピのリンク
+
+// リンクだけが送られてきたとき、どこまで遡って写真と結びつけるか。
+// 「リールを共有 → すぐスクショ」を続けてやる想定なので短く取る。
+// 預かっていることは返信と材料バブルの両方に出るので、過ぎたかどうかは見て分かる
+var RECIPE_LINK_WINDOW_MS = 5 * 60 * 1000;
+
+var LINK_OFF_PREFIX = 'link_off:';   // 材料バブルから、その照合の紐づけを外す
+
+var WAITING_LINK_KEY = 'WAITING_LINK';
+
+/**
+ * Instagram のリンクだけが書かれたメッセージか。そうならURLを返す。
+ *
+ * リンクらしきものを何でも拾うと、別の用途で貼ったURLまで材料に結びついてしまう。
+ * 宛先を Instagram に絞り、前後に言葉が付いていないものだけを見る
+ * （「これ作りたい https://... 」のような文は、材料の話ではないことがあるため）
+ */
+function parseRecipeLink_(text) {
+  var t = String(text || '').trim();
+  if (/\s/.test(t)) return '';   // URL 単体のみ
+
+  var m = /^https?:\/\/(www\.)?instagram\.com\/(reel|reels|p|tv|share)\/[\w\-./?=&%]+$/i.exec(t);
+  return m ? t : '';
+}
+
+/** 写真より先に届いたリンクの置き場。人ごとに1つだけ、しばらく取っておく */
+function saveWaitingLink_(url) {
+  PropertiesService.getScriptProperties().setProperty(userKey_(WAITING_LINK_KEY),
+    JSON.stringify({ url: url, at: Date.now() }));
+}
+
+/** 取り出したら消す。古いものは無かったことにする */
+function takeWaitingLink_() {
+  var props = PropertiesService.getScriptProperties();
+  var key = userKey_(WAITING_LINK_KEY);
+  var raw = props.getProperty(key);
+  if (!raw) return '';
+
+  props.deleteProperty(key);
+  try {
+    var saved = JSON.parse(raw);
+    if (Date.now() - saved.at > RECIPE_LINK_WINDOW_MS) return '';
+    return saved.url || '';
+  } catch (err) {
+    return '';
+  }
+}
+
+/** 文末の改行を落とす。前置きの断り書きを1通のメッセージとして送るとき用 */
+function stripTrailingNewlines_(text) {
+  return String(text || '').replace(/\n+$/, '');
+}
+
+/**
+ * 送られてきたリンクの受け口。預かって、次に来る写真1回ぶんにだけ使う。
+ *
+ * 前に送った写真には遡らない。「リンクを送る → その次の写真」だけが結びつくと
+ * 決めておくほうが、どれに付いたのかを取り違えずに済む。
+ * 使ったら捨てるので、そのあとの写真にも付かない（takeWaitingLink_）
+ */
+function replyRecipeLink_(replyToken, url) {
+  saveWaitingLink_(url);
+  replyText_(replyToken, '🔗 リンクを受け取りました。続けてレシピの写真を送ってください。');
+}
+
+/**
+ * その照合に付いたリンクを外す。返り値は本人に返す文面。
+ *
+ * 違うレシピのリンクが付いたまま材料を足してしまったときの戻し口。
+ * これから足す分に付かなくなるだけでなく、すでに足した品目からも外す。
+ * レシピシートの行はそのまま残す（消すと、同じリンクを使い回している
+ * ほかの品目からも消えてしまうため）
+ */
+function detachRecipeLink_(token) {
+  var set = findAddSet_(token);
+  if (!set) return ADD_SET_STALE_MESSAGE;
+  if (!set.url && !set.recipeId) return 'この一覧にリンクは付いていません。';
+
+  var cleared = shopSetRecipe_(set.shopIds || [], '');
+  updateAddSet_(token, { url: '', recipeId: '' });
+
+  return 'リンクの紐づけを外しました。'
+    + (cleared ? '\n買い物リストの' + cleared + '件からも外しました。' : '')
+    + '\nこの一覧から足す分には、もう付きません。';
+}
+
+/** 指定した買い物リストの品目に、レシピIDを書き入れる。書けた件数を返す */
+function shopSetRecipe_(shopIds, recipeId) {
+  // recipeId が空のときは消しに来ている（紐づけを外す）ので、そのまま進む
+  if (!shopIds.length) return 0;
+
+  var sh = shopSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+
+  var want = {};
+  shopIds.forEach(function (id) { want[String(id)] = true; });
+
+  var ids = sh.getRange(2, SHOP_COL.ID, last - 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < ids.length; i++) {
+    if (!want[String(ids[i][0])]) continue;
+    sh.getRange(i + 2, SHOP_COL.RECIPE).setValue(recipeId);
+    n++;
+  }
+  return n;
+}
+
+/** 買い物リストへ入れた品目の ID を控えに足す。あとからリンクが来たときに遡るため */
+function rememberShopIds_(set, ids) {
+  if (!set || !ids || !ids.length) return;
+  updateAddSet_(set.token, { shopIds: (set.shopIds || []).concat(ids.map(String)) });
+}
+
+/**
+ * 配色を指す言い方かどうか。'dark' / 'light' / null を返す。
+ *
+ * 「白菜」「白ワイン」のような品名を巻き込まないよう、完全一致だけを見る。
+ * 「白」「黒」の一語も、それ単独で送られたときは配色の指定と見てよい
+ * （品名なら「白 卵」のように続きが付くか、接頭辞コマンドで来る）。
+ */
+function parseThemeCommand_(text) {
+  var t = String(text || '').trim().replace(/\s+/g, ' ');
+  if (['白', '表示 白', '色 白', '白基調', 'ライト', 'light'].indexOf(t) >= 0) return 'light';
+  if (['黒', '表示 黒', '色 黒', '黒基調', 'ダーク', 'dark'].indexOf(t) >= 0) return 'dark';
+  return null;
+}
+
+/** 配色を覚え、リッチメニューも同じほうへ貼り替える。返り値は本人に返す文面 */
+function applyTheme_(theme) {
+  setUserTheme_(theme);
+  var name = theme === 'light' ? '白基調' : '黒基調';
+
+  var note = '';
+  try {
+    if (!linkRichMenuForUser_(CURRENT_USER_)) {
+      note = '\n\n※ リッチメニューはまだ2種類そろっていません。'
+        + '\nGASエディタで setupRichMenu() を実行すると、メニューも切り替わるようになります。';
+    }
+  } catch (err) {
+    console.error('リッチメニューの貼り替えに失敗: ' + err.stack);
+    note = '\n\n※ メニューの画像だけ切り替えられませんでした。\n' + err.message;
+  }
+
+  return '配色を' + name + 'に変えました。'
+    + '\nこれから送るバブルに反映されます（送信済みのものは変わりません）。'
+    + '\nメニューはトークを開き直すと入れ替わります。'
+    + '\n\n戻すときは「' + (theme === 'light' ? '黒' : '白') + '」と送ってください。'
+    + note;
+}
+
 function handleText_(event, text) {
   // Claude を呼ばずに済む固定コマンドは先に処理する
   if (text === 'リンク' || text === 'link') {
@@ -562,6 +867,19 @@ function handleText_(event, text) {
 
   if (text === '取消' || text === '取り消し' || text === 'とりけし') {
     replyText_(event.replyToken, note + undoLast_());
+    return;
+  }
+  // 配色の切り替え。品名と紛れないよう、決め打ちの言い方だけを受ける
+  var theme = parseThemeCommand_(text);
+  if (theme) {
+    replyText_(event.replyToken, note + applyTheme_(theme));
+    return;
+  }
+  // レシピのリンク。材料としては読まず、直近の材料確認に結びつける
+  var link = parseRecipeLink_(text);
+  if (link) {
+    if (note) pushText_(stripTrailingNewlines_(note));
+    replyRecipeLink_(event.replyToken, link);
     return;
   }
   // 接頭辞で種別が宣言されていれば、推定せずそのとおりに処理する
@@ -844,19 +1162,27 @@ var RECIPE_ITEM_SCHEMA = {
   type: 'object',
   properties: {
     item_name: { type: 'string', description: '材料名。分量や下ごしらえの指示は含めない。書かれたままの表記でよい（変換しない）。読み取れなければ空文字' },
+    // 分量は買い物リストにそのまま載せる。単位まで含めて書かれたとおりに取る
+    amount: { type: 'string', description: '材料名に添えられた分量。書かれたまま単位ごと。例:「大さじ2」「200g」「1/2個」「少々」。書かれていなければ空文字' },
     // 材料確認のバブルから買い物リストに入れられるようにしたので、区分もここで判定させる
     // （あとから分類し直すと、ボタンを押してから返信までが遅くなる）
     category: { type: 'string', description: '区分。次のいずれか1つ: ' + CATEGORIES.join(' / ') },
     confidence: { type: 'string', description: '"high" | "medium" | "low"' },
     note: { type: 'string', description: '判断に迷った点があれば日本語で1文。なければ空文字' }
   },
-  required: ['item_name', 'category', 'confidence', 'note'],
+  required: ['item_name', 'amount', 'category', 'confidence', 'note'],
   additionalProperties: false
 };
 
 var RECIPE_SCHEMA = {
   type: 'object',
   properties: {
+    // 料理名。買い物リストに残すリンクの見出しに使う。
+    // 材料の読み取りと同じ1回の呼び出しで取るので、API の往復は増えない
+    dish_name: {
+      type: 'string',
+      description: '料理名。写真に見当たらなければ空文字'
+    },
     items: {
       type: 'array',
       description: '材料欄に書かれている食材・調味料ごとに1要素',
@@ -984,8 +1310,14 @@ function buildTextPrompt_(text) {
     '  「消費期限」という語が1つの食材に付いていても、他の食材まで消費期限にしないこと。',
     '- 月までしか述べられていない場合（例「10月くらい」）は、その月の末日を date に入れ date_precision を "month"、confidence を "low" にしてください。',
     '- 日付をまったく特定できない食材は、items から省かずに found を false、date を空文字で入れてください。推測で日付を作らないこと。',
+    '  「水」「米」「塩」のように期限を言われなかったものも同じです。常にあるものとして登録されるので、',
+    '  それらしい期限を補う必要はありません。',
     '',
-    '食材と期限がひとつも読み取れない場合は、items を空の配列にしてください。',
+    '- 食材名が読み取れていれば、期限が述べられていなくても items に入れてください（found=false、date は空文字）。',
+    '  期限のないものは「常にあるもの」として登録されるので、items から外さないでください。',
+    '  例:「砂糖」だけ → item_name="砂糖"、found=false、date=""。',
+    '',
+    'items を空の配列にするのは、食材名がひとつも読み取れないときだけです。',
     '',
     '--- 入力文 ---',
     text
@@ -1000,11 +1332,23 @@ function buildRecipePrompt_() {
     '- 作り方の手順、コラム、広告など材料欄以外の文章',
     '- ページ全体のタイトルや料理名（材料そのものではないため）',
     '',
+    '料理名（dish_name）:',
+    '- 材料の一覧とは別に、その料理の名前を dish_name に入れてください。',
+    '- 「〇〇の作り方」「簡単！」のような飾りは落とし、料理名だけにしてください。',
+    '- 写真に料理名が見当たらなければ空文字にしてください（推測で作らない）。',
+    '',
     '材料名（item_name）の書き方:',
     '- 分量（大さじ1、200g、2個、少々 など）は含めないでください。',
     '- 「みじん切り」「薄切り」「常温に戻す」などの下ごしらえの指示は含めないでください。',
     '- 「A」「合わせ調味料」のようなグループ見出し自体は無視し、その中身の食材だけを列挙してください。',
     '- 表記はレシピに書かれたままにしてください（かなを漢字にするなどの変換はしない）。',
+    '',
+    '分量（amount）の書き方:',
+    '- 材料名に分量が添えられていれば、単位まで書かれたとおりに amount に入れてください。',
+    '  例:「砂糖 大さじ2」→ item_name「砂糖」/ amount「大さじ2」',
+    '  例:「たまねぎ 1/2個」→ item_name「たまねぎ」/ amount「1/2個」',
+    '- 「少々」「適量」「お好みで」も分量として入れてください。',
+    '- 分量が書かれていなければ空文字にしてください（推測で補わない）。',
     '',
     '区分（category）は ' + CATEGORIES.join(' / ') + ' から1つ選んでください。',
     '',
@@ -1204,6 +1548,10 @@ function formatItem_(it, prefix) {
   var name = it.item_name || '(食材名不明)';
   if (it.position) name += '［' + it.position + '］';
 
+  if (isAlways_(it)) {
+    return prefix + name + '\n常備品（期限なし）';
+  }
+
   if (!it.found || !it.date) {
     return prefix + name + '\n期限を特定できず ⚠';
   }
@@ -1226,6 +1574,7 @@ function formatItem_(it, prefix) {
  */
 var SHEET_CACHE_ = null;
 var SHOP_SHEET_CACHE_ = null;
+var RECIPE_SHEET_CACHE_ = null;
 
 /** 在庫シートを返す。未設定なら手順を添えて落とす */
 function sheet_() {
@@ -1335,6 +1684,35 @@ function migrateAddShopIdColumn() {
   console.log('買い物リストにID列を追加しました。');
 }
 
+/**
+ * 買い物リストに「レシピID」列を足す一度きりの移行処理。
+ * 写真から足した品目に、出どころのレシピ（料理名とリンク）を結びつけるため。
+ * 既存の行は空のままでよい（手で足した品目と同じ扱いになる）。
+ * エディタから1回だけ実行する。
+ */
+function migrateAddShopRecipeColumn() {
+  var sh = shopSheet_();
+  if (sh.getMaxColumns() < SHOP_COL_COUNT) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), SHOP_COL_COUNT - sh.getMaxColumns());
+  }
+  sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
+  console.log('買い物リストにレシピID列を追加しました。既存の行は空のままです。');
+}
+
+/**
+ * 買い物リストに「分量」列を足す一度きりの移行処理。
+ * レシピの写真に分量が書かれていたら、そのまま買い物リストに載せるため。
+ * 既存の行は空のままでよい。エディタから1回だけ実行する。
+ */
+function migrateAddShopAmountColumn() {
+  var sh = shopSheet_();
+  if (sh.getMaxColumns() < SHOP_COL_COUNT) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), SHOP_COL_COUNT - sh.getMaxColumns());
+  }
+  sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
+  console.log('買い物リストに分量列を追加しました。既存の行は空のままです。');
+}
+
 /** Date でも文字列でも 'YYYY-MM-DD' に揃える */
 function normalizeYmd_(v) {
   if (!v) return '';
@@ -1342,9 +1720,97 @@ function normalizeYmd_(v) {
   return String(v).trim();
 }
 
-/** 食材名の比較用に、空白と中黒を落として小文字化する */
+/**
+ * 食材名の表記ゆれ辞書。漢字・かな・送り仮名の違いを1つの代表名にまとめる。
+ * 左が代表名、右がそれと同じものとして扱う表記。
+ * ここに書いた語は文字列一致の段階で解決するので、Claude に問い合わせずに済む。
+ * 足りない表記に気づいたら、この表に足せば在庫・買い物リストの両方に効く。
+ *
+ * 注意:「酢」「塩」のような1〜2文字の語は、買い物リストの照合が部分一致
+ * （indexOf）のため別の語に紛れ込みやすい。短すぎる語はここに入れない。
+ */
+var NAME_SYNONYMS = {
+  'かつおぶし': ['鰹節', 'かつお節', '鰹ぶし', 'かつぶし', '削り節', 'けずり節', '花かつお', '花鰹'],
+  'たまご': ['卵', '玉子', '鶏卵'],
+  'にんじん': ['人参'],
+  'たまねぎ': ['玉ねぎ', '玉葱'],
+  'じゃがいも': ['じゃが芋', '馬鈴薯'],
+  'さつまいも': ['さつま芋', '薩摩芋'],
+  'だいこん': ['大根'],
+  'はくさい': ['白菜'],
+  'きゅうり': ['胡瓜'],
+  'なす': ['茄子', 'なすび'],
+  'ねぎ': ['葱'],
+  'しょうが': ['生姜'],
+  'にんにく': ['大蒜'],
+  'かぼちゃ': ['南瓜'],
+  'ほうれんそう': ['ほうれん草', '法蓮草', '菠薐草'],
+  'れんこん': ['蓮根'],
+  'ごぼう': ['牛蒡'],
+  'たけのこ': ['竹の子', '筍'],
+  'とうふ': ['豆腐'],
+  'あぶらあげ': ['油揚げ', '油あげ', 'あぶらげ', '薄揚げ'],
+  'なっとう': ['納豆'],
+  'ぎゅうにゅう': ['牛乳'],
+  'とうにゅう': ['豆乳'],
+  'ぶたにく': ['豚肉'],
+  'ぎゅうにく': ['牛肉'],
+  'とりにく': ['鶏肉', '鳥肉'],
+  'ひきにく': ['挽肉', 'ひき肉', '挽き肉', 'ミンチ'],
+  'しいたけ': ['椎茸'],
+  'えのき': ['榎茸', 'えのき茸', 'えのきだけ'],
+  'のり': ['海苔'],
+  'わかめ': ['若布'],
+  'こんぶ': ['昆布'],
+  'ごま': ['胡麻'],
+  'しょうゆ': ['醤油', '正油'],
+  'みそ': ['味噌'],
+  'さとう': ['砂糖'],
+  'みりん': ['味醂'],
+  'こしょう': ['胡椒'],
+  'こむぎこ': ['小麦粉'],
+  'かたくりこ': ['片栗粉'],
+  'はちみつ': ['蜂蜜'],
+  'うめぼし': ['梅干し', '梅干'],
+  'つけもの': ['漬物', '漬け物'],
+  'だし': ['出汁', '出し汁', 'だし汁']
+};
+
+var NAME_SYNONYM_MAP_ = null;
+
+/** NAME_SYNONYMS を「表記 → 代表名」の1段の表に開く。初回だけ作って使い回す */
+function nameSynonymMap_() {
+  if (NAME_SYNONYM_MAP_) return NAME_SYNONYM_MAP_;
+  var map = {};
+  Object.keys(NAME_SYNONYMS).forEach(function (canon) {
+    var key = foldName_(canon);
+    map[key] = key;
+    NAME_SYNONYMS[canon].forEach(function (v) { map[foldName_(v)] = key; });
+  });
+  NAME_SYNONYM_MAP_ = map;
+  return map;
+}
+
+/**
+ * 文字の見た目の違いだけを吸収する。
+ * 全角英数を半角に（NFKC）、空白・中黒・長音を落とし、カタカナをひらがなに、
+ * アルファベットを小文字に揃える。これで「カツオ節」と「かつお節」は同じになる。
+ */
+function foldName_(s) {
+  return String(s || '')
+    .normalize('NFKC')
+    .replace(/[\s　・･\-ー]/g, '')
+    .replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); })
+    .toLowerCase();
+}
+
+/**
+ * 食材名の比較用のキー。文字の揺れを foldName_ で均したうえで、
+ * 辞書にある表記（鰹節／かつお節など）は代表名に寄せる。
+ */
 function normalizeName_(s) {
-  return String(s || '').replace(/[\s　・･\-ー]/g, '').toLowerCase();
+  var key = foldName_(s);
+  return nameSynonymMap_()[key] || key;
 }
 
 function nowStamp_() {
@@ -1467,7 +1933,8 @@ function appendRows_(sh, items, source) {
       row[COL.CATEGORY - 1] = it.category || '';
       row[COL.DATE - 1] = it.date;
       row[COL.PRECISION - 1] = it.date_precision || 'day';
-      row[COL.LABEL - 1] = normalizeLabel_(it.label);
+      // 常備品は賞味／消費の別を持たない。空にしないと一覧で期限があるように見える
+      row[COL.LABEL - 1] = isAlways_(it) ? '' : normalizeLabel_(it.label);
       row[COL.CONFIDENCE - 1] = it.confidence || 'high';
       row[COL.SOURCE - 1] = source;
       row[COL.RAW - 1] = it.raw_text || '';
@@ -1494,7 +1961,12 @@ function registerItems_(items, source) {
 
   items.forEach(function (it) {
     if (!(it.found && it.date)) {
-      ng.push(it.item_name || '(名称不明)');
+      // 日付を言われなかったものは「常にあるもの」として入れる（水・米など）。
+      // 期限で追いかけないので、個数を言われても行は1つでよい
+      it.date = '';
+      it.date_precision = PRECISION_ALWAYS;
+      it.label = '';
+      ok.push({ item: it, stated: false });
       return;
     }
     // 返信とシートで表示が食い違わないよう、ここで種別を確定させる
@@ -1689,7 +2161,7 @@ function matchListByClaude_(names, rows, kind) {
     lines.push('  例:「ヨーグルト」→「ブルガリアヨーグルト」');
   }
 
-  lines.push('- 表記ゆれは同一とみなしてください。例: 卵/たまご/タマゴ、豆腐/とうふ、人参/にんじん');
+  lines.push('- 表記ゆれは同一とみなしてください。例: 卵/たまご/タマゴ、豆腐/とうふ、人参/にんじん、鰹節/かつお節/かつおぶし');
   if (isStock) {
     lines.push('- 同じ食材が複数該当する場合は、期限が最も近い行を選んでください。');
   }
@@ -1732,7 +2204,7 @@ function stockKeySet_(sh) {
   return keys;
 }
 
-/** 在庫（STATUS.STOCK）の行を {row, name, date, label} で返す */
+/** 在庫（STATUS.STOCK）の行を {row, name, date, precision, label} で返す */
 function currentStockRows_() {
   var sh = sheet_();
   var last = sh.getLastRow();
@@ -1747,6 +2219,7 @@ function currentStockRows_() {
       id: data[i][COL.ID - 1],
       name: data[i][COL.NAME - 1],
       date: normalizeYmd_(data[i][COL.DATE - 1]),
+      precision: data[i][COL.PRECISION - 1],   // 常備品を見分けるのに要る
       label: data[i][COL.LABEL - 1],
       regDate: normalizeYmd_(data[i][COL.REG_DATE - 1])
     });
@@ -1762,9 +2235,12 @@ function withStockInfo_(it, stockRow) {
   return {
     item_name: it.item_name,
     category: it.category || '',
+    // 家にあるものも買い足せるので、分量も落とさない
+    amount: it.amount || '',
     confidence: it.confidence,
     id: stockRow.id,          // バブルの「使った」ボタンが指す先
     date: stockRow.date,
+    date_precision: stockRow.precision,
     label: stockRow.label,
     regDate: stockRow.regDate
   };
@@ -1833,23 +2309,31 @@ function matchNamesToStock_(items, all) {
  * どちらの行にも買い物リストへの「追加」ボタンを付ける（家にあっても買い足したい
  * ことがあるため）。期限・登録日は出さない。期限を見たいときは在庫確認を使う。
  */
-function replyRecipeMatch_(replyToken, items) {
+function replyRecipeMatch_(replyToken, items, dish) {
   var r = matchNamesToStock_(items);
   var missing = r.missing.map(recipeEntry_);
   var have = r.have.map(recipeEntry_);
 
   // ボタンの postback には並び順の番号だけを入れ、品名と区分は控えのほうから引く。
   // postback の data は300文字までで、材料が多いと品名を並べきれないため
-  var token = saveAddSet_(missing.concat(have), missing.length);
+  var token = saveAddSet_(missing.concat(have), missing.length, dish);
+
+  // リンクを写真より先に送っていた場合は、ここで結びつける
+  var waiting = takeWaitingLink_();
+  if (waiting) updateAddSet_(token, { url: waiting });
+
+  // 紐づけ中の表示。料理名が読めていればそれを、読めていなければ帯だけ出す
+  var linkNote = waiting ? (dish || true) : '';
 
   replyFlexMessage_(replyToken, '材料確認 買うべきもの' + missing.length + '件',
-    buildRecipeBubble_(missing, have, token));
+    buildRecipeBubble_(missing, have, token, linkNote));
 }
 
-/** バブルとその控えで使う1件ぶん。表示に要るのは名前だけ、追加には区分も要る */
+/** バブルとその控えで使う1件ぶん。表示に要るのは名前と分量、追加には区分も要る */
 function recipeEntry_(it) {
   return {
     name: it.item_name,
+    amount: String(it.amount || '').trim(),
     category: it.category || '',
     low: !!(it.confidence && it.confidence !== 'high')
   };
@@ -2257,7 +2741,8 @@ function notifyWeekly() {
   var sections = weeklyNotifySections_();
   if (!sections) { console.log('通知対象なし。push をスキップ'); return; }
 
-  pushFlex_(weeklyAltText_(sections), buildWeeklyBubble_(sections));
+  // 中身は受け取る人ごとに組み立て直す。配色がその人の設定で決まるため
+  pushFlex_(weeklyAltText_(sections), function () { return buildWeeklyBubble_(sections); });
   console.log('通知しました: ' + sections.map(function (sec) {
     return sec.title + sec.items.length;
   }).join(' / '));
@@ -2299,9 +2784,9 @@ function weeklyNotifySections_() {
 
   // 期限の近い順に並べてから区分ごとに積む。縦棒の色で急ぎ具合が分かるようにする
   return [
-    { title: '期限切れ', items: sortByDate_(expired), color: SHOP_RED },
-    { title: '残り1週間', items: sortByDate_(week), color: SHOP_YELLOW },
-    { title: '残り1か月', items: sortByDate_(month), color: SHOP_GREEN }
+    { title: '期限切れ', items: sortByDate_(expired), color: pal_().red },
+    { title: '残り1週間', items: sortByDate_(week), color: pal_().yellow },
+    { title: '残り1か月', items: sortByDate_(month), color: pal_().green }
   ];
 }
 
@@ -2379,6 +2864,67 @@ function setupWeeklyTrigger() {
  * 買い物リストのシートを返す。無ければ作り、ヘッダーが無ければ入れる。
  * （手動で空のシートだけ作ってある状態でもそのまま使えるようにしている）
  */
+/**
+ * レシピシート。無ければその場で作る。
+ * 買い物リストと違い、写真から材料を足した人が出るまで1行も要らないので、
+ * 初回の書き込みまで存在しなくてよい
+ */
+function recipeSheet_() {
+  if (RECIPE_SHEET_CACHE_) return RECIPE_SHEET_CACHE_;
+
+  var id = prop_('SPREADSHEET_ID', false);
+  if (!id) {
+    throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
+  }
+
+  var ss = SpreadsheetApp.openById(id);
+  var sh = ss.getSheetByName(RECIPE_SHEET_NAME) || ss.insertSheet(RECIPE_SHEET_NAME);
+
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, RECIPE_COL_COUNT).setValues([RECIPE_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+
+  RECIPE_SHEET_CACHE_ = sh;
+  return sh;
+}
+
+/** レシピを1行足して、その ID を返す */
+function recipeAdd_(title, url) {
+  var sh = recipeSheet_();
+  var last = sh.getLastRow();
+  var id = String(last);   // 見出し行があるので、行数がそのまま次の連番になる
+
+  sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
+    id, nowStamp_(), title || '', url || '', CURRENT_USER_ || ''
+  ]]);
+  return id;
+}
+
+/** レシピID → { title, url } の対応表。買い物リストを表示するたびに1回だけ読む */
+function recipeMap_() {
+  var id = prop_('SPREADSHEET_ID', false);
+  if (!id) return {};
+
+  var ss = SpreadsheetApp.openById(id);
+  var sh = ss.getSheetByName(RECIPE_SHEET_NAME);
+  if (!sh) return {};   // まだ1件も登録していない
+
+  var last = sh.getLastRow();
+  if (last < 2) return {};
+
+  var map = {};
+  sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues().forEach(function (r) {
+    var key = String(r[RECIPE_COL.ID - 1] || '');
+    if (!key) return;
+    map[key] = {
+      title: String(r[RECIPE_COL.TITLE - 1] || ''),
+      url: String(r[RECIPE_COL.URL - 1] || '')
+    };
+  });
+  return map;
+}
+
 function shopSheet_() {
   if (SHOP_SHEET_CACHE_) return SHOP_SHEET_CACHE_;
 
@@ -2393,10 +2939,29 @@ function shopSheet_() {
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else {
+    ensureShopColumns_(sh);
   }
 
   SHOP_SHEET_CACHE_ = sh;
   return sh;
+}
+
+/**
+ * 列を増やしたあと、見出し行を今の定義に合わせて1回だけ直す。
+ * 済んだことはスクリプトプロパティに控えるので、ふだんはシートを読みに行かない
+ * （移行のたびにエディタから手で実行しなくて済むようにするための仕掛け）。
+ * データのある列には触れず、足りない列を足して見出しを書き直すだけ
+ */
+function ensureShopColumns_(sh) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('SHOP_SCHEMA') === String(SHOP_COL_COUNT)) return;
+
+  if (sh.getMaxColumns() < SHOP_COL_COUNT) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), SHOP_COL_COUNT - sh.getMaxColumns());
+  }
+  sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
+  props.setProperty('SHOP_SCHEMA', String(SHOP_COL_COUNT));
 }
 
 /** 未購入の行を {row, id, name} で返す */
@@ -2408,7 +2973,13 @@ function shopTodoRows_(sh) {
   var out = [];
   for (var i = 0; i < data.length; i++) {
     if (data[i][SHOP_COL.STATUS - 1] !== SHOP_STATUS.TODO) continue;
-    out.push({ row: i + 2, id: data[i][SHOP_COL.ID - 1], name: data[i][SHOP_COL.NAME - 1] });
+    out.push({
+      row: i + 2,
+      id: data[i][SHOP_COL.ID - 1],
+      name: data[i][SHOP_COL.NAME - 1],
+      amount: String(data[i][SHOP_COL.AMOUNT - 1] || ''),
+      by: String(data[i][SHOP_COL.ADDED_BY - 1] || '')
+    });
   }
   return out;
 }
@@ -2450,10 +3021,14 @@ function shopMaxId_() {
  * 戻り値は { added, dup }（どちらも品名の配列）。返信の組み立ては呼び出し側に任せる
  * ので、テキスト返信（shopAdd_）とバブル返信（材料確認）の両方から使える。
  */
-function shopAddPlan_(items) {
+function shopAddPlan_(items, recipeId, by) {
   var clean = items
     .map(function (it) {
-      return { name: String((it && it.name) || '').trim(), category: (it && it.category) || '' };
+      return {
+        name: String((it && it.name) || '').trim(),
+        category: (it && it.category) || '',
+        amount: String((it && it.amount) || '').trim()
+      };
     })
     .filter(function (it) { return it.name; });
   if (!clean.length) return { add: [], dup: [] };
@@ -2481,7 +3056,13 @@ function shopAddPlan_(items) {
 
   // IDは書き込み前にここで確保しておく。返信のバブルに付ける削除ボタンが
   // IDを必要とし、その返信を書き込みより先に送っているため
-  return { sheet: sh, startRow: last + 1, add: add, dup: dup, ids: add.length ? shopReserveIds_(add.length) : [] };
+  return {
+    sheet: sh, startRow: last + 1, add: add, dup: dup,
+    recipeId: recipeId || '',
+    // LINE からは誰の操作か分かるので自動で入る。画面からは名乗ってもらった分を受け取る
+    by: by || userName_(),
+    ids: add.length ? shopReserveIds_(add.length) : []
+  };
 }
 
 /** shopAddPlan_ が仕分けた分を書き込む。追記と取消用の記録をまとめて行う */
@@ -2503,6 +3084,9 @@ function shopAddCommit_(plan) {
       row[SHOP_COL.CATEGORY - 1] = it.category;
       row[SHOP_COL.STATUS - 1] = SHOP_STATUS.TODO;
       row[SHOP_COL.UPDATED - 1] = stamp;
+      row[SHOP_COL.RECIPE - 1] = plan.recipeId || '';
+      row[SHOP_COL.AMOUNT - 1] = it.amount || '';
+      row[SHOP_COL.ADDED_BY - 1] = plan.by || '';
       return row;
     });
     plan.sheet.getRange(startRow, 1, values.length, SHOP_COL_COUNT).setValues(values);
@@ -2770,7 +3354,7 @@ function buildWeeklyBubble_(sections) {
     left -= shown.length;
 
     shown.forEach(function (it, i) {
-      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       rows.push(weeklyItemRow_(it, sec.color));
     });
   });
@@ -2780,7 +3364,7 @@ function buildWeeklyBubble_(sections) {
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -2796,7 +3380,7 @@ function weeklyOmittedRow_(count) {
     contents: [{
       type: 'text',
       text: 'ほか' + count + '件は「在庫確認」の画面で見てください。',
-      color: SHOP_GRAY,
+      color: pal_().gray,
       size: 'xs',
       wrap: true
     }]
@@ -2811,7 +3395,7 @@ function weeklyItemRow_(it, color) {
   // 読み取り確度の ⚠ は付けない。通知は一覧として眺めるものなので、
   // 品名と残日数だけに絞る（怪しいものは在庫確認の画面で確かめられる）
   var name = it.item_name || '(食材名不明)';
-  var sub = { text: weeklyRemainText_(it), color: color || SHOP_GRAY, side: true };
+  var sub = { text: weeklyRemainText_(it), color: color || pal_().gray, side: true };
 
   return bubbleActionRow_(name, '使用済',
     { type: 'postback', label: '使用済', data: STOCK_USED_PREFIX + it.id }, sub);
@@ -2823,6 +3407,7 @@ function weeklyItemRow_(it, color) {
  * 日付側に付けていた「頃」をここへ移した形）。
  */
 function weeklyRemainText_(it) {
+  if (isAlways_(it)) return '常備';
   if (!it.date) return '期限不明';
 
   var days = daysLeft_(it.date);
@@ -2833,8 +3418,26 @@ function weeklyRemainText_(it) {
 }
 
 /** 通知先へ Flex メッセージを push する。pushText_ の Flex 版 */
-function pushFlex_(altText, contents) {
-  pushMessages_([{ type: 'flex', altText: String(altText).substring(0, 400), contents: contents }]);
+/**
+ * バブルを全員へ送る。配色が人ごとに違うので、1通を multicast で配ることはできない。
+ * 宛先ごとに、その人の配色で組み立て直してから送る。
+ *
+ * build は中身を作って返す関数。呼ばれるたびに pal_() がその人の色を返す
+ */
+function pushFlex_(altText, build) {
+  var to = allowedUserIds_();
+  if (!to.length) {
+    throw new Error('通知先が未設定です。スクリプトプロパティ ALLOWED_USER_IDS に userId を設定してください。');
+  }
+  to.forEach(function (uid) {
+    withUser_(uid, function () {
+      sendPush_([uid], [{
+        type: 'flex',
+        altText: String(altText).substring(0, 400),
+        contents: build()
+      }]);
+    });
+  });
 }
 
 // ---------------------------------------------------------------- 買い物リスト（Flexバブル）
@@ -2848,23 +3451,49 @@ function pushFlex_(altText, contents) {
 //   バブル上部の見出し帯 … 一番明るい
 //   セクション見出しの帯 … 中間
 //   品目の行           … 一番暗い（バブルの地色）
-var SHOP_BG = '#1e2127';
-var SHOP_SECTION_BG = '#262a30';
-var SHOP_HEADER_BG = '#2e333a';
-var SHOP_GREEN = '#4ADE80';
-// 「買うべきもの」「在庫にありません」の縦棒。リッチメニュー左列のアイコン
-// （richmenu.py の PALE_BLUE）と同じ色にして、見た目の系統を揃えている
-var SHOP_BLUE = '#93C5FD';
-var SHOP_GRAY = '#9CA3AF';
-// 週次通知の縦棒。期限切れ＝赤、期限が近い＝黄。残り1か月は急ぎではないので緑のまま
-var SHOP_RED = '#F87171';
-var SHOP_YELLOW = '#FBBF24';
+var SHOP_PALETTES = {
+  // 暗いほう。LINE のダークテーマ（トーク背景 #121212 ／ ヘッダ #2A2A2A）に並べたとき、
+  // バブルだけが青く浮かないよう、灰色には色味を持たせない
+  dark: {
+    bg: '#212121',
+    sectionBg: '#282828',
+    headerBg: '#303030',
+    green: '#4ADE80',
+    blue: '#93C5FD',
+    gray: '#9CA3AF',
+    red: '#F87171',
+    yellow: '#FBBF24',
+    text: '#EDEDED',
+    line: '#383838'
+  },
+  // 明るいほう。白の上では LINE のブランド緑 #06C755 は 2.3:1 しかなく、
+  // 細い文字だと読めない。文字と同じ基準（4.5:1）を満たす濃さに落としてある
+  light: {
+    bg: '#FFFFFF',
+    sectionBg: '#EDF0F4',
+    headerBg: '#DDE2EA',
+    green: '#077A3E',
+    blue: '#1D6FD0',
+    gray: '#4B5563',
+    red: '#C62828',
+    yellow: '#B45309',
+    text: '#111418',
+    line: '#D3D8E0'
+  }
+};
+
 // セクション見出しの帯の高さ。ボタンの有無で高さがずれないよう決め打ちにする。
 // 丸いボタン（md の文字＋上下の余白＋枠）が収まる高さにしてあるので、
 // ボタンの文字を大きくするならここも合わせて上げること
 var SECTION_HEADER_H = '52px';
-var SHOP_TEXT = '#F3F4F6';
-var SHOP_LINE = '#33363c';
+
+/** いま組み立てているバブルの配色。相手の設定で決まる */
+var THEME_CACHE_ = null;
+
+function pal_() {
+  if (!THEME_CACHE_) THEME_CACHE_ = SHOP_PALETTES[userTheme_()];
+  return THEME_CACHE_;
+}
 var SHOP_POSTBACK_ALL = 'shop_bought_all';
 // 追加バブルの「全て削除」。消すのはそのバブルに並んでいる分だけで、ID の範囲で指す
 var SHOP_POSTBACK_RANGE = 'shop_bought_ids:';
@@ -2888,7 +3517,7 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
       contents: [
         // 折り返さず1行に収める（長い品名は末尾が「…」になる）。
         // 縦に伸びると一覧として追いにくく、行ごとの高さも揃わなくなるため
-        { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: false },
+        { type: 'text', text: String(name), color: pal_().text, size: 'md', flex: 1, wrap: false },
         { type: 'text', text: sub.text, color: sub.color, size: 'xs', flex: 0, margin: 'md', gravity: 'center' }
       ]
     }
@@ -2900,12 +3529,12 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
       flex: 1,
       spacing: 'xs',
       contents: [
-        { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', wrap: true },
+        { type: 'text', text: String(name), color: pal_().text, size: 'md', wrap: true },
         { type: 'text', text: sub.text, color: sub.color, size: 'xs', wrap: true }
       ]
     }
     // size:'md'（16px）が LINE の通常のトーク文字と同じ大きさ。太さは既定（regular）のまま
-    : { type: 'text', text: String(name), color: SHOP_TEXT, size: 'md', flex: 1, wrap: true, gravity: 'center' };
+    : { type: 'text', text: String(name), color: pal_().text, size: 'md', flex: 1, wrap: true, gravity: 'center' };
 
   return {
     type: 'box',
@@ -2929,7 +3558,7 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
         paddingBottom: '8px',
         action: action,
         contents: [
-          { type: 'text', text: actionLabel, color: actionColor || SHOP_GREEN, size: 'md', align: 'end' }
+          { type: 'text', text: actionLabel, color: actionColor || pal_().green, size: 'md', align: 'end' }
         ]
       }
     ]
@@ -2945,8 +3574,8 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
 // header ブロックに高さを指定すると中身が切られて、見出しもボタンも欠ける
 function bubbleHeader_(title, note, titleColor, pill) {
   var contents = [
-    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || SHOP_GREEN, flex: 0, gravity: 'center' },
-    { type: 'text', text: note || '', size: 'xs', color: SHOP_GRAY, flex: 0, gravity: 'center', margin: 'md' },
+    { type: 'text', text: title, weight: 'bold', size: 'md', color: titleColor || pal_().green, flex: 0, gravity: 'center' },
+    { type: 'text', text: note || '', size: 'xs', color: pal_().gray, flex: 0, gravity: 'center', margin: 'md' },
     // 伸び縮みする余白。幅が足りないときはここが先に潰れるので、
     // 見出しや件数の文字が欠けない
     { type: 'filler' }
@@ -2956,7 +3585,7 @@ function bubbleHeader_(title, note, titleColor, pill) {
   return {
     type: 'box',
     layout: 'horizontal',
-    backgroundColor: SHOP_HEADER_BG,
+    backgroundColor: pal_().headerBg,
     paddingStart: '14px',
     paddingEnd: '14px',
     // ボタンの有無で高さが変わらないよう、セクション見出しと同じ決め打ちにする
@@ -2984,8 +3613,8 @@ function bubbleSectionHeader_(title, count, barColor, pill) {
       cornerRadius: '3px',
       contents: [{ type: 'filler' }]
     },
-    { type: 'text', text: title, weight: 'bold', size: 'md', color: SHOP_TEXT, flex: 0, gravity: 'center', margin: 'md' },
-    { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, flex: 0, gravity: 'center', margin: 'md' },
+    { type: 'text', text: title, weight: 'bold', size: 'md', color: pal_().text, flex: 0, gravity: 'center', margin: 'md' },
+    { type: 'text', text: count + '件', size: 'xs', color: pal_().gray, flex: 0, gravity: 'center', margin: 'md' },
     // 伸び縮みする余白。幅が足りないときはここが先に潰れる
     { type: 'filler' }
   ];
@@ -2994,7 +3623,7 @@ function bubbleSectionHeader_(title, count, barColor, pill) {
   return {
     type: 'box',
     layout: 'horizontal',
-    backgroundColor: SHOP_SECTION_BG,
+    backgroundColor: pal_().sectionBg,
     paddingStart: '14px',
     paddingEnd: '14px',
     // 高さを決め打ちにして、ボタンの有無で帯の高さが変わらないようにする
@@ -3013,14 +3642,14 @@ function bubblePlainHeader_(title, count, pill) {
   return {
     type: 'box',
     layout: 'horizontal',
-    backgroundColor: SHOP_SECTION_BG,
+    backgroundColor: pal_().sectionBg,
     paddingStart: '14px',
     paddingEnd: '14px',
     height: SECTION_HEADER_H,
     alignItems: 'center',
     contents: [
-      { type: 'text', text: String(title), weight: 'bold', size: 'md', color: SHOP_TEXT, flex: 0, gravity: 'center' },
-      { type: 'text', text: count + '件', size: 'xs', color: SHOP_GRAY, flex: 0, gravity: 'center', margin: 'md' },
+      { type: 'text', text: String(title), weight: 'bold', size: 'md', color: pal_().text, flex: 0, gravity: 'center' },
+      { type: 'text', text: count + '件', size: 'xs', color: pal_().gray, flex: 0, gravity: 'center', margin: 'md' },
       { type: 'filler' }
     ].concat(pill ? [pill] : [])
   };
@@ -3031,12 +3660,13 @@ function bubblePlainHeader_(title, count, pill) {
  * 文字は行の「追加」「使用済」と同じ md。枠のぶん小さく見えないよう揃えている
  * （そのぶん帯は高くなるので、SECTION_HEADER_H もあわせて決めてある）
  */
-function bubblePillButton_(label, action) {
+function bubblePillButton_(label, action, color) {
+  color = color || pal_().green;
   return {
     type: 'box',
     layout: 'vertical',
     flex: 0,
-    borderColor: SHOP_GREEN,
+    borderColor: color,
     borderWidth: '1px',
     cornerRadius: '999px',
     paddingStart: '14px',
@@ -3045,7 +3675,7 @@ function bubblePillButton_(label, action) {
     paddingBottom: '5px',
     action: action,
     contents: [
-      { type: 'text', text: label, color: SHOP_GREEN, size: 'md', align: 'center' }
+      { type: 'text', text: label, color: color, size: 'md', align: 'center' }
     ]
   };
 }
@@ -3059,7 +3689,7 @@ function bubbleWideButton_(label, action) {
     paddingBottom: '11px',
     action: action,
     contents: [
-      { type: 'text', text: label, color: SHOP_GREEN, size: 'md', align: 'center' }
+      { type: 'text', text: label, color: pal_().green, size: 'md', align: 'center' }
     ]
   };
 }
@@ -3068,19 +3698,20 @@ function buildShopListBubble_(todo) {
   // 「全て削除」は見出しの右のボタンに置く。最下段に横いっぱいのボタンを
   // 置くより、品目の並びが途切れず読みやすい
   var rows = [
-    bubbleHeader_('買い物リスト', todo.length + '件', SHOP_TEXT,
+    bubbleHeader_('買い物リスト', todo.length + '件', pal_().text,
       bubblePillButton_('全て削除', { type: 'postback', label: '全て削除', data: SHOP_POSTBACK_ALL }))
   ];
   todo.forEach(function (t, i) {
-    if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+    if (i > 0) rows.push({ type: 'separator', color: pal_().line });
     rows.push(bubbleActionRow_(t.name, '削除',
-      { type: 'postback', label: '削除', data: shopBoughtPostbackData_(t.id) }));
+      { type: 'postback', label: '削除', data: shopBoughtPostbackData_(t.id) },
+      amountSub_(t.amount)));
   });
 
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -3097,8 +3728,8 @@ function buildShopCheckBubble_(names) {
       size: 'md',
       wrap: true,
       contents: [
-        { type: 'span', text: '✓ ', color: SHOP_GREEN },
-        { type: 'span', text: String(name), color: SHOP_TEXT }
+        { type: 'span', text: '✓ ', color: pal_().green },
+        { type: 'span', text: String(name), color: pal_().text }
       ]
     };
   }));
@@ -3112,7 +3743,7 @@ function shopNoteShell_(textComponents) {
     body: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: SHOP_BG,
+      backgroundColor: pal_().bg,
       paddingStart: '14px',
       paddingEnd: '14px',
       paddingTop: '12px',
@@ -3130,10 +3761,10 @@ function buildShopEmptyBubble_() {
     body: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: SHOP_BG,
+      backgroundColor: pal_().bg,
       paddingAll: '14px',
       contents: [
-        { type: 'text', text: '買い物リストが空になりました', color: SHOP_GREEN, weight: 'bold', size: 'md', wrap: true }
+        { type: 'text', text: '買い物リストが空になりました', color: pal_().green, weight: 'bold', size: 'md', wrap: true }
       ]
     }
   };
@@ -3183,13 +3814,18 @@ function loadAddSets_() {
   }
 }
 
-function saveAddSet_(entries, missingCount) {
+function saveAddSet_(entries, missingCount, dish) {
   var token = String(Date.now());
   var sets = loadAddSets_();
   sets.unshift({
     token: token,
     missingCount: missingCount,
-    items: entries.map(function (e) { return { name: e.name, category: e.category }; })
+    dish: dish || '',      // 写真から読み取った料理名
+    url: '',               // あとから本人が送ってくるリンク
+    recipeId: '',          // レシピシートに行を作ったら、その ID
+    shopIds: [],           // この照合から買い物リストへ入れた品目の ID
+    // 分量も控える。「追加」を押した時点で買い物リストに書き写すため
+    items: entries.map(function (e) { return { name: e.name, category: e.category, amount: e.amount || '' }; })
   });
 
   // スクリプトプロパティ1件の上限（9KB）に当てないよう、大きいときは直近だけ残す
@@ -3204,29 +3840,63 @@ function findAddSet_(token) {
   return loadAddSets_().filter(function (s) { return s.token === token; })[0] || null;
 }
 
+/** 控えの1件だけを書き換える。リンクや、買い物リストへ入れた品目の ID を足すのに使う */
+function updateAddSet_(token, patch) {
+  var sets = loadAddSets_();
+  var hit = null;
+  sets.forEach(function (s) {
+    if (s.token !== token) return;
+    hit = s;
+    Object.keys(patch).forEach(function (k) { s[k] = patch[k]; });
+  });
+  if (!hit) return null;
+
+  PropertiesService.getScriptProperties().setProperty(ADD_SET_KEY, JSON.stringify(sets));
+  return hit;
+}
+
+/**
+ * その控えに対応するレシピ行の ID。まだ無ければ作る。
+ * 料理名もリンクも無いうちは行を作らない（中身の無い行が増えるだけのため）
+ */
+function ensureRecipeId_(set) {
+  if (!set) return '';
+  if (set.recipeId) return set.recipeId;
+  if (!set.dish && !set.url) return '';
+
+  var id = recipeAdd_(set.dish, set.url);
+  updateAddSet_(set.token, { recipeId: id });
+  set.recipeId = id;
+  return id;
+}
+
 /**
  * 材料確認のバブル。買うべきもの／家にあるものを縦に並べ、どちらの行にも
  * 買い物リストへの「追加」ボタンを付ける（家にあっても買い足したいことがある）。
  * 「全部追加」は買うべきものの下にだけ置く。
  */
-function buildRecipeBubble_(missing, have, token) {
+function buildRecipeBubble_(missing, have, token, linkNote) {
   var rows = [];
 
+  // 預かっていたリンクを使ったときは、そのことを一番上に出す。
+  // 「効いている」ことが見えないと、順番を覚えていないと使えない機能になってしまう
+  if (linkNote) rows.push(recipeLinkBanner_(linkNote, token));
+
   if (missing.length) {
-    rows.push(bubbleSectionHeader_('買うべきもの', missing.length, SHOP_BLUE,
+    rows.push(bubbleSectionHeader_('買うべきもの', missing.length, pal_().blue,
       bubblePillButton_('全て追加', { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token })));
     missing.forEach(function (e, i) {
-      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       rows.push(recipeItemRow_(e, token, i));
     });
   }
 
   if (have.length) {
-    rows.push(bubbleSectionHeader_('家にあるもの', have.length, SHOP_GREEN));
+    rows.push(bubbleSectionHeader_('家にあるもの', have.length, pal_().green));
     have.forEach(function (e, i) {
-      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       // 家にあるものは買い足しのための控えめな扱い。押せるが色は目立たせない
-      rows.push(recipeItemRow_(e, token, missing.length + i, SHOP_GRAY));
+      rows.push(recipeItemRow_(e, token, missing.length + i, pal_().gray));
     });
   }
 
@@ -3235,7 +3905,41 @@ function buildRecipeBubble_(missing, have, token) {
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+/** 「リールに紐づけ中」の帯。料理名が読めていれば併せて出す */
+function recipeLinkBanner_(dish, token) {
+  var lines = [{
+    type: 'text', size: 'md', wrap: true,
+    contents: [
+      { type: 'span', text: '🔗 ', color: pal_().blue },
+      { type: 'span', text: 'リンクに紐づけ中', color: pal_().text, weight: 'bold' }
+    ]
+  }];
+
+  // 料理名は次の行に落とす。横に並べると、長い名前で「外す」が押しづらくなる
+  if (dish && dish !== true) {
+    lines.push({ type: 'text', text: dish, size: 'md', wrap: true, color: pal_().gray });
+  }
+
+  return {
+    type: 'box',
+    layout: 'horizontal',
+    backgroundColor: pal_().headerBg,
+    paddingAll: '10px',
+    paddingStart: '14px',
+    paddingEnd: '14px',
+    alignItems: 'center',
+    contents: [
+      { type: 'box', layout: 'vertical', flex: 1, contents: lines },
+      // 違うレシピのリンクが付いていたとき、この場で外せるようにする。
+      // 目立たせる必要はないので、枠も文字もグレーにしておく
+      bubblePillButton_('外す',
+        { type: 'postback', label: '外す', data: LINK_OFF_PREFIX + token },
+        pal_().gray)
+    ]
   };
 }
 
@@ -3243,7 +3947,15 @@ function buildRecipeBubble_(missing, have, token) {
 function recipeItemRow_(entry, token, index, actionColor) {
   return bubbleActionRow_(entry.name + (entry.low ? ' ⚠' : ''), '追加',
     { type: 'postback', label: '追加', data: ADD_PREFIX + token + ':' + index },
-    null, actionColor);
+    amountSub_(entry.amount), actionColor);
+}
+
+/**
+ * 品名の右に添える分量。書かれていなければ何も添えない。
+ * side を付けて1行に収めるので、分量のあるなしで行の高さは変わらない
+ */
+function amountSub_(amount) {
+  return amount ? { text: String(amount), color: pal_().gray, side: true } : null;
 }
 
 // ---------------------------------------------------------------- 在庫確認（Flexバブル）
@@ -3256,13 +3968,14 @@ var STOCK_USED_PREFIX = 'stock_used:';
  * 色を変えないぶん、行の読みやすさが一定に保たれる。
  */
 function stockExpirySub_(it) {
-  if (!it.date) return { text: '期限不明', color: SHOP_GRAY };
+  if (isAlways_(it)) return { text: '常備品', color: pal_().gray };
+  if (!it.date) return { text: '期限不明', color: pal_().gray };
 
   var days = daysLeft_(it.date);
   var label = it.label === '消費期限' ? '消費期限' : '賞味期限';
   var remain = days < 0 ? (days * -1) + '日超過' : days === 0 ? '今日まで' : '残り' + days + '日';
 
-  return { text: label + ' ' + remain, color: SHOP_GRAY };
+  return { text: label + ' ' + remain, color: pal_().gray };
 }
 
 /**
@@ -3280,9 +3993,9 @@ function buildStockCheckBubble_(have, missing, token) {
       return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
     });
 
-    rows.push(bubbleSectionHeader_('在庫あり', have.length, SHOP_GREEN));
+    rows.push(bubbleSectionHeader_('在庫あり', have.length, pal_().green));
     have.forEach(function (it, i) {
-      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       rows.push(bubbleActionRow_(
         it.item_name + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
         '使用済',
@@ -3292,10 +4005,10 @@ function buildStockCheckBubble_(have, missing, token) {
   }
 
   if (missing.length) {
-    rows.push(bubbleSectionHeader_('在庫なし', missing.length, SHOP_BLUE,
+    rows.push(bubbleSectionHeader_('在庫なし', missing.length, pal_().blue,
       bubblePillButton_('全て追加', { type: 'postback', label: '全て追加', data: ADD_ALL_PREFIX + token })));
     missing.forEach(function (e, i) {
-      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       rows.push(recipeItemRow_(e, token, i));
     });
   }
@@ -3304,7 +4017,7 @@ function buildStockCheckBubble_(have, missing, token) {
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -3315,7 +4028,8 @@ var STOCK_UNREG_PREFIX = 'stock_unreg:';
  * （読み取った日付が合っているかをその場で確かめられるように）。
  */
 function registeredExpirySub_(it) {
-  if (!it.date) return { text: '期限不明', color: SHOP_GRAY };
+  if (isAlways_(it)) return { text: '常備品（期限なし）', color: pal_().gray };
+  if (!it.date) return { text: '期限不明', color: pal_().gray };
 
   var days = daysLeft_(it.date);
   var label = it.label === '消費期限' ? '消費期限' : '賞味期限';
@@ -3323,7 +4037,7 @@ function registeredExpirySub_(it) {
   var remain = days < 0 ? (days * -1) + '日超過' : days === 0 ? '今日まで' : '残り' + days + '日';
 
   // 中黒を挨むと行が折り返されやすいので、区切りは空白だけにする
-  return { text: label + ' ' + it.date + approx + '  ' + remain, color: SHOP_GRAY };
+  return { text: label + ' ' + it.date + approx + '  ' + remain, color: pal_().gray };
 }
 
 /**
@@ -3340,7 +4054,7 @@ function buildRegisteredBubble_(items) {
 
   var rows = [bubblePlainHeader_('登録しました', sorted.length)];
   sorted.forEach(function (it, i) {
-    if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+    if (i > 0) rows.push({ type: 'separator', color: pal_().line });
     rows.push(bubbleActionRow_(
       (it.item_name || '(名称不明)') + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
       '登録取消',
@@ -3351,7 +4065,7 @@ function buildRegisteredBubble_(items) {
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -3371,7 +4085,7 @@ function buildConsumeChoiceBubble_(groups) {
       bubblePillButton_('全て使用済',
         { type: 'postback', label: '全て使用済', data: STOCK_USED_ALL_PREFIX + ids })));
     g.choices.forEach(function (c, i) {
-      if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+      if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       rows.push(bubbleActionRow_(c.name, '使用済',
         { type: 'postback', label: '使用済', data: STOCK_USED_PREFIX + c.id },
         registeredExpirySub_(c)));
@@ -3381,7 +4095,7 @@ function buildConsumeChoiceBubble_(groups) {
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -3480,22 +4194,23 @@ function buildShopAddedListBubble_(plan) {
   // 見出しは「買い物リストに追加」だと、件数と丸いボタンを足した幅が
   // バブルに収まらない。何のリストかは押したボタンで分かるので短くする
   var rows = [
-    bubbleHeader_('リストに追加', plan.add.length + '件', SHOP_TEXT,
+    bubbleHeader_('リストに追加', plan.add.length + '件', pal_().text,
       bubblePillButton_('全て取消',
         { type: 'postback', label: '全て取消', data: SHOP_POSTBACK_RANGE + range }))
   ];
 
   // 今入れた分を取り下げる操作なので、買い物リスト表示の「削除」ではなく「取消」にする
   plan.add.forEach(function (it, i) {
-    if (i > 0) rows.push({ type: 'separator', color: SHOP_LINE });
+    if (i > 0) rows.push({ type: 'separator', color: pal_().line });
     rows.push(bubbleActionRow_(it.name, '取消',
-      { type: 'postback', label: '取消', data: shopBoughtPostbackData_(plan.ids[i]) }));
+      { type: 'postback', label: '取消', data: shopBoughtPostbackData_(plan.ids[i]) },
+      amountSub_(it.amount)));
   });
 
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: SHOP_BG, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
   };
 }
 
@@ -3504,13 +4219,18 @@ function buildShopAddedListBubble_(plan) {
  * あればテキストで添える。「買った」と同じく、仕分けが決まった時点で先に返信し、
  * 書き込みは後に回す。
  */
-function replyShopAdd_(replyToken, note, items) {
+/**
+ * 買い物リストへ足して、その結果をバブルで返す。
+ * set は材料確認の控え。渡されたときは、入れた品目にレシピID（リンクの出どころ）を付ける
+ */
+function replyShopAdd_(replyToken, note, items, set) {
   if (!items || !items.length) {
     replyText_(replyToken, (note || '') + '品名を読み取れませんでした。');
     return;
   }
 
-  var plan = shopAddPlan_(items);
+  var plan = shopAddPlan_(items, ensureRecipeId_(set));
+  rememberShopIds_(set, plan.ids);
   if (!plan.add.length) {
     replyText_(replyToken, (note || '') + (plan.dup.length
       ? 'すでにリストにあります: ' + plan.dup.join('、')
@@ -3549,7 +4269,8 @@ function handleBubbleAdd_(replyToken, data) {
   }
 
   // 「買った」と同じく、仕分けが決まった時点で先に返信し、書き込みは後に回す
-  var plan = shopAddPlan_([item]);
+  var plan = shopAddPlan_([item], ensureRecipeId_(set));
+  rememberShopIds_(set, plan.ids);
   if (plan.add.length) {
     replyFlexMessage_(replyToken, '買い物リスト', buildShopCheckBubble_(plan.add[0].name));
   } else {
@@ -3573,7 +4294,7 @@ function handleBubbleAddAll_(replyToken, token) {
     return;
   }
 
-  replyShopAdd_(replyToken, '', items);
+  replyShopAdd_(replyToken, '', items, set);
 }
 
 /**
@@ -3593,6 +4314,12 @@ function handlePostback_(event) {
   }
   if (data.indexOf(ADD_ALL_PREFIX) === 0) {
     handleBubbleAddAll_(event.replyToken, data.substring(ADD_ALL_PREFIX.length));
+    return;
+  }
+
+  // 材料バブルの「外す」。その照合に付いたリンクを、追加済みの品目ごと外す
+  if (data.indexOf(LINK_OFF_PREFIX) === 0) {
+    replyText_(event.replyToken, detachRecipeLink_(data.substring(LINK_OFF_PREFIX.length)));
     return;
   }
 
@@ -3752,11 +4479,12 @@ var RICHMENU_CELLS = [
   { col: 1, row: 3, send: '取消' }
 ];
 
-function buildRichMenu_() {
+function buildRichMenu_(theme) {
   return {
     size: RICHMENU_SIZE,
     selected: true,          // 友だち追加時から開いた状態にする
-    name: '食材在庫メニュー',
+    // 名前は LINE 側の一覧に出るだけ。2つ並ぶので、どちらの配色か分かるようにしておく
+    name: '食材在庫メニュー' + (theme === 'light' ? '(白)' : '(黒)'),
     chatBarText: 'メニュー',
     areas: RICHMENU_CELLS.map(function (cell) {
       // 最下段だけ、割り切れなかったぶんを足して下端を画像に合わせる
@@ -3814,8 +4542,12 @@ function setupRichMenu() {
     throw new Error('ALLOWED_USER_IDS（または ALLOWED_USER_ID）が未設定です。\n'
       + 'メニューには画面のURLが入るため、配る相手を決めずには作れません。');
   }
-  RICHMENU_CELLS.forEach(function (cell) {
-    if (cell.webTab) console.log(cell.label + ' → ' + webUrl_(cell.webTab));
+  users.forEach(function (uid) {
+    withUser_(uid, function () {
+      RICHMENU_CELLS.forEach(function (cell) {
+        if (cell.webTab) console.log((userName_() || uid) + ' の ' + cell.label + ' → ' + webUrl_(cell.webTab));
+      });
+    });
   });
 
   var old = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
@@ -3824,20 +4556,40 @@ function setupRichMenu() {
     console.log('古いリッチメニューを削除: ' + m.richMenuId);
   });
 
-  var created = JSON.parse(lineApi_('post', 'https://api.line.me/v2/bot/richmenu', {
-    contentType: 'application/json',
-    payload: JSON.stringify(buildRichMenu_())
-  }).getContentText());
-  var id = created.richMenuId;
-  console.log('作成: ' + id);
+  // メニューは人ごとに作る。押したときの動きも画像も同じだが、焼き込む画面のURLに
+  // その人の呼び名が入るので、画面が「あなた」を名乗らせずに済む。
+  // 配色は後から変えられるので、1人につき黒・白の2枚を先に作っておく
+  var themes = [
+    { theme: 'dark',  image: RICHMENU_IMAGE_BASE64, name: 'richmenu.png' },
+    { theme: 'light', image: richMenuLightImage_(), name: 'richmenu-light.png' }
+  ];
 
-  var png = Utilities.newBlob(
-    Utilities.base64Decode(RICHMENU_IMAGE_BASE64), 'image/png', 'richmenu.png');
-  lineApi_('post', 'https://api-data.line.me/v2/bot/richmenu/' + id + '/content', {
-    contentType: 'image/png',
-    payload: png.getBytes()
+  var byUser = {};
+  users.forEach(function (uid) {
+    withUser_(uid, function () {
+      byUser[uid] = {};
+      themes.forEach(function (m) {
+        if (!m.image) {
+          console.log('※ ' + m.theme + ' の画像が無いので作りません（RichMenuImageLight.gs 未反映）');
+          return;
+        }
+        var created = JSON.parse(lineApi_('post', 'https://api.line.me/v2/bot/richmenu', {
+          contentType: 'application/json',
+          payload: JSON.stringify(buildRichMenu_(m.theme))
+        }).getContentText());
+        byUser[uid][m.theme] = created.richMenuId;
+
+        var png = Utilities.newBlob(Utilities.base64Decode(m.image), 'image/png', m.name);
+        lineApi_('post', 'https://api-data.line.me/v2/bot/richmenu/' + created.richMenuId + '/content', {
+          contentType: 'image/png',
+          payload: png.getBytes()
+        });
+        console.log('作成(' + (userName_() || uid) + ' / ' + m.theme + '): ' + created.richMenuId);
+      });
+    });
   });
-  console.log('画像をアップロード: ' + Math.round(png.getBytes().length / 1024) + 'KB');
+
+  PropertiesService.getScriptProperties().setProperty('RICHMENU_IDS', JSON.stringify(byUser));
 
   // 既定（全ユーザー）には割り当てない。
   // メニューの「買い物リスト表示」「在庫確認」は画面トークン入りのURLを抱えているので、
@@ -3846,11 +4598,49 @@ function setupRichMenu() {
   lineApiIgnore404_('delete', 'https://api.line.me/v2/bot/user/all/richmenu');
 
   users.forEach(function (uid) {
-    lineApi_('post', 'https://api.line.me/v2/bot/user/' + encodeURIComponent(uid) + '/richmenu/' + id);
-    console.log('割り当て: ' + uid);
+    withUser_(uid, function () {
+      linkRichMenuForUser_(uid);
+      console.log('割り当て: ' + uid + ' → ' + userTheme_());
+    });
   });
   console.log(users.length + '人に設定しました。トークを開き直すと出ます。');
   console.log('※ 使う人を増やしたら、ALLOWED_USER_IDS に追記したうえで、この関数をもう一度実行すること。');
+}
+
+/** 人ごとのリッチメニューID。{ userId: { dark: id, light: id } } */
+function richMenuIds_() {
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty('RICHMENU_IDS') || '{}');
+  } catch (err) {
+    console.warn('RICHMENU_IDS を読めません: ' + err.message);
+    return {};
+  }
+}
+
+/**
+ * 白基調の画像。RichMenuImageLight.gs を置いていなければ空を返す。
+ * 参照するだけで ReferenceError になるので、typeof で確かめてから触る
+ */
+function richMenuLightImage_() {
+  return typeof RICHMENU_IMAGE_LIGHT_BASE64 === 'string' ? RICHMENU_IMAGE_LIGHT_BASE64 : '';
+}
+
+/**
+ * その人の設定に合うリッチメニューを貼る。貼れたら true。
+ * まだ2種類そろっていない（setupRichMenu() を流していない）ときは false。
+ */
+function linkRichMenuForUser_(userId) {
+  if (!userId) return false;
+
+  var theme = userTheme_() === 'light' ? 'light' : 'dark';
+  var mine = richMenuIds_()[userId] || {};
+  // その配色がまだ無ければ、もう一方で代える（画像だけの違いなので動きは同じ）
+  var id = mine[theme] || mine.dark || mine.light || '';
+  if (!id) return false;
+
+  lineApi_('post', 'https://api.line.me/v2/bot/user/' + encodeURIComponent(userId)
+    + '/richmenu/' + id);
+  return true;
 }
 
 /**
@@ -3903,6 +4693,36 @@ function showRichMenuStatus() {
     });
     console.log('個別割り当て ' + uid + ': '
       + (r.getResponseCode() === 200 ? r.getContentText() : 'なし（HTTP ' + r.getResponseCode() + '）'));
+  });
+
+  showThemes();
+}
+
+/**
+ * 誰がどちらの配色を選んでいるかを見る。GASエディタから実行する。読むだけで何も変えない。
+ *
+ * 配色を変えるのは本人が「白」「黒」と送ったときだけで、ここからは変えない。
+ * 代わりに設定したいときは setUserThemeById_(userId, 'light') を使う
+ */
+function showThemes() {
+  var props = PropertiesService.getScriptProperties();
+  var menus = richMenuIds_();
+  var names = userNameMap_();
+  console.log('黒基調=dark（既定） / 白基調=light');
+  allowedUserIds_().forEach(function (uid) {
+    var mine = menus[uid] || {};
+    console.log('  ' + (names[uid] || '(呼び名なし)') + ' ' + uid
+      + ': ' + (props.getProperty('THEME:' + uid) || 'dark（未設定）')
+      + ' / メニュー dark=' + (mine.dark || '未作成') + ' light=' + (mine.light || '未作成'));
+  });
+}
+
+/** 本人に送ってもらう代わりに、こちらから配色を決める。GASエディタから実行する */
+function setUserThemeById_(userId, theme) {
+  withUser_(userId, function () {
+    setUserTheme_(theme);
+    var linked = linkRichMenuForUser_(userId);
+    console.log(userId + ' → ' + userTheme_() + (linked ? '（メニューも貼り替え）' : '（メニューは未作成）'));
   });
 }
 

@@ -21,6 +21,8 @@ function doGet(e) {
   var page = HtmlService.createTemplateFromFile('web');
   page.token = token;
   page.tab = webTab_(e && e.parameter && e.parameter.tab);
+  // 開いた人の呼び名。知らない名前は渡さない（画面はこれを端末に覚える）
+  page.who = webBy_(e && e.parameter && e.parameter.p);
   return page.evaluate()
     .setTitle('食材管理')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1')
@@ -102,15 +104,21 @@ var WEB_FRAME_URL = 'https://shun-7778.github.io/04-food-expiry-bot/';
  * ⚠ この URL 自体が鍵なので、チャットやブックマークの共有で人に渡さないこと。
  */
 function webUrl_(tab) {
+  // 誰のために作ったURLかを載せる。画面はこれを見て「あなた」を決め、端末に覚える。
+  // URL そのものが鍵なので、呼び名を足しても渡せる範囲は変わらない
+  var by = userName_();
   return WEB_FRAME_URL
     + '?u=' + encodeURIComponent(execUrl_())
     + '&k=' + webToken_()
-    + '&tab=' + webTab_(tab);
+    + '&tab=' + webTab_(tab)
+    + (by ? '&p=' + encodeURIComponent(by) : '');
 }
 
 /** 枠を使わず Apps Script を直接開くURL（注意バーは出る） */
 function webDirectUrl_(tab) {
-  return execUrl_() + '?k=' + webToken_() + '&tab=' + webTab_(tab);
+  var by = userName_();
+  return execUrl_() + '?k=' + webToken_() + '&tab=' + webTab_(tab)
+    + (by ? '&p=' + encodeURIComponent(by) : '');
 }
 
 /** GASエディタから実行するとURLがログに出る */
@@ -132,8 +140,15 @@ function webData(token) {
   // 今は1人で使う前提なので、トークンが合えば全行を見せている。
   // LINE と画面を紐付けて複数人で使うようにするときは、ここでトークンから利用者を引き、
   // その人の行だけを返すように絞ること（webSetShop などの書き込み側も同じ）。
-  return { shop: webShopData_(), stock: webStockData_() };
+  return {
+    shop: webShopData_(), stock: webStockData_(),
+    users: userNames_(),     // 画面の「あなた」の選択肢
+    order: CATEGORY_ORDER    // 買い物リストを並べる順（店を回る順）
+  };
 }
+
+// 買い物リストの見せ方（個別／料理ごと）は覚えない。
+// 開くたびに個別から始めるので、選択を持ち越す必要がない
 
 /** 買い物リストのチェックを付け外しする。done=true で購入済、false で未購入に戻す */
 function webSetShop(token, id, done) {
@@ -148,8 +163,18 @@ function webSetShop(token, id, done) {
   return webData(token);
 }
 
+/**
+ * 画面から送られてきた「あなた」。誰の操作かはトークンでは分からないので、
+ * 名乗ってもらった分を受け取る。ただし何でも書けてしまわないよう、
+ * USER_NAMES に載っている呼び名だけを通す
+ */
+function webBy_(by) {
+  var name = String(by || '').trim();
+  return userNames_().indexOf(name) >= 0 ? name : '';
+}
+
 /** 品名を買い物リストに足す。区分は空欄のまま（LINE と違い Claude は呼ばない） */
-function webAddShop(token, name) {
+function webAddShop(token, name, by) {
   webAssert_(token);
 
   // 画面から来た文字はそのままシートへ入るので、ここで長さを切る。
@@ -157,7 +182,9 @@ function webAddShop(token, name) {
   var clean = String(name || '').trim().substring(0, 100);
   if (!clean) return webData(token);
 
-  var plan = shopAddPlan_([{ name: clean, category: '' }]);
+  // 並べ替えは区分で決まるので、手で足した分もここで区分を決めておく。
+  // 画面にはもう出ている（先に描いてから投げている）ので、待たせるのは書き込みだけ
+  var plan = shopAddPlan_([{ name: clean, category: categorizeName_(clean) }], '', webBy_(by));
   if (plan.add.length) shopAddCommit_(plan);
 
   var data = webData(token);
@@ -185,7 +212,7 @@ function webSetStock(token, id, used) {
  * 足した買い物リストの ID を addedShopId として返す。取り消すときに
  * 「この操作で足した1件」だけを狙って消すために使う（もともと入っていたものは触らない）。
  */
-function webUseAndAdd(token, id) {
+function webUseAndAdd(token, id, by) {
   webAssert_(token);
 
   var sh = sheet_();
@@ -196,7 +223,9 @@ function webUseAndAdd(token, id) {
   var category = String(sh.getRange(row, COL.CATEGORY).getValue() || '');
   sh.getRange(row, COL.STATUS, 1, 2).setValues([[STATUS.USED, nowStamp_()]]);
 
-  var plan = name ? shopAddPlan_([{ name: name, category: category }]) : { add: [] };
+  var plan = name
+    ? shopAddPlan_([{ name: name, category: category }], '', webBy_(by))
+    : { add: [] };
   var addedShopId = '';
   if (plan.add.length) {
     shopAddCommit_(plan);
@@ -265,14 +294,37 @@ function webShopData_() {
 
   var data = sh.getRange(2, 1, last - 1, SHOP_COL_COUNT).getValues();
   var todo = [];
+  var recipes = null;   // レシピシートは、出どころのある品目が1つでもあるときだけ読む
 
   data.forEach(function (r) {
     if (r[SHOP_COL.STATUS - 1] !== SHOP_STATUS.TODO) return;
-    todo.push({
+
+    var item = {
       id: String(r[SHOP_COL.ID - 1]),
       name: String(r[SHOP_COL.NAME - 1]),
-      added: normalizeYmd_(r[SHOP_COL.ADDED - 1])
-    });
+      added: normalizeYmd_(r[SHOP_COL.ADDED - 1]),
+      // レシピに分量が書かれていたもの。手で足した品目では空
+      amount: String(r[SHOP_COL.AMOUNT - 1] || ''),
+      // 足した人の呼び名。USER_NAMES に載っていない人や、名乗る前に足した分は空
+      by: String(r[SHOP_COL.ADDED_BY - 1] || ''),
+      // 画面の並べ替えに使う。付いていないものは一覧の最後に回る
+      category: String(r[SHOP_COL.CATEGORY - 1] || '')
+    };
+
+    // 写真から足した品目には、出どころのレシピ（料理名とリンク）を添える
+    var recipeId = String(r[SHOP_COL.RECIPE - 1] || '');
+    if (recipeId) {
+      // 料理ごとの並べ替えと色分けに使う。リンクや料理名が無くても、
+      // 同じ写真から入った品目であることは ID だけで分かる
+      item.recipeId = recipeId;
+      if (!recipes) recipes = recipeMap_();
+      var recipe = recipes[recipeId];
+      if (recipe && (recipe.url || recipe.title)) {
+        item.recipe = { title: recipe.title, url: recipe.url };
+      }
+    }
+
+    todo.push(item);
   });
 
   return { todo: todo };
@@ -297,6 +349,8 @@ function webStockData_() {
       category: String(r[COL.CATEGORY - 1] || ''),
       date: date,
       approx: r[COL.PRECISION - 1] === 'month',
+      // 期限を持たない常備品（水・米など）。画面では「常備」と出す
+      always: r[COL.PRECISION - 1] === PRECISION_ALWAYS,
       label: r[COL.LABEL - 1] === '消費期限' ? '消費期限' : '賞味期限',
       days: date ? daysLeft_(date) : null,
       regDate: normalizeYmd_(r[COL.REG_DATE - 1])
