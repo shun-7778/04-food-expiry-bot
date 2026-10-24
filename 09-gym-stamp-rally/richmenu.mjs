@@ -1,4 +1,4 @@
-// richmenu.html を Edge（ヘッドレス）で 2500×843 に撮り、richmenu.png と RichMenuImage.gs を作る。
+// richmenu.html を Edge（ヘッドレス）で 2500×1200 に撮り、richmenu.png と RichMenuImage.gs を作る。
 //   node richmenu.mjs
 // Windows の Edge を使う。場所が違うときは環境変数 EDGE_PATH で指定する。
 import { spawn } from 'node:child_process';
@@ -26,17 +26,17 @@ try {
   const cmd = (method, params = {}) => new Promise((r) => { const i = ++id; waits.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
 
   await cmd('Page.enable');
-  await cmd('Emulation.setDeviceMetricsOverride', { width: 2500, height: 843, deviceScaleFactor: 1, mobile: false });
+  await cmd('Emulation.setDeviceMetricsOverride', { width: 2500, height: 1200, deviceScaleFactor: 1, mobile: false });
   await cmd('Page.navigate', { url: pathToFileURL(path.join(here, 'richmenu.html')).href });
   await sleep(3000); // フォントの読み込みを待つ
-  const shot = await cmd('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 2500, height: 843, scale: 1 } });
+  const shot = await cmd('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 2500, height: 1200, scale: 1 } });
   const png = Buffer.from(shot.result.data, 'base64');
   fs.writeFileSync(path.join(here, 'richmenu.png'), png);
 
   const b64 = png.toString('base64');
   const lines = b64.match(/.{1,100}/g).map((s) => "  '" + s + "'").join(' +\n');
   fs.writeFileSync(path.join(here, 'RichMenuImage.gs'),
-    '/**\n * リッチメニューの画像（2500×843 PNG）を base64 で持たせたもの。\n * richmenu.mjs が richmenu.html から作る。手で編集しないこと。\n */\n' +
+    '/**\n * リッチメニューの画像（2500×1200 PNG）を base64 で持たせたもの。\n * richmenu.mjs が richmenu.html から作る。手で編集しないこと。\n */\n' +
     'var RICHMENU_IMAGE_BASE64 =\n' + lines + ';\n');
   console.log('richmenu.png を作りました: ' + Math.round(png.length / 1024) + 'KB');
   ws.close();
