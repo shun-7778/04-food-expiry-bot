@@ -210,7 +210,7 @@ function notifyAfter_(event, state, replyToken) {
   }
 
   var player = playerId_();
-  var msgs = mine.map(function (t) { return withOpenButton_({ type: 'text', text: t }); });
+  var msgs = mine.map(function (t) { return { type: 'text', text: t }; });
   try {
     if (msgs.length) {
       if (replyToken) replyMessages_(replyToken, msgs);
@@ -241,7 +241,7 @@ function remindMidweek() {
   if (st.weekDone || !st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
   var text = gymPick_(MIDWEEK_LINES, Math.random);
   if (st.next) text += '\n' + st.next.label + 'まであと' + (st.next.n - st.squares.length) + 'マス。';
-  sendPush_([playerId_()], [withOpenButton_({ type: 'text', text: text })]);
+  sendPush_([playerId_()], [{ type: 'text', text: text }]);
 }
 
 /** 日曜の夕方：まだ行っていなければ、コインがあれば使うかどうかも聞く */
@@ -251,11 +251,12 @@ function remindWeekend() {
   var msg;
   if (st.held > 0) {
     msg = { type: 'text', text: '今週まだ行けてないね。今日行けそう？\n行けなかったら、コインを使って今週の分にする？（残り' + st.held + '枚）' };
-    msg.quickReply = { items: [openButtonItem_(), {
+    // その場でコインを使えるボタンだけ付ける（画面はメニューから開く）
+    msg.quickReply = { items: [{
       type: 'action', action: { type: 'postback', label: 'コインを使う', data: 'use_coin', displayText: 'コインを使う' }
     }] };
   } else {
-    msg = withOpenButton_({ type: 'text', text: gymPick_(WEEKEND_LINES, Math.random) });
+    msg = { type: 'text', text: gymPick_(WEEKEND_LINES, Math.random) };
   }
   sendPush_([playerId_()], [msg]);
 }
@@ -313,15 +314,15 @@ function handleEvent_(event) {
       return;
     }
     if (/^(リンク|スタンプラリー|スタンプ|開く)$/.test(text)) {
-      replyMessages_(event.replyToken, [withOpenButton_({ type: 'text', text: webUrl_('stamp') })]);
+      replyMessages_(event.replyToken, [{ type: 'text', text: webUrl_('stamp') }]);
       return;
     }
+    // メニューからは外したが、打って送れば進み具合を返す
     if (/^(状況|いま|今)$/.test(text)) {
-      replyMessages_(event.replyToken, [withOpenButton_({ type: 'text', text: statusText_(currentState_()) })]);
+      replyMessages_(event.replyToken, [{ type: 'text', text: statusText_(currentState_()) }]);
       return;
     }
-    replyMessages_(event.replyToken, [withOpenButton_({ type: 'text',
-      text: 'ジムに行ったら、メニューの「スタンプラリー」からスタンプを押してね。\n「状況」と送ると、今の進み具合を返します。' })]);
+    replyMessages_(event.replyToken, [{ type: 'text', text: 'ジムに行ったら、メニューの「スタンプラリー」からスタンプを押してね。' }]);
   } catch (err) {
     replyMessages_(event.replyToken, [{ type: 'text', text: err.message }]);
   }
@@ -359,15 +360,6 @@ function sendPush_(to, messages) {
   if (res.getResponseCode() !== 200) throw new Error('LINE push 失敗 (HTTP ' + res.getResponseCode() + '): ' + res.getContentText());
 }
 
-/** 「スタンプラリーを開く」ボタン（入力欄の上に出る）。スマホのみ表示される */
-function openButtonItem_() {
-  return { type: 'action', action: { type: 'uri', label: 'スタンプラリーを開く', uri: webUrl_('stamp') } };
-}
-function withOpenButton_(msg) {
-  try { msg.quickReply = { items: [openButtonItem_()] }; } catch (err) { console.warn('ボタンを付けられません: ' + err.message); }
-  return msg;
-}
-
 /** LINE API の共通呼び出し。options.allow404 が true なら 404 を失敗と見なさない（既定メニューの解除など） */
 function lineApi_(method, url, options) {
   var opt = Object.assign({}, options || {});
@@ -383,17 +375,16 @@ function lineApi_(method, url, options) {
 
 // ---------------------------------------------------------------- リッチメニュー
 
-// 画像は 2500×843。左から「スタンプラリー」「コイン」「状況」の3つ
-var RICHMENU_SIZE = { width: 2500, height: 843 };
+// 画像は 2500×1200（richmenu.html と揃える）。左に「スタンプラリー」、右に「コイン」
+var RICHMENU_SIZE = { width: 2500, height: 1200 };
 
 function buildRichMenu_() {
-  var w = Math.floor(RICHMENU_SIZE.width / 3);
+  var w = RICHMENU_SIZE.width / 2;
   return {
     size: RICHMENU_SIZE, selected: true, name: 'ジムスタンプラリーメニュー', chatBarText: 'メニュー',
     areas: [
       { bounds: { x: 0, y: 0, width: w, height: RICHMENU_SIZE.height }, action: { type: 'uri', label: 'スタンプラリー', uri: webUrl_('stamp') } },
-      { bounds: { x: w, y: 0, width: w, height: RICHMENU_SIZE.height }, action: { type: 'uri', label: 'コイン', uri: webUrl_('coin') } },
-      { bounds: { x: w * 2, y: 0, width: RICHMENU_SIZE.width - w * 2, height: RICHMENU_SIZE.height }, action: { type: 'message', text: '状況' } }
+      { bounds: { x: w, y: 0, width: w, height: RICHMENU_SIZE.height }, action: { type: 'uri', label: 'コイン', uri: webUrl_('coin') } }
     ]
   };
 }

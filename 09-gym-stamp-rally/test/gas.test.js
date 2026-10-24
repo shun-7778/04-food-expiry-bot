@@ -157,7 +157,7 @@ check('合言葉が違う POST は無視する', env.calls.length === 0);
 post(env, [txt(WIFE, '状況')]);
 const st0 = env.replies()[0] && env.replies()[0].body.messages[0];
 check('「状況」に進み具合を返す', st0 && st0.text.includes('すすんだマス 0 / 40'), st0 && st0.text);
-check('返信に「スタンプラリーを開く」ボタンが付く', st0 && st0.quickReply.items[0].action.uri.includes('k=' + token));
+check('返信に「スタンプラリーを開く」ボタンは付けない', st0 && !st0.quickReply);
 
 // ---------------------------------------------------------------- スタンプ（画面から）
 env.clear();
@@ -167,6 +167,7 @@ check('シートに1行書かれる', env.rows().length === 2 && env.rows()[1][2
 const p1 = env.pushes();
 check('本人に「がんばったね」系のメッセージを push', p1.some((c) => c.body.to === WIFE && /マス目/.test(c.body.messages[0].text)), JSON.stringify(p1.map((c) => c.body)));
 check('夫にお知らせを push', p1.some((c) => c.body.to === HUSB && /ジムに行きました/.test(c.body.messages[0].text)));
+check('ほめるメッセージにもボタンは付けない', p1.every((c) => !c.body.messages[0].quickReply));
 threw = ''; try { g.webStamp(token); } catch (e) { threw = e.message; }
 check('同じ週に2回は押せない', /もう押してあります/.test(threw), threw);
 
@@ -264,7 +265,9 @@ check('声かけのトリガーは2つ（何度実行しても増えない）', 
 env.clear();
 g.setupRichMenu();
 const created = env.calls.find((c) => /\/richmenu$/.test(c.url) && c.method === 'post');
-check('リッチメニューは3つのボタン', created && created.body.areas.length === 3);
+check('リッチメニューは「スタンプラリー」「コイン」の2つ', created && created.body.areas.length === 2 && created.body.areas.every((a) => a.action.type === 'uri'));
+check('リッチメニューの大きさは 2500×1200 で、画像と同じ', created && created.body.size.width === 2500 && created.body.size.height === 1200
+  && created.body.areas[1].bounds.x + created.body.areas[1].bounds.width === 2500 && created.body.areas[0].bounds.height === 1200);
 check('メニューのリンクにトークンが入る', created && created.body.areas[0].action.uri.includes('k=' + token) && created.body.areas[1].action.uri.includes('tab=coin'));
 check('古いメニューを消してから作る', env.calls.some((c) => c.method === 'delete' && /richmenu\/old1/.test(c.url)));
 check('許可した2人にだけ割り当てる', env.calls.filter((c) => /\/user\/U\w+\/richmenu\/rm-new/.test(c.url)).length === 2);

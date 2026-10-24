@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<!-- リッチメニューの画像の元（2500×843）。richmenu.mjs が Edge で撮って richmenu.png と RichMenuImage.gs を作る -->
+<!-- リッチメニューの画像の元（2500×1200）。richmenu.mjs が Edge で撮って richmenu.png と RichMenuImage.gs を作る -->
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@700;900&display=swap">
 <style>
-  html, body { margin: 0; width: 2500px; height: 843px; overflow: hidden; background: #FFFFFF; }
-  .menu { display: grid; grid-template-columns: 833px 833px 834px; height: 843px; }
-  .cell { position: relative; display: grid; align-content: center; justify-items: center; gap: 26px; border-right: 6px solid #E2E9EF; }
-  .cell:last-child { border-right: 0; }
-  .cell svg { width: 300px; height: 300px; }
-  .t { font-family: "Dela Gothic One", sans-serif; font-size: 120px; line-height: 1; color: #22303A; }
-  .s { font-family: "Zen Maru Gothic", sans-serif; font-weight: 900; font-size: 56px; color: #6B7A86; }
+  html, body { margin: 0; width: 2500px; height: 1200px; overflow: hidden; background: #FFFFFF; }
+  .menu { display: grid; grid-template-columns: 1250px 1250px; height: 1200px; }
+  .cell { position: relative; display: grid; align-content: center; justify-items: center; gap: 40px; }
+  .cell + .cell { border-left: 8px solid #E2E9EF; }
+  .cell svg { width: 480px; height: 480px; }
+  .t { font-family: "Dela Gothic One", sans-serif; font-size: 160px; line-height: 1; }
+  .s { font-family: "Zen Maru Gothic", sans-serif; font-weight: 900; font-size: 80px; color: #6B7A86; }
   .main { background: linear-gradient(180deg, #FFEBDD 0%, #E8F2FC 100%); }
-  .main .t { color: #0B7F74; font-size: 100px; }   /* 7文字なので枠（833px）に収まる大きさに */
+  .main .t { color: #0B7F74; }
   .coin .t { color: #C47F00; }
 </style>
 </head>
@@ -39,16 +39,6 @@
     </svg>
     <div class="t">コイン</div>
     <div class="s">ためる・使う</div>
-  </div>
-  <div class="cell">
-    <svg viewBox="0 0 100 100">
-      <rect x="14" y="56" width="16" height="30" rx="4" fill="#5FD3C4"/>
-      <rect x="42" y="40" width="16" height="46" rx="4" fill="#12A99B"/>
-      <rect x="70" y="20" width="16" height="66" rx="4" fill="#F5B300"/>
-      <path d="M10 90 L90 90" stroke="#22303A" stroke-width="4" stroke-linecap="round"/>
-    </svg>
-    <div class="t">状況</div>
-    <div class="s">いまの進み具合</div>
   </div>
 </div>
 </body>
