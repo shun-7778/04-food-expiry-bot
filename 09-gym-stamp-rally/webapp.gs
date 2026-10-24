@@ -8,7 +8,9 @@
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (!webTokenOk_(p.k || '')) {
-    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:24px">リンクが正しくありません。LINE のメニューから開き直してください。</p>');
+    // 枠ページの中でもこの案内が見えるようにする（中身は案内文だけで、記録は何も見せない）
+    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:24px">リンクが正しくありません。LINE のメニューから開き直してください。</p>')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   var page = HtmlService.createTemplateFromFile('web');
   page.token = p.k;

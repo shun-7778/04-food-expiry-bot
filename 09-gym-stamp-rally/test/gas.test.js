@@ -88,7 +88,7 @@ function makeEnv() {
     },
     ContentService: { createTextOutput: (s) => ({ setMimeType() { return s; } }), MimeType: { JSON: 'json' } },
     HtmlService: {
-      createHtmlOutput: (s) => ({ html: s }),
+      createHtmlOutput: (s) => ({ html: s, setXFrameOptionsMode() { return this; } }),
       createTemplateFromFile: () => { const t = { evaluate: () => ({ page: true, token: t.token, tab: t.tab, setTitle() { return this; }, addMetaTag() { return this; }, setXFrameOptionsMode() { return this; } }) }; return t; },
       XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' }
     },
