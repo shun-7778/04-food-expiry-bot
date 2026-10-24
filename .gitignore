@@ -15,9 +15,9 @@
 !05-recipe-stock-check/
 !05-recipe-stock-check/**
 
-# ジムすごろく LINE Bot
-!09-gym-sugoroku/
-!09-gym-sugoroku/**
+# ジムスタンプラリー LINE Bot
+!09-gym-stamp-rally/
+!09-gym-stamp-rally/**
 
 # GitHub Pages の枠ページ
 !docs/
@@ -35,6 +35,6 @@
 **/.DS_Store
 
 # clasp のローカル設定（スクリプトIDが入る）と、動作確認の画面写真
-09-gym-sugoroku/.clasp.json
-09-gym-sugoroku/test/shots/
+09-gym-stamp-rally/.clasp.json
+09-gym-stamp-rally/test/shots/
 .clasprc.json

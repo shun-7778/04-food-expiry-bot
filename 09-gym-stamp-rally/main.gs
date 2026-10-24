@@ -1,15 +1,15 @@
 /**
- * ジムすごろく（Let's Go Mt.Fuji！！）の LINE Bot 本体。
+ * ジムスタンプラリー（Let's Go Mt.Fuji！！）の LINE Bot 本体。
  *
- * - すごろくの決まり（週1回まで・コインなど）は logic.gs
- * - 画面（すごろく）と、画面から呼ぶ API は webapp.gs / web.html
+ * - スタンプラリーの決まり（週1回まで・コインなど）は logic.gs
+ * - 画面（スタンプラリー）と、画面から呼ぶ API は webapp.gs / web.html
  * - Webhook の合言葉と画面のトークンは security.gs
  *
- * 記録はスプレッドシート「ジムすごろく」の「記録」シートに1行ずつ残す。行は消さない。
+ * 記録はスプレッドシート「ジムスタンプラリー」の「記録」シートに1行ずつ残す。行は消さない。
  *
  * スクリプトプロパティ:
  *   LINE_CHANNEL_ACCESS_TOKEN  … LINE のチャネルアクセストークン（長期）
- *   PLAYER_USER_ID             … すごろくをする人（妻）の userId。声かけ・ほめる言葉の送り先
+ *   PLAYER_USER_ID             … スタンプラリーをする人（妻）の userId。声かけ・ほめる言葉の送り先
  *   WATCHER_USER_IDS           … お知らせを受け取る人（夫）の userId。カンマ区切りで複数可・空でもよい
  *   SPREADSHEET_ID             … setupSpreadsheet() が自動で入れる
  */
@@ -38,7 +38,7 @@ function watcherIds_() {
     .map(function (s) { return s.trim(); })
     .filter(function (s) { return s && s !== playerId_(); });
 }
-/** Bot を使ってよい人（すごろくをする人＋お知らせを受け取る人） */
+/** Bot を使ってよい人（スタンプラリーをする人＋お知らせを受け取る人） */
 function allowedUserIds_() {
   return [playerId_()].concat(watcherIds_()).filter(Boolean);
 }
@@ -63,7 +63,7 @@ function setupSpreadsheet() {
     console.log('設定済みです: ' + SpreadsheetApp.openById(id).getUrl());
     return;
   }
-  var ss = SpreadsheetApp.create('ジムすごろく');
+  var ss = SpreadsheetApp.create('ジムスタンプラリー');
   var sh = ss.getSheets()[0].setName(SHEET_NAME);
   sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight('bold');
   sh.setFrozenRows(1);
@@ -172,7 +172,7 @@ function notifyAfter_(event, state, replyToken) {
     case 'special':
       // 中身は本人が画面で箱を開けて知る。通知のプレビューで先に見えないよう、本人には書かない
       mine.push((event.viaCoin ? 'コインで今週クリア！' : 'がんばったね！') + '\n' + event.n + 'マス目は'
-        + gymKindLabel_(sq.special) + 'のマス。すごろくで箱を開けてね。');
+        + gymKindLabel_(sq.special) + 'のマス。スタンプラリーの画面で箱を開けてね。');
       theirs = day + '、' + event.n + 'マス目の' + gymKindLabel_(sq.special) + 'に止まりました。中身は「' + sq.name + '」です。'
         + (sq.special === 'goal' ? '' : '準備をお願いします。');
       break;
@@ -186,7 +186,7 @@ function notifyAfter_(event, state, replyToken) {
       break;
     case 'coin':
       mine.push('コインゲット！' + event.text + '（手持ち' + state.held + '枚）'
-        + (event.choice ? '\n5枚たまったので、ご褒美と交換できます。すごろくの「コイン」から選んでね。' : ''));
+        + (event.choice ? '\n5枚たまったので、ご褒美と交換できます。スタンプラリーの「コイン」から選んでね。' : ''));
       theirs = day + '、今週2回目以上のジムに行きました。コインは手持ち' + state.held + '枚です。';
       break;
     case 'exchange':
@@ -297,7 +297,7 @@ function handleEvent_(event) {
       notifyAfter_(res.event, res.state, event.replyToken);
       return;
     }
-    if (/^(リンク|すごろく|開く)$/.test(text)) {
+    if (/^(リンク|スタンプラリー|スタンプ|開く)$/.test(text)) {
       replyMessages_(event.replyToken, [withOpenButton_({ type: 'text', text: webUrl_('stamp') })]);
       return;
     }
@@ -306,7 +306,7 @@ function handleEvent_(event) {
       return;
     }
     replyMessages_(event.replyToken, [withOpenButton_({ type: 'text',
-      text: 'ジムに行ったら、メニューの「すごろく」からスタンプを押してね。\n「状況」と送ると、今の進み具合を返します。' })]);
+      text: 'ジムに行ったら、メニューの「スタンプラリー」からスタンプを押してね。\n「状況」と送ると、今の進み具合を返します。' })]);
   } catch (err) {
     replyMessages_(event.replyToken, [{ type: 'text', text: err.message }]);
   }
@@ -344,9 +344,9 @@ function sendPush_(to, messages) {
   if (res.getResponseCode() !== 200) throw new Error('LINE push 失敗 (HTTP ' + res.getResponseCode() + '): ' + res.getContentText());
 }
 
-/** 「すごろくを開く」ボタン（入力欄の上に出る）。スマホのみ表示される */
+/** 「スタンプラリーを開く」ボタン（入力欄の上に出る）。スマホのみ表示される */
 function openButtonItem_() {
-  return { type: 'action', action: { type: 'uri', label: 'すごろくを開く', uri: webUrl_('stamp') } };
+  return { type: 'action', action: { type: 'uri', label: 'スタンプラリーを開く', uri: webUrl_('stamp') } };
 }
 function withOpenButton_(msg) {
   try { msg.quickReply = { items: [openButtonItem_()] }; } catch (err) { console.warn('ボタンを付けられません: ' + err.message); }
@@ -368,15 +368,15 @@ function lineApi_(method, url, options) {
 
 // ---------------------------------------------------------------- リッチメニュー
 
-// 画像は 2500×843。左から「すごろく」「コイン」「状況」の3つ
+// 画像は 2500×843。左から「スタンプラリー」「コイン」「状況」の3つ
 var RICHMENU_SIZE = { width: 2500, height: 843 };
 
 function buildRichMenu_() {
   var w = Math.floor(RICHMENU_SIZE.width / 3);
   return {
-    size: RICHMENU_SIZE, selected: true, name: 'ジムすごろくメニュー', chatBarText: 'メニュー',
+    size: RICHMENU_SIZE, selected: true, name: 'ジムスタンプラリーメニュー', chatBarText: 'メニュー',
     areas: [
-      { bounds: { x: 0, y: 0, width: w, height: RICHMENU_SIZE.height }, action: { type: 'uri', label: 'すごろく', uri: webUrl_('stamp') } },
+      { bounds: { x: 0, y: 0, width: w, height: RICHMENU_SIZE.height }, action: { type: 'uri', label: 'スタンプラリー', uri: webUrl_('stamp') } },
       { bounds: { x: w, y: 0, width: w, height: RICHMENU_SIZE.height }, action: { type: 'uri', label: 'コイン', uri: webUrl_('coin') } },
       { bounds: { x: w * 2, y: 0, width: RICHMENU_SIZE.width - w * 2, height: RICHMENU_SIZE.height }, action: { type: 'message', text: '状況' } }
     ]

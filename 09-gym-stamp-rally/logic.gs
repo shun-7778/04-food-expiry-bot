@@ -1,5 +1,5 @@
 /**
- * すごろくの決まり。シートにも LINE にも触らない、計算だけのファイル。
+ * スタンプラリーの決まり。シートにも LINE にも触らない、計算だけのファイル。
  *
  * main.gs（シートの読み書き・LINE）と webapp.gs（画面のAPI）がここを使う。
  * GAS 以外（ブラウザや Node）でもそのまま動くので、動作確認はこのファイルを直接読み込んで行う。
@@ -139,7 +139,7 @@ function gymPlanStamp_(st, today, rand) {
     };
   }
   if (!st.canStamp) {
-    return { error: st.weekDone ? '今週の分はもう押してあります。' : 'すごろくの期間が終わっています。' };
+    return { error: st.weekDone ? '今週の分はもう押してあります。' : 'スタンプラリーの期間が終わっています。' };
   }
   var n = st.squares.length + 1, sp = GYM_SPECIAL[n];
   var kind = sp ? (sp.type === 'reward' ? 'medal' : sp.type) : gymPick_(GYM_KINDS, rand);
@@ -160,7 +160,7 @@ function gymWeekIndex_(st) {
 /** 「コインを使う」：行けなかった週を、コイン1枚で行ったことにする */
 function gymPlanUseCoin_(st, today, rand) {
   if (!st.canUse) {
-    return { error: st.weekDone ? '今週の分はもう押してあります。' : st.held <= 0 ? 'コインがありません。' : 'すごろくの期間が終わっています。' };
+    return { error: st.weekDone ? '今週の分はもう押してあります。' : st.held <= 0 ? 'コインがありません。' : 'スタンプラリーの期間が終わっています。' };
   }
   var n = st.squares.length + 1, sp = GYM_SPECIAL[n];
   var kind = sp ? (sp.type === 'reward' ? 'medal' : sp.type) : gymPick_(GYM_KINDS, rand);

@@ -1,5 +1,5 @@
 /**
- * すごろくの画面（web.html）と、画面から呼ぶ API。
+ * スタンプラリーの画面（web.html）と、画面から呼ぶ API。
  *
  * LINE の webhook と同じデプロイの GET 側を使う。URL の ?k= のトークンが合う人にだけ画面を出す。
  * ⚠ この URL 自体が鍵になる。人に転送しないこと。漏れたら rotateWebToken() → setupRichMenu()。
@@ -76,7 +76,7 @@ function webUrl_(tab) {
 
 /** GASエディタから実行するとURLがログに出る */
 function showWebUrl() {
-  console.log('すごろく: ' + webUrl_('stamp'));
+  console.log('スタンプラリー: ' + webUrl_('stamp'));
   console.log('コイン  : ' + webUrl_('coin'));
   return webUrl_('stamp');
 }

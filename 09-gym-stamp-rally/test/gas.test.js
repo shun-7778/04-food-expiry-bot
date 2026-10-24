@@ -1,4 +1,4 @@
-// 09-gym-sugoroku の .gs を、Google / LINE の代わりの模擬環境で動かして確かめる
+// 09-gym-stamp-rally の .gs を、Google / LINE の代わりの模擬環境で動かして確かめる
 //   node test/gas.test.js
 // シート・LINE API・トリガーは偽物に差し替え、LINE に何が送られるかまで見る
 const fs = require('fs');
@@ -140,7 +140,7 @@ check('合言葉が違う POST は無視する', env.calls.length === 0);
 post(env, [txt(WIFE, '状況')]);
 const st0 = env.replies()[0] && env.replies()[0].body.messages[0];
 check('「状況」に進み具合を返す', st0 && st0.text.includes('すすんだマス 0 / 40'), st0 && st0.text);
-check('返信に「すごろくを開く」ボタンが付く', st0 && st0.quickReply.items[0].action.uri.includes('k=' + token));
+check('返信に「スタンプラリーを開く」ボタンが付く', st0 && st0.quickReply.items[0].action.uri.includes('k=' + token));
 
 // ---------------------------------------------------------------- スタンプ（画面から）
 env.clear();

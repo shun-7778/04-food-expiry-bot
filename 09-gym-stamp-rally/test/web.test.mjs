@@ -99,7 +99,7 @@ try {
   await cmd('Page.navigate', { url: pathToFileURL(page).href });
   await sleep(2500);
 
-  check('読み込むとすごろくが出る', await visible('#app'));
+  check('読み込むとスタンプラリーが出る', await visible('#app'));
   check('最初はほめる画面・ご褒美の箱・選択画面が出ていない', !(await visible('#cheer')) && !(await visible('#party')) && !(await visible('#choice')) && !(await visible('#busy')));
   check('マスが40個', (await ev('document.querySelectorAll(".node").length')) === 40);
   check('横スクロールが出ない', (await ev('document.documentElement.scrollWidth - innerWidth')) <= 0);
