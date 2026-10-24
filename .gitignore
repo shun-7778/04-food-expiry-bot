@@ -37,4 +37,5 @@
 # clasp のローカル設定（スクリプトIDが入る）と、動作確認の画面写真
 09-gym-stamp-rally/.clasp.json
 09-gym-stamp-rally/test/shots/
+09-gym-stamp-rally/LOCAL.md
 .clasprc.json

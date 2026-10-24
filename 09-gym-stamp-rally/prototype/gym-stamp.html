@@ -1,0 +1,1437 @@
+<title>Let's Go Mt.Fuji！！</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<style>
+/* Layout: two tabs (weekly sugoroku toward Mt. Fuji / coins) on the left, LINE preview beside it, stacking on phones.
+   Deliberately light-only (white base, bright inks) as requested. Seasonal art stays faint behind the road. */
+:root {
+  color-scheme: light;
+  --bg: #FFFFFF;
+  --surface: #F5F8FB;
+  --fg: #22303A;
+  --muted: #6B7A86;
+  --line: #E2E9EF;
+  --accent: #12A99B;
+  --accent-deep: #0B7F74;
+  --accent-soft: #DDF6F2;
+  --road: #FFC94D;
+  --road-edge: #F0A21C;
+  --path: #FFE4A0;
+  --path-edge: #F8CB72;
+  --road-done: #5FD3C4;
+  --road-done-edge: #12A99B;
+  --chat-bg: #EAF3FA;
+  --ink-red: #F0473C;
+  --ink-blue: #2F7BF6;
+  --ink-green: #17B169;
+  --ink-pink: #F2508E;
+  --ink-orange: #FF8A1F;
+  --ink-purple: #8C5CF5;
+  --gold: #F5B300;
+  --gold-deep: #C47F00;
+  --gold-soft: #FFF3C4;
+  --fuji: #5E8FD0;
+  --danger: #D93A30;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.7;
+}
+.wrap {
+  max-width: 1100px; margin: 0 auto;
+  padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px;
+}
+header { display: grid; gap: 2px; }
+.eyebrow { font-size: 12px; letter-spacing: .12em; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 7vw, 46px); line-height: 1.15; margin: 0; text-wrap: balance; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+h1 svg { width: clamp(44px, 9vw, 60px); height: auto; flex: 0 0 auto; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.board-col { display: grid; gap: 16px; min-width: 0; }
+.side { display: grid; gap: 16px; min-width: 0; position: sticky; top: calc(16px + env(safe-area-inset-top, 0px)); }
+@media (max-width: 860px) { .side { position: static; } }
+
+/* tabs */
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface); padding: 5px; border-radius: 16px; }
+.tab {
+  font: inherit; font-weight: 700; font-size: 15px; border: 0; border-radius: 12px; padding: 10px 8px; cursor: pointer;
+  background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.tab svg { width: 22px; height: 22px; flex: 0 0 22px; }
+.tab[aria-selected="true"] { background: var(--accent); color: #fff; box-shadow: 0 3px 0 var(--accent-deep); }
+.coin-num {
+  display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border-radius: 999px;
+  background: radial-gradient(circle at 38% 32%, #FFE68A, #F5B300 60%, #D99100); border: 2px solid var(--gold-deep);
+  font-family: var(--font-display); font-size: 16px; line-height: 1; color: #5A3A00; font-variant-numeric: tabular-nums;
+}
+.tab:focus-visible { outline: 3px solid var(--ink-blue); outline-offset: 2px; }
+
+/* progress */
+.progress {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+  background: var(--surface); border-radius: 18px; padding: 14px 16px;
+}
+.line-stats {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px;
+  background: var(--surface); border-radius: 14px; padding: 8px 16px; font-size: 14px; font-weight: 700; color: var(--muted);
+}
+.line-stats b { font-family: var(--font-display); font-weight: 400; font-size: 22px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.line-stats .gold, .line-stats .gold b { color: var(--gold-deep); }
+.stat { display: grid; gap: 2px; min-width: 0; }
+.stat .k { font-size: 12px; color: var(--muted); }
+.stat .v { font-family: var(--font-display); font-size: clamp(22px, 5vw, 30px); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .v small { font-family: var(--font-body); font-weight: 700; font-size: 13px; color: var(--muted); margin-left: 2px; }
+.stat.gold .v { color: var(--gold-deep); }
+.period { font-size: 12px; color: var(--muted); text-align: center; }
+
+/* board */
+.road { position: relative; width: 100%; max-width: 580px; margin: 0 auto; aspect-ratio: 400 / 1480; }
+.road svg.path { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.road svg.path path.r { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.p-edge { stroke: var(--path-edge); stroke-width: 40; }
+.p-base { stroke: var(--path); stroke-width: 32; }
+.p-done-edge { stroke: var(--road-done-edge); stroke-width: 40; }
+.p-done { stroke: var(--road-done); stroke-width: 32; }
+.p-dash { stroke: #FFFFFF; stroke-width: 3; stroke-dasharray: 8 10; opacity: .9; }
+.deco { opacity: .6; }
+
+.node {
+  position: absolute; width: 21%; transform: translate(-50%, -50%);
+  font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: default;
+}
+.slot {
+  position: relative; width: 100%; aspect-ratio: 1; max-width: 100%; border-radius: 50%;
+  background: var(--bg); border: 4px solid var(--road-edge); display: grid; place-items: center;
+  box-shadow: 0 3px 0 var(--road-edge);
+}
+.slot .num { font-family: var(--font-display); color: #D0A24A; font-size: clamp(15px, 4vw, 24px); }
+.node.done .slot { border-color: var(--road-done-edge); box-shadow: 0 3px 0 var(--road-done-edge); }
+.node.paid .slot { border-color: var(--gold); box-shadow: 0 3px 0 var(--gold-deep); }
+.node.next { cursor: pointer; z-index: 3; }
+.node.next .slot { border: 4px dashed var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 6px rgba(18,169,155,.18); animation: pulse 1.6s ease-in-out infinite; }
+.node.next .slot .num { color: var(--accent); font-size: clamp(24px, 6vw, 36px); }
+.cap {
+  position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px;
+  white-space: nowrap; font-size: 13px; font-weight: 900; color: var(--fg); line-height: 1.25; text-align: center;
+  background: var(--bg); padding: 1px 7px; border-radius: 8px; font-variant-numeric: tabular-nums;
+}
+.cap.next { color: var(--accent); }
+.cap .rw { display: block; font-size: 11px; color: #fff; background: linear-gradient(135deg, #F5B300, #FF8A1F); border-radius: 999px; padding: 1px 8px; margin-top: 2px; }
+.cap .cn { color: var(--gold-deep); font-size: 11px; margin-left: 3px; }
+@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+
+.node.mys { width: 23%; z-index: 2; }
+.node.mys .slot { border-color: var(--gold); background: var(--gold-soft); box-shadow: 0 3px 0 var(--gold-deep), 0 0 0 6px rgba(245,179,0,.18), 0 8px 20px rgba(245,179,0,.35); }
+.node.mys.next .slot { border: 4px dashed var(--gold-deep); background: var(--gold-soft); animation: pulse 1.6s ease-in-out infinite; }
+.node.mys.done .slot { box-shadow: 0 3px 0 var(--gold-deep); }
+.node.done { cursor: pointer; }
+/* プチご褒美：普通のマスと同じ大きさ、ピンクの小さい箱 */
+.node.petit .slot { border-color: var(--ink-pink); background: #FFF0F5; box-shadow: 0 3px 0 #C9476F; }
+.node.petit.next .slot { border: 4px dashed var(--ink-pink); background: #FFF0F5; animation: pulse 1.6s ease-in-out infinite; }
+.node.petit .gift { width: 56%; height: 56%; }
+.banner.petit { background: linear-gradient(135deg, #F7A8C4, #F2508E); font-size: clamp(10px, 2.5vw, 12px); padding: 1px 9px; box-shadow: none; }
+/* ゴール：富士山 */
+.node.goalnode .slot { border-color: var(--fuji); background: #EAF2FC; box-shadow: 0 3px 0 #3E6FB0; }
+.node.goalnode.next .slot { border: 4px dashed var(--fuji); background: #EAF2FC; animation: pulse 1.6s ease-in-out infinite; }
+.node.goalnode .slot > svg.fj { width: 72%; height: auto; }
+.gift { width: 76%; height: 76%; animation: bob 2.4s ease-in-out infinite; }
+.spark { position: absolute; width: 22%; height: 22%; pointer-events: none; animation: twinkle 1.8s ease-in-out infinite; }
+.spark path { fill: var(--gold); }
+.spark.s1 { top: -10%; right: -8%; }
+.spark.s2 { bottom: 4%; left: -14%; animation-delay: .6s; width: 16%; height: 16%; }
+.spark.s3 { top: 14%; left: -10%; animation-delay: 1.2s; width: 12%; height: 12%; }
+.banner {
+  position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; white-space: nowrap;
+  font-family: var(--font-display); font-size: clamp(11px, 2.8vw, 14px); color: #fff;
+  background: linear-gradient(135deg, #FF6A3D, #F0473C 45%, #F2508E);
+  padding: 2px 12px; border-radius: 999px; box-shadow: 0 4px 10px rgba(240,71,60,.35);
+}
+@keyframes bob { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-6%) rotate(4deg); } }
+@keyframes twinkle { 0%,100% { transform: scale(.4); opacity: .2; } 50% { transform: scale(1); opacity: 1; } }
+
+.flag {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+  font-family: var(--font-display); font-size: clamp(12px, 3vw, 15px); color: #fff;
+  padding: 3px 12px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px;
+}
+.flag.start { background: var(--accent); }
+.flag.goal { background: linear-gradient(135deg, #FF6A3D, #F0473C 45%, #F2508E); box-shadow: 0 4px 12px rgba(240,71,60,.3); }
+.flag.goal svg { width: 1.6em; height: auto; }
+
+.stamp { position: absolute; inset: 5%; width: 90%; height: 90%; transform: rotate(var(--r)); }
+.stamp text { font-family: var(--font-display); }
+span.stamp > svg { display: block; width: 100%; height: 100%; }
+.just .stamp { animation: thud .5s cubic-bezier(.2,.9,.3,1.35) both; }
+.just .slot { animation: shake .35s .3s ease-out; }
+@keyframes thud { from { transform: scale(2.4) rotate(var(--r)); opacity: 0; } 55% { opacity: 1; } to { transform: scale(1) rotate(var(--r)); opacity: 1; } }
+@keyframes shake { 0%,100% { translate: 0 0; } 30% { translate: 2px 3px; } 60% { translate: -2px -1px; } }
+
+/* coins */
+.coin-card { display: grid; gap: 14px; background: var(--surface); border-radius: 22px; padding: 18px 16px; }
+.coin-rule { font-size: 13px; color: var(--muted); text-align: center; margin: 0; }
+.coin-card h3 { margin: 0; font-size: 14px; text-align: center; }
+.coin-card h3 small { font-weight: 500; color: var(--muted); font-size: 12px; margin-left: 4px; }
+.tray { display: flex; align-items: center; justify-content: center; gap: clamp(6px, 2vw, 12px); flex-wrap: wrap; }
+.tray { display: grid; gap: 14px; }
+.tray-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(4px, 2vw, 12px); justify-items: center; }
+.tslot { display: grid; justify-items: center; gap: 2px; width: 100%; max-width: 88px; min-width: 0; font: inherit; color: inherit; background: transparent; border: 0; padding: 0; }
+.tslot .hole {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; border: 3px dashed #D9C27A; background: var(--bg); position: relative;
+  display: grid; place-items: center; font-family: var(--font-display); color: #D9C27A; font-size: clamp(16px, 5vw, 24px);
+}
+.tslot.filled .hole { border: none; background: transparent; }
+.tslot .hole svg.cf { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tslot .hole .gift { width: 80%; height: 80%; }
+.tslot.goal .hole { border: 3px solid var(--gold); background: var(--gold-soft); }
+.tslot.goal.filled .hole { border: 3px solid var(--gold); background: var(--gold-soft); }
+.tslot .gbadge { position: absolute; right: -14%; top: -14%; width: 52%; height: 52%; }
+.tslot .gbadge .gift { width: 100%; height: 100%; animation: none; }
+.tslot .d { font-size: clamp(10px, 3vw, 12px); font-weight: 900; min-height: 1.3em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tslot.goal .d { color: var(--danger); }
+.tslot.just .hole svg.cf { animation: flipIn .6s cubic-bezier(.2,.9,.3,1.3) both; }
+.tslot.ready { cursor: pointer; }
+.tslot.ready .hole { border: 4px dashed var(--danger); animation: pulse 1.6s ease-in-out infinite; }
+.tslot.ready:focus-visible { outline: 3px solid var(--ink-blue); outline-offset: 3px; border-radius: 12px; }
+.tray-extra { font-size: 12px; font-weight: 900; color: var(--gold-deep); }
+.choice { background: rgba(255,255,255,.82); }
+.choice-card {
+  position: relative; z-index: 1; width: min(380px, 100%); text-align: center; display: grid; gap: 8px; justify-items: center;
+  background: var(--bg); border: 4px solid var(--gold); border-radius: 28px; padding: 24px 20px 20px;
+  box-shadow: 0 18px 44px rgba(196,127,0,.3); animation: pop .5s cubic-bezier(.2,.9,.3,1.4) both;
+}
+.choice-card .pile { position: relative; width: 150px; height: 96px; }
+.choice-card .pile svg { position: absolute; width: 64px; height: 64px; }
+.choice-card h2 { font-family: var(--font-display); font-weight: 400; font-size: clamp(22px, 6vw, 28px); margin: 0; color: var(--gold-deep); }
+.choice-card p { margin: 0 0 6px; font-size: 14px; color: var(--muted); }
+.choice-card .btns { display: grid; gap: 8px; width: 100%; }
+.coin-sep { border: 0; border-top: 1px dashed #D9C27A; margin: 0; }
+.wallet { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; min-height: 92px; align-items: center; }
+.cslot { display: grid; justify-items: center; gap: 2px; width: clamp(60px, 17vw, 88px); }
+.cslot .hole { width: 100%; aspect-ratio: 1; position: relative; }
+.cslot .hole svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cslot .d { font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.cslot.just .hole svg { animation: flipIn .6s cubic-bezier(.2,.9,.3,1.3) both; }
+.wallet .empty { color: var(--muted); font-size: 13px; }
+@keyframes flipIn { from { transform: translateY(-60%) rotateY(540deg) scale(1.4); opacity: 0; } to { transform: none; opacity: 1; } }
+.log { display: grid; gap: 6px; }
+.log h3 { margin: 0; font-size: 14px; }
+.log ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.log li { display: flex; justify-content: space-between; gap: 8px; background: var(--bg); border-radius: 12px; padding: 8px 12px; font-size: 14px; }
+.log li span { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.log li.use b { color: var(--gold-deep); }
+.log .empty { color: var(--muted); font-size: 13px; }
+
+/* buttons */
+.btn {
+  font: inherit; font-weight: 900; font-size: 17px; border-radius: 16px; cursor: pointer;
+  padding: 14px 28px; border: 0; background: var(--accent); color: #fff;
+  box-shadow: 0 4px 0 var(--accent-deep);
+}
+.btn.coin { background: var(--gold); box-shadow: 0 4px 0 var(--gold-deep); }
+.btn:active { transform: translateY(2px); }
+.btn[disabled] { background: var(--line); color: var(--muted); cursor: default; box-shadow: none; transform: none; }
+.btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 500; padding: 8px 12px; font-size: 13px; box-shadow: none; }
+.btn.use { background: var(--bg); color: var(--gold-deep); border: 3px solid var(--gold); box-shadow: 0 4px 0 var(--gold-deep); font-size: 15px; padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn.use svg { width: 24px; height: 24px; flex: 0 0 24px; }
+.btn.use .cnt { font-family: var(--font-display); font-size: 13px; background: #FFD34D; color: #6B4300; border-radius: 999px; padding: 0 8px; }
+.btn.danger { background: var(--danger); box-shadow: none; font-size: 14px; padding: 8px 16px; }
+.btn:focus-visible, .node:focus-visible { outline: 3px solid var(--ink-blue); outline-offset: 3px; }
+.sticky-act {
+  position: sticky; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 5;
+  display: flex; justify-content: center; align-items: stretch; gap: 8px; flex-wrap: nowrap;
+}
+.sticky-act > .btn { flex: 0 1 auto; min-width: 0; }
+.sticky-act > span { flex: 0 0 auto; display: flex; }
+.sticky-act > span:empty { display: none; }
+.sticky-act .btn:not([disabled]) { box-shadow: 0 4px 0 var(--accent-deep), 0 10px 24px rgba(34,48,58,.18); }
+.sticky-act .btn.use { box-shadow: 0 4px 0 var(--gold-deep), 0 10px 24px rgba(34,48,58,.18); height: 100%; }
+@media (max-width: 440px) {
+  .sticky-act .btn { padding: 12px 12px; font-size: 14px; }
+  .sticky-act .btn.use { padding: 8px 10px; font-size: 13px; gap: 4px; }
+  .sticky-act .btn.use svg { width: 20px; height: 20px; flex-basis: 20px; }
+}
+.sticky-act .btn.coin:not([disabled]) { box-shadow: 0 4px 0 var(--gold-deep), 0 10px 24px rgba(34,48,58,.18); }
+.sub-act { display: flex; justify-content: center; }
+.hint { text-align: center; font-size: 13px; color: var(--muted); margin: -6px 0 0; }
+
+.erase { display: grid; justify-items: center; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.erase p { margin: 0; font-size: 14px; text-align: center; }
+.erase .row { display: flex; gap: 8px; }
+.demo { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.demo-label { font-size: 11px; color: var(--muted); text-align: center; letter-spacing: .08em; }
+
+/* side */
+.chat { background: var(--chat-bg); border-radius: 18px; padding: 14px; display: grid; gap: 10px; }
+.chat-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; gap: 8px; }
+.chat-head b { font-family: var(--font-display); font-weight: 400; font-size: 15px; }
+.chat-head span { color: var(--muted); font-size: 11px; }
+.msg { display: flex; gap: 8px; align-items: flex-end; max-width: 100%; }
+.msg.me { justify-content: flex-end; }
+.avatar { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.bubble { background: var(--bg); border-radius: 16px; padding: 8px 12px; font-size: 14px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
+.msg.me .bubble { background: var(--accent); color: #fff; }
+.time { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.bubble.img { padding: 6px; width: 110px; }
+.bubble.img .slot { border: none; box-shadow: none; background: transparent; }
+.qr { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.qr span { font-size: 12px; border: 1px solid var(--accent); color: var(--accent); background: var(--bg); border-radius: 999px; padding: 3px 10px; }
+.qr span.c { border-color: var(--gold); color: var(--gold-deep); }
+.chat .day { text-align: center; font-size: 11px; color: var(--muted); }
+.husband { background: var(--surface); border-radius: 14px; padding: 14px; display: grid; gap: 4px; font-size: 14px; }
+.husband .k { font-size: 12px; color: var(--muted); }
+.notes { font-size: 13px; color: var(--muted); display: grid; gap: 6px; }
+.notes h2 { font-size: 14px; margin: 0; color: var(--fg); }
+.notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.sound { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+/* overlays */
+.overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; overflow: hidden; }
+.overlay canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.cheer { background: rgba(255,255,255,.7); cursor: pointer; }
+.cheer-card {
+  position: relative; z-index: 1; width: min(340px, 100%); text-align: center; display: grid; gap: 4px; justify-items: center;
+  background: var(--bg); border: 3px solid var(--accent); border-radius: 26px; padding: 22px 20px 18px;
+  box-shadow: 0 18px 44px rgba(34,48,58,.22);
+  animation: pop .45s cubic-bezier(.2,.9,.3,1.4) both;
+}
+.cheer-card.coin { border-color: var(--gold); }
+.cheer-card .big { position: relative; width: 140px; height: 140px; }
+.cheer-card .big .slot { position: absolute; inset: 0; border: none; box-shadow: none; background: transparent; }
+.cheer-card .big .stamp { animation: thud .55s .1s cubic-bezier(.2,.9,.3,1.35) both; }
+.cheer-card .big .coinsvg { position: absolute; inset: 0; width: 100%; height: 100%; animation: flipIn .7s cubic-bezier(.2,.9,.3,1.3) both; }
+.cheer-kicker { font-family: var(--font-display); font-size: 14px; color: var(--accent); }
+.cheer-card.coin .cheer-kicker { color: var(--gold-deep); }
+.cheer-title { font-family: var(--font-display); font-weight: 400; font-size: clamp(24px, 7vw, 30px); margin: 0; line-height: 1.2; }
+.cheer-card p { margin: 2px 0 0; font-size: 15px; }
+.cheer-card small { color: var(--muted); font-size: 12px; margin-top: 6px; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.party { background: rgba(255,255,255,.88); }
+.popper { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: clamp(80px, 18vw, 130px); z-index: 1; }
+.popper.l { left: max(10px, env(safe-area-inset-left, 0px)); transform-origin: 20% 80%; }
+.popper.r { right: max(10px, env(safe-area-inset-right, 0px)); transform-origin: 80% 80%; }
+.party.open .popper.l { animation: kickL .5s ease-out; }
+.party.open .popper.r { animation: kickR .5s ease-out; }
+@keyframes kickL { 0% { transform: rotate(0); } 25% { transform: rotate(-14deg) scale(1.1); } 100% { transform: rotate(0); } }
+@keyframes kickR { 0% { transform: rotate(0); } 25% { transform: rotate(14deg) scale(1.1); } 100% { transform: rotate(0); } }
+.party-card {
+  position: relative; z-index: 1; width: min(440px, 100%); text-align: center; display: grid; gap: 6px; justify-items: center;
+  background: var(--bg); border: 5px solid var(--gold); border-radius: 30px; padding: 28px 22px 22px;
+  box-shadow: 0 0 0 12px rgba(245,179,0,.22), 0 24px 60px rgba(196,127,0,.4);
+  animation: pop .6s cubic-bezier(.2,.9,.3,1.4) both;
+}
+.party.open .party-card { animation: bigShake .6s ease-out; }
+@keyframes bigShake { 0%,100% { transform: scale(1); } 20% { transform: scale(1.08) rotate(-2deg); } 40% { transform: scale(1.04) rotate(2deg); } 60% { transform: scale(1.02); } }
+.party-kicker { font-family: var(--font-display); font-size: 16px; color: var(--danger); letter-spacing: .06em; }
+.reveal { position: relative; width: 170px; height: 170px; display: grid; place-items: center; }
+.reveal .box, .reveal .slot, .reveal .coinsvg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.reveal .slot { border: none; box-shadow: none; background: transparent; opacity: 0; transform: scale(.3); }
+.party.open .reveal .box { animation: boxOut .5s ease-in forwards; }
+.party.open .reveal .slot { animation: medalIn .6s .35s cubic-bezier(.2,.9,.3,1.4) forwards; }
+.party:not(.open) .reveal .box { animation: wiggle .5s ease-in-out infinite; }
+@keyframes wiggle { 0%,100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+/* 「あける」を押すと、揺れがだんだん速く大きくなって爆発する */
+.party.shaking:not(.open) .reveal .box { animation: rumble 1.8s cubic-bezier(.4,0,1,1) forwards; }
+@keyframes rumble {
+  0% { transform: rotate(0) scale(1); }
+  12% { transform: rotate(-6deg); } 23% { transform: rotate(6deg); }
+  32% { transform: rotate(-7deg); } 40% { transform: rotate(7deg) scale(1.02); }
+  47% { transform: rotate(-8deg); } 53% { transform: rotate(8deg) scale(1.04); }
+  58% { transform: rotate(-9deg); } 63% { transform: rotate(9deg) scale(1.06); }
+  67% { transform: rotate(-10deg); } 71% { transform: rotate(10deg) scale(1.08); }
+  74% { transform: rotate(-11deg); } 77% { transform: rotate(11deg) scale(1.1); }
+  80% { transform: rotate(-12deg); } 82.5% { transform: rotate(12deg) scale(1.12); }
+  85% { transform: rotate(-13deg); } 87% { transform: rotate(13deg) scale(1.14); }
+  89% { transform: rotate(-14deg); } 91% { transform: rotate(14deg) scale(1.16); }
+  92.5% { transform: rotate(-15deg); } 94% { transform: rotate(15deg) scale(1.18); }
+  95.5% { transform: rotate(-15deg); } 97% { transform: rotate(15deg) scale(1.2); }
+  98.5% { transform: rotate(-8deg) scale(1.24); } 100% { transform: rotate(0) scale(1.3); }
+}
+.reveal .burst { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle, #FFFFFF 0 20%, #FFE68A 35%, rgba(255,201,77,.6) 55%, rgba(255,201,77,0) 70%); }
+.reveal .rays { position: absolute; inset: -40%; width: 180%; height: 180%; pointer-events: none; opacity: 0; }
+.party.open .reveal .burst { animation: burst .6s ease-out; }
+.party.open .reveal .rays { animation: rays .8s ease-out; }
+@keyframes burst { 0% { opacity: 1; transform: scale(.4); } 100% { opacity: 0; transform: scale(3.2); } }
+@keyframes rays { 0% { opacity: 1; transform: scale(.3) rotate(0); } 100% { opacity: 0; transform: scale(1.3) rotate(25deg); } }
+@keyframes boxOut { to { transform: scale(1.7) rotate(12deg); opacity: 0; } }
+@keyframes medalIn { to { opacity: 1; transform: scale(1); } }
+.party-title { font-family: var(--font-display); font-weight: 400; font-size: clamp(32px, 9vw, 44px); line-height: 1.15; margin: 0;
+  background: linear-gradient(135deg, #FF6A3D, #F0473C 40%, #F2508E); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.party-reward { font-family: var(--font-display); font-size: clamp(24px, 7vw, 32px); color: var(--gold-deep); min-height: 1.4em; }
+.party-card p { margin: 0 0 8px; color: var(--muted); }
+.party:not(.open) .party-reward, .party:not(.open) .party-title { display: none; }
+.party-card p:empty { display: none; }
+.party-art { width: 76px; height: 76px; opacity: .9; }
+.party-art svg { width: 100%; height: 100%; }
+.party-art:empty, .party:not(.open) .party-art { display: none; }
+/* プチご褒美は控えめに */
+.party.petit .popper { display: none; }
+.party.petit .party-card { border-color: var(--ink-pink); box-shadow: 0 0 0 8px rgba(242,80,142,.15), 0 18px 44px rgba(242,80,142,.25); }
+.party.petit .reveal { width: 130px; height: 130px; }
+.party.petit .party-title { font-size: clamp(24px, 7vw, 32px); }
+/* 押したあとのマスを見返すとき：演出なしで開いた状態を出す */
+.party.quiet .popper, .party.quiet .reveal .box, .party.quiet .reveal .burst, .party.quiet .reveal .rays { display: none; }
+.party.quiet .reveal .slot { animation: none; opacity: 1; transform: none; }
+.party.quiet .party-card { animation: pop .3s ease-out both; }
+.party-close {
+  position: absolute; top: 10px; right: 10px; width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--surface); color: var(--muted); font-size: 24px; line-height: 1; display: grid; place-items: center;
+}
+.party-close:focus-visible { outline: 3px solid var(--ink-blue); outline-offset: 2px; }
+button { touch-action: manipulation; }
+
+@media (prefers-reduced-motion: reduce) {
+  .node.next .slot, .just .stamp, .just .slot, .gift, .spark, .popper, .reveal .box, .reveal .slot,
+  .cheer-card, .choice-card, .tslot.ready .hole, .tslot.just .hole svg.cf, .cheer-card .big .stamp, .cheer-card .big .coinsvg, .cslot.just .hole svg, .party-card { animation: none !important; }
+  .party.open .reveal .box { opacity: 0; }
+  .party.open .reveal .slot { opacity: 1; transform: none; }
+  .reveal .burst, .reveal .rays { animation: none !important; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="ink" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="1.2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <radialGradient id="coinFace" cx="38%" cy="32%" r="75%">
+      <stop offset="0" stop-color="#FFE68A"/><stop offset=".55" stop-color="#F5B300"/><stop offset="1" stop-color="#D99100"/>
+    </radialGradient>
+    <linearGradient id="season" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFEBDD"/><stop offset=".2" stop-color="#FFF3E6"/>
+      <stop offset=".28" stop-color="#EEF5FD"/><stop offset=".5" stop-color="#E8F2FC"/>
+      <stop offset=".58" stop-color="#FFF0F5"/><stop offset=".7" stop-color="#FFF3F7"/>
+      <stop offset=".78" stop-color="#EEF9EF"/><stop offset="1" stop-color="#E6F4FF"/>
+    </linearGradient>
+    <symbol id="fujiIcon" viewBox="0 0 64 40">
+      <path d="M2 38 L24 8 Q32 2 40 8 L62 38 Z" fill="#5E8FD0"/>
+      <path d="M24 8 Q32 2 40 8 L46 16 L41 14 L37 18 L32 13 L27 18 L23 14 L18 16 Z" fill="#FFFFFF"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">試作品 ・ サンプルデータで表示しています</div>
+    <h1>Let's Go Mt.Fuji！！</h1>
+  </header>
+
+  <div class="main">
+    <section class="board-col" aria-label="スタンプ台紙">
+      <div class="tabs" role="tablist" aria-label="記録の種類">
+        <button type="button" class="tab" role="tab" id="tabStamp" aria-controls="panelStamp" aria-selected="true">
+          週1スタンプ
+        </button>
+        <button type="button" class="tab" role="tab" id="tabCoin" aria-controls="panelCoin" aria-selected="false">
+          <span class="coin-num" id="coinBadge" aria-label="手持ちのコイン">0</span>コイン
+        </button>
+      </div>
+
+      <div id="panelStamp" role="tabpanel" aria-labelledby="tabStamp" style="display:grid;gap:16px">
+        <div class="line-stats">
+          <span>すすんだマス <b id="sCount">0</b> / 40</span>
+          <span class="gold" id="sNext"></span>
+        </div>
+        <div id="board"></div>
+        <div class="sticky-act"><button type="button" class="btn" id="stampBtn">今週ジムに行った！</button><span id="useWrapStamp"></span></div>
+        <p class="hint" id="stampHint"></p>
+      </div>
+
+      <div id="panelCoin" role="tabpanel" aria-labelledby="tabCoin" hidden style="gap:16px">
+        <div class="line-stats">
+          <span>ためた <b id="cEarned">0</b> ・ 使った <b id="cUsed">0</b></span>
+          <span class="gold" id="cNext"></span>
+        </div>
+        <div class="coin-card">
+          <div class="tray" id="tray"></div>
+        </div>
+        <div class="sticky-act"><button type="button" class="btn coin" id="coinBtn">今週もう1回行った！</button><span id="useWrapCoin"></span></div>
+        <div class="log" id="coinLog"></div>
+      </div>
+
+      <div class="erase" id="erase"></div>
+
+      <div class="demo-label">デモ用の操作（いまの日付：<span id="demoDate"></span>）</div>
+      <div class="demo">
+        <button type="button" class="btn ghost" id="nextDayBtn">1日進める</button>
+        <button type="button" class="btn ghost" id="nextWeekBtn">次の週へ</button>
+        <button type="button" class="btn ghost" id="skipBtn">5週ぶん進める</button>
+        <button type="button" class="btn ghost" id="resetBtn">最初に戻す</button>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="chat" aria-label="LINEに届くメッセージのイメージ">
+        <div class="chat-head"><b>ジム手帳</b><span>妻のトーク画面（イメージ）</span></div>
+        <div id="chat" style="display:grid;gap:10px"></div>
+      </div>
+      <div class="husband" aria-live="polite">
+        <span class="k">夫に届く通知（イメージ）</span>
+        <span id="husband"></span>
+      </div>
+      <label class="sound"><input type="checkbox" id="soundOn" checked> 音を鳴らす</label>
+      <div class="notes">
+        <h2>この試作で見てほしいところ</h2>
+        <ul>
+          <li>ご褒美は11・24・37マス目（週1で続けると12月末・3月末・6月末）</li>
+          <li>プチご褒美は6・31マス目がマッサージ、18マス目がマカロン。コイン5枚は手作りお菓子</li>
+          <li>押したマスをタップすると、押したときの画面をもう一度見られます</li>
+          <li>背景の季節の絵の散らばり方</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="overlay cheer" id="cheer" hidden role="status" aria-live="polite">
+  <canvas id="cheerFx"></canvas>
+  <div class="cheer-card" id="cheerCard">
+    <div class="cheer-kicker" id="cheerKicker"></div>
+    <div class="big" id="cheerBig"></div>
+    <h2 class="cheer-title" id="cheerTitle"></h2>
+    <p id="cheerText"></p>
+    <small>タップでとじる</small>
+  </div>
+</div>
+
+<div class="overlay choice" id="choice" hidden role="dialog" aria-modal="true" aria-labelledby="choiceTitle">
+  <canvas id="choiceFx"></canvas>
+  <div class="choice-card">
+    <div class="pile" id="choicePile"></div>
+    <h2 id="choiceTitle">コインが5枚たまった！</h2>
+    <p id="choiceText">5枚でご褒美と交換できます。ためておけば、行けない週の穴埋めにも使えます。</p>
+    <div class="btns">
+      <button type="button" class="btn coin" id="exchangeBtn">ご褒美と交換する（5枚使う）</button>
+      <button type="button" class="btn ghost" id="keepBtn">ためておく</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay party" id="party" hidden role="dialog" aria-modal="true" aria-labelledby="partyTitle">
+  <svg class="popper l" viewBox="0 0 100 100" aria-hidden="true">
+    <path d="M8 92 L40 30 L70 60 Z" fill="var(--ink-pink)"/>
+    <path d="M18 72 L48 38 M26 86 L60 50" stroke="var(--gold)" stroke-width="6"/>
+    <ellipse cx="55" cy="45" rx="22" ry="8" transform="rotate(45 55 45)" fill="var(--ink-purple)"/>
+  </svg>
+  <svg class="popper r" viewBox="0 0 100 100" aria-hidden="true"><g transform="translate(100 0) scale(-1 1)">
+    <path d="M8 92 L40 30 L70 60 Z" fill="var(--ink-blue)"/>
+    <path d="M18 72 L48 38 M26 86 L60 50" stroke="var(--gold)" stroke-width="6"/>
+    <ellipse cx="55" cy="45" rx="22" ry="8" transform="rotate(45 55 45)" fill="var(--ink-orange)"/>
+  </g></svg>
+  <canvas id="partyFx"></canvas>
+  <div class="party-card">
+    <div class="party-kicker" id="partyKicker"></div>
+    <div class="reveal">
+      <svg class="box" viewBox="0 0 100 100" aria-hidden="true">
+        <path d="M50 30 C40 14 22 16 28 27 C32 33 44 31 50 30Z M50 30 C60 14 78 16 72 27 C68 33 56 31 50 30Z" fill="var(--ink-red)"/>
+        <rect x="18" y="44" width="64" height="44" rx="5" fill="var(--gold)"/>
+        <rect x="14" y="30" width="72" height="16" rx="4" fill="var(--gold)" stroke="var(--gold-deep)" stroke-width="2"/>
+        <rect x="44" y="30" width="12" height="58" fill="var(--ink-red)"/>
+        <text x="50" y="80" text-anchor="middle" font-size="22" fill="#fff" font-family="Dela Gothic One, sans-serif">?</text>
+      </svg>
+      <span class="slot" id="partyStamp"></span>
+      <svg class="rays" viewBox="-50 -50 100 100" aria-hidden="true" id="partyRays"></svg>
+      <span class="burst" aria-hidden="true"></span>
+    </div>
+    <h2 class="party-title" id="partyTitle">ご褒美ゲット！</h2>
+    <div class="party-reward" id="partyReward"></div>
+    <div class="party-art" id="partyArt" aria-hidden="true"></div>
+    <p id="partyText"></p>
+    <button type="button" class="btn" id="partyBtn">あける</button>
+    <button type="button" class="party-close" id="partyClose" aria-label="とじる">×</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TOTAL = 40, COIN_SET = 5;
+  var LAST_WEEK = new Date(2027, 6, 26);   // 7/26(月) の週まで
+  // 特別なマス。週1で続けると、ご褒美は12月末・3月末・6月末の週に当たる位置（10/19の週が1マス目）
+  // 中身は画面には開けるまで出さない。プチご褒美は仮置き
+  var SPECIAL = {
+    6:  { type: 'petit',  name: 'マッサージ', art: 'massage' },
+    11: { type: 'reward', name: '登山靴', art: 'boot' },
+    18: { type: 'petit',  name: 'マカロン', art: 'macaron' },
+    24: { type: 'reward', name: 'ジャケット／パンツ', art: 'jacket' },
+    31: { type: 'petit',  name: 'マッサージ', art: 'massage' },
+    37: { type: 'reward', name: '帽子とサングラス', art: 'hat' },
+    40: { type: 'goal',   name: '富士山へ出発！', art: 'fuji' }
+  };
+  var COIN_REWARDS = ['手作りお菓子'];
+  var WD = ['日', '月', '火', '水', '木', '金', '土'];
+  var DAY = 864e5;
+
+  var KINDS = [
+    { id: 'dumbbell', ink: '--ink-blue' },
+    { id: 'heart', ink: '--ink-pink' },
+    { id: 'star', ink: '--ink-green' },
+    { id: 'sakura', ink: '--ink-red' },
+    { id: 'flame', ink: '--ink-orange' },
+    { id: 'hanamaru', ink: '--ink-purple' }
+  ];
+  var PRAISES = [
+    ['えらい！', '今週もちゃんと行けたね。'],
+    ['すごい！', '行くまでが一番大変。そこを越えたのがすごい。'],
+    ['ナイス！', '先月の自分より、確実に強くなってる。'],
+    ['おつかれさま！', '今週の分は達成。あとはゆっくり休んでね。'],
+    ['さすが！', '続けてるのが本当にえらい。'],
+    ['いい調子！', '富士山がちょっと近づいた。']
+  ];
+  var COIN_PRAISES = ['今週2回目、がんばりすぎ！', 'おかわりジム、えらすぎる。', '貯金ならぬ貯ジム。えらい。'];
+
+  // stamps: {d, kind, r, paid, p}  paid=true はコインで埋めた週。p は押したときのほめ言葉
+  // coins:  {d}  ためたコイン（使った枚数は paid のスタンプ数と交換したご褒美で数える）
+  // coinRewards: {name, d}  手持ち5枚と交換したご褒美（1つにつき5枚使う）
+  function sample() {
+    return { today: new Date(2026, 9, 24), stamps: [], coins: [], coinRewards: [], tab: 'stamp', last: null, just: null, erasing: false };
+  }
+  var S = sample();
+
+  // ---- dates ----
+  function day0(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+  function monday(d) { var x = new Date(day0(d)); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.getTime(); }
+  function md(d) { return (d.getMonth() + 1) + '/' + d.getDate(); }
+  function mdw(d) { return md(d) + '（' + WD[d.getDay()] + '）'; }
+  function weekStamp() { var w = monday(S.today); for (var i = 0; i < S.stamps.length; i++) if (monday(S.stamps[i].d) === w) return i; return -1; }
+  function thisWeekDone() { return weekStamp() >= 0; }
+  function weekPaid() { var i = weekStamp(); return i >= 0 && S.stamps[i].paid; }
+  function wentToday() {
+    var t = day0(S.today);
+    return S.stamps.some(function (x) { return !x.paid && day0(x.d) === t; }) || S.coins.some(function (x) { return day0(x.d) === t; });
+  }
+  function inPeriod() { return S.stamps.length < TOTAL && monday(S.today) <= LAST_WEEK.getTime(); }
+  function paidWeeks() { return S.stamps.filter(function (s) { return s.paid; }).length; }
+  function usedCoins() { return paidWeeks() + COIN_SET * S.coinRewards.length; }
+  function heldCoins() { return S.coins.length - usedCoins(); }
+  function canExchange() { return heldCoins() >= COIN_SET; }
+  function nextIndex() { return !thisWeekDone() && inPeriod() ? S.stamps.length : -1; }
+  function canEarn() { return thisWeekDone() && !weekPaid() && !wentToday(); }
+  function canUse() { return !thisWeekDone() && inPeriod() && heldCoins() > 0; }
+  function nextSpecialAt(c) { return Object.keys(SPECIAL).map(Number).filter(function (g) { return c < g; })[0]; }
+  function kindLabel(sp) { return sp.type === 'petit' ? 'プチご褒美' : sp.type === 'goal' ? 'ゴール' : 'ご褒美'; }
+
+  // ---- art ----
+  function inkOf(kind) {
+    if (kind === 'medal') return 'var(--gold-deep)';
+    if (kind === 'petit') return 'var(--ink-pink)';
+    if (kind === 'goal') return 'var(--fuji)';
+    for (var i = 0; i < KINDS.length; i++) if (KINDS[i].id === kind) return 'var(' + KINDS[i].ink + ')';
+    return 'var(--accent)';
+  }
+  function scallop(cx, cy, r, n) {
+    var pts = [];
+    for (var i = 0; i <= n; i++) {
+      var a = (i / n) * Math.PI * 2 - Math.PI / 2;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    var ar = (2 * r * Math.sin(Math.PI / n) * 0.58).toFixed(2);
+    var p = 'M' + pts[0][0].toFixed(2) + ' ' + pts[0][1].toFixed(2);
+    for (var j = 1; j < pts.length; j++) p += ' A' + ar + ' ' + ar + ' 0 0 1 ' + pts[j][0].toFixed(2) + ' ' + pts[j][1].toFixed(2);
+    return p + 'Z';
+  }
+  function disc() {
+    return '<circle cx="50" cy="50" r="45" fill="currentColor" fill-opacity=".12"/>' +
+      '<circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="5"/>' +
+      '<circle cx="50" cy="50" r="38" fill="none" stroke="currentColor" stroke-width="2"/>';
+  }
+  function label(t, y, size) {
+    return '<text x="50" y="' + y + '" text-anchor="middle" font-size="' + size + '" fill="currentColor">' + t + '</text>';
+  }
+  var DUMBBELL = '<rect x="30" y="39" width="40" height="7" rx="2"/>' +
+    '<rect x="21" y="28" width="9" height="29" rx="2"/><rect x="70" y="28" width="9" height="29" rx="2"/>' +
+    '<rect x="15" y="34" width="6" height="17" rx="2"/><rect x="79" y="34" width="6" height="17" rx="2"/>';
+  function art(kind, n) {
+    switch (kind) {
+      case 'dumbbell': return disc() + '<g fill="currentColor">' + DUMBBELL + '</g>' + label('NICE!', 76, 15);
+      case 'heart':
+        return disc() + '<path fill="currentColor" d="M50 61 C32 49 27 40 27 33 C27 25 34 20 40 20 C45 20 48 23 50 27 C52 23 55 20 60 20 C66 20 73 25 73 33 C73 40 68 49 50 61Z"/>' + label('えらい', 80, 15);
+      case 'star':
+        return disc() + '<polygon fill="currentColor" points="50,17 58,35 77,36 62,48 67,66 50,56 33,66 38,48 23,36 42,35"/>' + label('すごい', 82, 14);
+      case 'flame':
+        return disc() + '<path fill="currentColor" d="M50 15 C59 28 69 35 67 51 C66 62 58 67 50 67 C42 67 34 62 33 52 C32 44 37 37 42 33 C42 41 45 45 48 46 C46 36 46 25 50 15Z"/>' + label('ファイト', 82, 12);
+      case 'sakura':
+        return '<path fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="5" d="' + scallop(50, 50, 41, 10) + '"/>' + label('よく', 46, 18) + label('できました', 66, 14);
+      case 'hanamaru':
+        return '<path fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="5" d="' + scallop(50, 50, 41, 12) + '"/>' +
+          '<path fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" d="M45 50 a5 5 0 1 1 10 0 a10 10 0 1 1 -20 0 a15 15 0 1 1 30 0 a20 20 0 1 1 -40 0 a25 25 0 1 1 50 0"/>';
+      case 'medal':
+        return '<path fill="var(--gold)" fill-opacity=".35" stroke="currentColor" stroke-width="4" d="' + scallop(50, 50, 44, 16) + '"/>' +
+          '<circle cx="50" cy="50" r="32" fill="var(--gold-soft)" stroke="currentColor" stroke-width="2.5"/>' + label(String(n), 60, 32) + label('回達成', 76, 11);
+      case 'petit':
+        return '<path fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="4" d="' + scallop(50, 50, 42, 10) + '"/>' +
+          label('プチ', 48, 18) + label('ご褒美', 68, 14);
+      case 'goal':
+        return disc() + '<path d="M18 70 L40 36 Q50 28 60 36 L82 70 Z" fill="currentColor"/>' +
+          '<path d="M40 36 Q50 28 60 36 L66 45 L60 43 L55 48 L50 43 L45 48 L40 43 L34 45 Z" fill="#FFFFFF"/>' + label('GOAL', 84, 12);
+    }
+    return '';
+  }
+  function stampSVG(kind, r, n) {
+    return '<svg class="stamp" viewBox="0 0 100 100" style="color:' + inkOf(kind) + ';--r:' + (r || 0) + 'deg" aria-hidden="true"><g filter="url(#ink)">' + art(kind, n) + '</g></svg>';
+  }
+  function coinSVG(cls) {
+    return '<svg class="' + (cls || '') + '" viewBox="0 0 100 100" aria-hidden="true">' +
+      '<circle cx="50" cy="52" r="46" fill="#C47F00"/>' +
+      '<circle cx="50" cy="48" r="46" fill="url(#coinFace)" stroke="#C47F00" stroke-width="2"/>' +
+      '<circle cx="50" cy="48" r="35" fill="none" stroke="#C47F00" stroke-width="2.5" stroke-dasharray="3 4"/>' +
+      '<g fill="#B26F00" transform="translate(0 4)">' + DUMBBELL + '</g>' +
+      '<path d="M26 26 Q34 16 46 14" stroke="#FFF6CC" stroke-width="5" stroke-linecap="round" fill="none" opacity=".8"/>' +
+      '</svg>';
+  }
+  function cellArt(s, n) {
+    if (s.paid && !SPECIAL[n]) return '<span class="stamp" style="--r:0deg">' + coinSVG() + '</span>';
+    return stampSVG(s.kind, s.r, n);
+  }
+  function giftSVG() {
+    return '<svg class="gift" viewBox="0 0 100 100" aria-hidden="true">' +
+      '<path d="M50 30 C40 14 22 16 28 27 C32 33 44 31 50 30Z M50 30 C60 14 78 16 72 27 C68 33 56 31 50 30Z" fill="var(--ink-red)"/>' +
+      '<rect x="18" y="44" width="64" height="44" rx="5" fill="var(--gold)"/>' +
+      '<rect x="14" y="30" width="72" height="16" rx="4" fill="var(--gold)" stroke="var(--gold-deep)" stroke-width="2"/>' +
+      '<rect x="44" y="30" width="12" height="58" fill="var(--ink-red)"/>' +
+      '<rect x="18" y="56" width="64" height="5" fill="var(--gold-deep)" opacity=".25"/>' +
+      '</svg>';
+  }
+  function petitGiftSVG() {
+    return '<svg class="gift" viewBox="0 0 100 100" aria-hidden="true">' +
+      '<path d="M50 32 C42 18 28 20 32 30 C35 35 45 33 50 32Z M50 32 C58 18 72 20 68 30 C65 35 55 33 50 32Z" fill="var(--ink-pink)"/>' +
+      '<rect x="22" y="46" width="56" height="40" rx="6" fill="#F7A8C4"/>' +
+      '<rect x="18" y="33" width="64" height="15" rx="4" fill="#F7A8C4" stroke="#C9476F" stroke-width="2"/>' +
+      '<rect x="45" y="33" width="10" height="53" fill="var(--ink-pink)"/>' +
+      '</svg>';
+  }
+  var SPARK = '<path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5Z"/>';
+  var SPARKS = ['s1', 's2', 's3'].map(function (c) { return '<svg class="spark ' + c + '" viewBox="0 0 24 24" aria-hidden="true">' + SPARK + '</svg>'; }).join('');
+  var FUJI_ICON = '<svg class="fj" viewBox="0 0 64 40" aria-hidden="true"><use href="#fujiIcon"/></svg>';
+
+  // ご褒美を開けたときに添える絵（控えめ）
+  var REWARD_ART = {
+    boot: '<path d="M30 18 L56 18 L58 58 Q80 60 86 72 L86 82 L22 82 L22 70 Q28 64 30 56 Z" fill="#9A6A3A"/>' +
+      '<path d="M30 18 L56 18 L56 25 L30 25 Z" fill="#5E3B1C"/><path d="M22 82 L86 82 L86 89 L22 89 Z" fill="#3B2A1A"/>' +
+      '<path d="M36 33 L52 33 M36 41 L52 41 M36 49 L52 49" stroke="#FFC94D" stroke-width="3" stroke-linecap="round"/>',
+    jacket: '<path d="M8 30 L20 22 L28 26 Q32 30 36 26 L44 22 L56 30 L52 48 L46 46 L46 78 L18 78 L18 46 L12 48 Z" fill="#12A99B"/>' +
+      '<path d="M32 28 L32 78" stroke="#0B7F74" stroke-width="2.5"/>' +
+      '<path d="M62 34 L90 34 L92 86 L80 86 L76 52 L73 86 L60 86 Z" fill="#2C4A9A"/><path d="M62 34 L90 34 L90 40 L62 40 Z" fill="#1E3570"/>',
+    hat: '<ellipse cx="50" cy="46" rx="38" ry="9" fill="#D9B77A"/><path d="M28 44 Q30 20 50 18 Q70 20 72 44 Z" fill="#E8C98E"/>' +
+      '<path d="M29 38 L71 38 L71 43 L29 43 Z" fill="#F0473C"/>' +
+      '<circle cx="36" cy="74" r="9" fill="#22303A"/><circle cx="64" cy="74" r="9" fill="#22303A"/>' +
+      '<path d="M45 72 Q50 69 55 72 M27 71 L19 68 M73 71 L81 68" stroke="#22303A" stroke-width="3" fill="none" stroke-linecap="round"/>',
+    massage: '<ellipse cx="50" cy="78" rx="34" ry="10" fill="#8C9AA6"/><ellipse cx="50" cy="61" rx="26" ry="9" fill="#A7B4BF"/><ellipse cx="50" cy="46" rx="18" ry="7.5" fill="#C3CDD5"/>' +
+      '<path d="M54 36 Q58 16 78 12 Q76 32 54 36 Z" fill="#6CC48A"/><path d="M56 34 Q64 24 74 16" stroke="#3E9C5F" stroke-width="1.6" fill="none"/>',
+    macaron: '<ellipse cx="50" cy="40" rx="30" ry="12" fill="#F7A8C4"/><rect x="22" y="44" width="56" height="9" rx="4" fill="#FFF3F7"/>' +
+      '<ellipse cx="50" cy="58" rx="30" ry="12" fill="#F7A8C4"/><path d="M24 44 Q50 50 76 44" stroke="#E58AAE" stroke-width="2" fill="none"/>' +
+      '<ellipse cx="40" cy="36" rx="8" ry="3" fill="#FFFFFF" opacity=".5"/>',
+    sweets: '<path d="M24 52 L76 52 L70 82 Q50 88 30 82 Z" fill="#C8874A"/><path d="M20 52 Q24 30 50 28 Q76 30 80 52 Z" fill="#FFF3C4"/>' +
+      '<circle cx="50" cy="24" r="7" fill="#F0473C"/><path d="M36 44 L64 44" stroke="#F7A8C4" stroke-width="4" stroke-linecap="round"/>',
+    petit: '<path d="M32 50 L18 40 L18 60 Z M68 50 L82 40 L82 60 Z" fill="#F2508E"/><circle cx="50" cy="50" r="20" fill="#F7A8C4"/>' +
+      '<path d="M38 45 Q50 37 62 45" stroke="#FFFFFF" stroke-width="3" fill="none" stroke-linecap="round"/>',
+    fuji: '<path d="M4 84 L38 32 Q50 20 62 32 L96 84 Z" fill="#5E8FD0"/>' +
+      '<path d="M38 32 Q50 20 62 32 L70 44 L62 41 L56 49 L50 42 L44 49 L38 41 L30 44 Z" fill="#FFFFFF" stroke="#C9D9EE" stroke-width="1"/>',
+    gift: '<path d="M50 30 C40 14 22 16 28 27 C32 33 44 31 50 30Z M50 30 C60 14 78 16 72 27 C68 33 56 31 50 30Z" fill="#F0473C"/>' +
+      '<rect x="18" y="44" width="64" height="44" rx="5" fill="#F5B300"/><rect x="14" y="30" width="72" height="16" rx="4" fill="#F5B300"/>' +
+      '<rect x="44" y="30" width="12" height="58" fill="#F0473C"/>'
+  };
+  function rewardArt(key) { return REWARD_ART[key] ? '<svg viewBox="0 0 100 100">' + REWARD_ART[key] + '</svg>' : ''; }
+
+  // ---- seasonal decorations (すごろくより目立たせない) ----
+  var DECO = {
+    maple: function (c) {
+      var p = [];
+      for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 4.5 : 11; p.push((Math.cos(a) * r).toFixed(1) + ',' + (Math.sin(a) * r).toFixed(1)); }
+      return '<polygon points="' + p.join(' ') + '" fill="' + (c || '#F06A3C') + '"/><path d="M0 3 L2 12" stroke="#B5532C" stroke-width="1.5"/>';
+    },
+    redmaple: function () { return DECO.maple('#E8483A'); },
+    ginkgo: function () { return '<path d="M0 6 L-11 -6 Q0 -13 11 -6 Z" fill="#F5B300"/><path d="M0 -6 L0 6 L1 12" stroke="#C99000" stroke-width="1.5" fill="none"/>'; },
+    acorn: function () {
+      return '<ellipse cx="0" cy="3" rx="6" ry="8" fill="#C8874A"/><path d="M-8 -2 Q0 -12 8 -2 Z" fill="#7A4A22"/><path d="M0 -8 L1 -13" stroke="#7A4A22" stroke-width="2" stroke-linecap="round"/>';
+    },
+    kaki: function () { return '<circle cy="2" r="8.5" fill="#FF8A3D"/><path d="M-6 -5 L0 -3 L6 -5 L2 -7 L0 -11 L-2 -7 Z" fill="#3E9C5F"/>'; },
+    snow: function () {
+      var g = '';
+      for (var i = 0; i < 3; i++) g += '<g transform="rotate(' + i * 60 + ')"><path d="M0 -11 L0 11 M-3 -8 L0 -5 L3 -8 M-3 8 L0 5 L3 8" stroke="#7FB6E6" stroke-width="1.8" fill="none" stroke-linecap="round"/></g>';
+      return g;
+    },
+    snowman: function () {
+      return '<circle cx="0" cy="5" r="8" fill="#fff" stroke="#9CC3E6" stroke-width="1.5"/><circle cx="0" cy="-7" r="5.5" fill="#fff" stroke="#9CC3E6" stroke-width="1.5"/>' +
+        '<path d="M-5 -2.5 L5 -2.5" stroke="#F0473C" stroke-width="2.5" stroke-linecap="round"/><circle cx="-2" cy="-8" r=".9" fill="#22303A"/><circle cx="2" cy="-8" r=".9" fill="#22303A"/>';
+    },
+    mug: function () {
+      return '<path d="M-7 -3 L7 -3 L6 9 Q0 11 -6 9 Z" fill="#F0473C"/><path d="M7 0 Q12 1 11 5 Q10 8 6 7" stroke="#F0473C" stroke-width="2" fill="none"/>' +
+        '<path d="M-3 -6 Q-5 -9 -3 -12 M2 -6 Q0 -9 2 -12" stroke="#B9C7D2" stroke-width="1.6" fill="none" stroke-linecap="round"/>';
+    },
+    sakura: function () {
+      var g = '';
+      for (var i = 0; i < 5; i++) g += '<ellipse cx="0" cy="-5.5" rx="3.6" ry="5.5" fill="#F7A8C4" transform="rotate(' + i * 72 + ')"/>';
+      return g + '<circle r="2" fill="#F2508E"/>';
+    },
+    petal: function () { return '<ellipse rx="3" ry="5" fill="#F7A8C4" transform="rotate(30)"/>'; },
+    tulip: function () {
+      return '<path d="M0 0 L0 13" stroke="#3E9C5F" stroke-width="2"/><path d="M0 9 Q-7 5 -8 0 Q-3 3 0 9" fill="#6CC48A"/>' +
+        '<path d="M-6 -10 L-3 -6 L0 -11 L3 -6 L6 -10 L6 -3 Q0 3 -6 -3 Z" fill="#F2508E"/>';
+    },
+    butterfly: function () {
+      return '<ellipse cx="-6" cy="-4" rx="6" ry="5" fill="#8C5CF5" transform="rotate(-20 -6 -4)"/><ellipse cx="6" cy="-4" rx="6" ry="5" fill="#8C5CF5" transform="rotate(20 6 -4)"/>' +
+        '<ellipse cx="-4" cy="5" rx="4" ry="3.5" fill="#B79BF8"/><ellipse cx="4" cy="5" rx="4" ry="3.5" fill="#B79BF8"/>' +
+        '<path d="M0 -7 L0 9" stroke="#22303A" stroke-width="2" stroke-linecap="round"/><path d="M0 -7 L-3 -12 M0 -7 L3 -12" stroke="#22303A" stroke-width="1"/>';
+    },
+    leaf: function () { return '<ellipse rx="5.5" ry="10" fill="#6CC48A" transform="rotate(35)"/><path d="M-5 7 L5 -7" stroke="#3E9C5F" stroke-width="1.3"/>'; },
+    ajisai: function () {
+      return '<ellipse cx="-8" cy="8" rx="5" ry="2.6" fill="#6CC48A" transform="rotate(-30 -8 8)"/>' +
+        '<circle cx="-4" cy="-3" r="4.5" fill="#8AA6F0"/><circle cx="4" cy="-4" r="4.5" fill="#B79BF8"/><circle cx="0" cy="3" r="4.5" fill="#7FB6E6"/><circle cx="6" cy="3" r="3.5" fill="#8C5CF5" opacity=".7"/>';
+    },
+    drop: function () { return '<path d="M0 -9 Q7 0 5 4 A5 5 0 0 1 -5 4 Q-7 0 0 -9Z" fill="#7FB6E6"/>'; },
+    sun: function () {
+      var g = '';
+      for (var i = 0; i < 8; i++) g += '<path d="M0 -11 L0 -15" stroke="#FFB020" stroke-width="2.2" stroke-linecap="round" transform="rotate(' + i * 45 + ')"/>';
+      return g + '<circle r="8" fill="#FFC94D"/>';
+    },
+    sunflower: function () {
+      var g = '<path d="M0 6 L0 16" stroke="#3E9C5F" stroke-width="2.2"/>';
+      for (var i = 0; i < 10; i++) g += '<ellipse cx="0" cy="-8" rx="2.6" ry="5" fill="#FFC21A" transform="rotate(' + i * 36 + ')"/>';
+      return g + '<circle r="4.5" fill="#8A5A2B"/>';
+    },
+    sneaker: function () {
+      return '<path d="M-12 6 L-12 -4 Q-7 -5 -4 -1 L4 1 Q12 2 12 7 L12 8 L-12 8 Z" fill="#2F7BF6"/><path d="M-12 8 L12 8" stroke="#FFFFFF" stroke-width="2"/>' +
+        '<path d="M-6 -2 L-3 -4 M-3 0 L0 -2" stroke="#FFFFFF" stroke-width="1.4"/>';
+    },
+    bottle: function () {
+      return '<rect x="-5" y="-6" width="10" height="18" rx="3" fill="#5FD3C4"/><rect x="-3" y="-11" width="6" height="5" rx="1" fill="#12A99B"/><rect x="-5" y="0" width="10" height="4" fill="#FFFFFF" opacity=".7"/>';
+    },
+    lifter: function () {
+      return '<g stroke="#8C5CF5" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
+        '<path d="M0 -1 L0 7 M0 7 L-5 14 M0 7 L5 14 M0 1 L-7 -9 M0 1 L7 -9"/><path d="M-13 -10 L13 -10" stroke-width="2"/></g>' +
+        '<rect x="-16" y="-14" width="4" height="8" rx="1" fill="#8C5CF5"/><rect x="12" y="-14" width="4" height="8" rx="1" fill="#8C5CF5"/>' +
+        '<circle cx="0" cy="-5" r="3.4" fill="#8C5CF5"/>';
+    },
+    jump: function () {
+      return '<g stroke="#F2508E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
+        '<path d="M0 -5 L0 4 M0 -3 L-7 -11 M0 -3 L7 -11 M0 4 L-6 7 L-4 12 M0 4 L6 7 L4 12"/></g>' +
+        '<circle cx="0" cy="-9.5" r="3.4" fill="#F2508E"/><path d="M-12 -2 L-10 0 M12 -2 L10 0 M-11 6 L-9 6 M11 6 L9 6" stroke="#FFC21A" stroke-width="1.8" stroke-linecap="round"/>';
+    },
+    runner: function () {
+      return '<g stroke="#12A99B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
+        '<path d="M2 -8 L-1 3"/><path d="M1 -6 L7 -2 M1 -6 L-5 -3 L-8 -6"/><path d="M-1 3 L5 7 L8 13 M-1 3 L-5 8 L-11 8"/>' +
+        '<path d="M-16 -4 L-11 -4 M-18 1 L-13 1 M-15 6 L-10 6" stroke-width="1.6" opacity=".6"/></g>' +
+        '<circle cx="4" cy="-12.5" r="3.6" fill="#12A99B"/>';
+    }
+  };
+  // 季節は上から 秋 → 冬 → 春 → 梅雨 → 夏（並び順は固定）。配置は乱数で少しずつずらす
+  var SEASONS = {
+    autumn: { items: ['maple', 'redmaple', 'ginkgo', 'acorn', 'kaki'], small: ['maple', 'ginkgo', 'redmaple'] },
+    winter: { items: ['snow', 'snowman', 'mug', 'snow'], small: ['snow'] },
+    spring: { items: ['sakura', 'tulip', 'butterfly', 'sakura'], small: ['petal', 'sakura'] },
+    rainy:  { items: ['ajisai', 'drop', 'leaf'], small: ['drop'] },
+    summer: { items: ['sunflower', 'sun', 'leaf', 'bottle'], small: ['leaf'] }
+  };
+  var GAP_SEASON = ['autumn', 'autumn', 'winter', 'winter', 'winter', 'spring', 'spring', 'rainy', 'summer'];
+  var GAP_PERSON = { 0: 'runner', 2: 'jump', 4: 'lifter', 6: 'runner', 8: 'jump' };
+  function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function decoItems() {
+    var R = rng(20261019), out = [], pts = roadPoints();
+    function pick(a) { return a[Math.floor(R() * a.length)]; }
+    // 行の上の帯（スタートの右）
+    out.push([200 + R() * 30, 22 + R() * 8, 'maple', .9, R() * 40 - 20]);
+    out.push([300 + R() * 40, 16 + R() * 14, 'acorn', .85, R() * 30 - 15]);
+    for (var g = 0; g < ROWS - 1; g++) {
+      // 行間で絵を置ける高さは、マスの下端（+42）〜次のマスの上端（+93）。その真ん中あたり
+      var season = SEASONS[GAP_SEASON[g]], baseY = Y0 + g * DY + 68;
+      var mids = [100, 200, 300].sort(function () { return R() - .5; });
+      var count = R() < .45 ? 3 : 2, person = GAP_PERSON[g];
+      for (var k = 0; k < count; k++) {
+        var type = (k === 0 && person) ? person : pick(season.items);
+        var isPerson = type === person;
+        out.push([mids[k] + (R() * 26 - 13), baseY + (R() * 12 - 6), type, isPerson ? .9 : .7 + R() * .3, isPerson ? R() * 10 - 5 : R() * 50 - 25]);
+      }
+      // 道が曲がっていない側の端に、小さいものを置くことがある
+      if (R() < .65) out.push([g % 2 ? 386 : 14, baseY + (R() * 8 - 4), pick(season.small), .55 + R() * .15, R() * 60 - 30]);
+    }
+    // ご褒美の帯（「ご褒美」「プチ」の文字）と重ならないよう、真下の絵は横にずらす
+    out.forEach(function (d) {
+      var row = Math.round((d[1] - Y0 - 80) / DY);
+      Object.keys(SPECIAL).forEach(function (n) {
+        var sp = SPECIAL[n], p = pts[n - 1];
+        if (sp.type === 'goal' || row < 0 || Math.round((p[1] - Y0) / DY) !== row) return;
+        var half = sp.type === 'reward' ? 62 : 48, dx = d[0] - p[0];
+        if (Math.abs(dx) < half) d[0] = p[0] + (dx < 0 ? -half : half);
+      });
+    });
+    return out;
+  }
+  var DECO_CACHE;
+  function decoLayer() {
+    DECO_CACHE = DECO_CACHE || decoItems();
+    var g = '<g class="deco">';
+    DECO_CACHE.forEach(function (d) {
+      g += '<g transform="translate(' + d[0].toFixed(1) + ' ' + d[1].toFixed(1) + ') rotate(' + d[4].toFixed(0) + ') scale(' + d[3].toFixed(2) + ')">' + DECO[d[2]]() + '</g>';
+    });
+    return g + '</g>';
+  }
+  function fujiLayer() {
+    // ゴール（左下）の下に富士山
+    return '<g opacity=".75">' +
+      '<path d="M190 ' + H + ' L290 ' + (H - 45) + ' L340 ' + (H - 34) + ' L400 ' + (H - 52) + ' L400 ' + H + ' Z" fill="#B9D3EF"/>' +
+      '<path d="M0 ' + H + ' L105 ' + (H - 75) + ' Q140 ' + (H - 97) + ' 175 ' + (H - 75) + ' L290 ' + H + ' Z" fill="#8FB4E3"/>' +
+      '<path d="M105 ' + (H - 75) + ' Q140 ' + (H - 97) + ' 175 ' + (H - 75) + ' L190 ' + (H - 62) + ' L177 ' + (H - 65) + ' L165 ' + (H - 55) + ' L152 ' + (H - 64) +
+        ' L140 ' + (H - 53) + ' L128 ' + (H - 64) + ' L116 ' + (H - 55) + ' L103 ' + (H - 65) + ' L90 ' + (H - 62) + ' Z" fill="#FFFFFF"/></g>';
+  }
+
+  // ---- board ----
+  var COLS = 4, ROWS = 10, XS = [50, 150, 250, 350], Y0 = 95, DY = 135, H = 1480; // H は .road の aspect-ratio と揃える
+  function roadPoints() {
+    var pts = [];
+    for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) pts.push([r % 2 ? XS[COLS - 1 - c] : XS[c], Y0 + r * DY]);
+    return pts;
+  }
+  function pathFor(pts, upto) {
+    var d = 'M' + pts[0][0] + ' ' + pts[0][1];
+    for (var i = 1; i <= upto; i++) {
+      var a = pts[i - 1], b = pts[i];
+      if (a[1] === b[1]) d += ' L' + b[0] + ' ' + b[1];
+      else { var bend = a[0] > 200 ? 40 : -40; d += ' C' + (a[0] + bend) + ' ' + a[1] + ' ' + (b[0] + bend) + ' ' + b[1] + ' ' + b[0] + ' ' + b[1]; }
+    }
+    return d;
+  }
+  function renderBoard() {
+    var pts = roadPoints(), nx = nextIndex(), all = pathFor(pts, TOTAL - 1), done = S.stamps.length;
+    var doneD = done > 1 ? pathFor(pts, done - 1) : '';
+    var justI = S.just && S.just.type === 'stamp' ? S.just.i : -1;
+    var h = '<div class="road"><svg class="path" viewBox="0 0 400 ' + H + '" aria-hidden="true">' +
+      '<rect x="0" y="0" width="400" height="' + H + '" rx="26" fill="url(#season)"/>' +
+      fujiLayer() + decoLayer() +
+      '<path class="r p-edge" d="' + all + '"/><path class="r p-base" d="' + all + '"/>' +
+      (doneD ? '<path class="r p-done-edge" d="' + doneD + '"/><path class="r p-done" d="' + doneD + '"/>' : '') +
+      '<path class="r p-dash" d="' + all + '"/></svg>' +
+      '<span class="flag start" style="left:12.5%;top:' + (16 / H * 100) + '%">START</span>';
+    for (var i = 0; i < TOTAL; i++) {
+      var n = i + 1, s = S.stamps[i], sp = SPECIAL[n], isNext = i === nx;
+      var typeCls = !sp ? '' : sp.type === 'reward' ? ' mys' : sp.type === 'petit' ? ' petit' : ' goalnode';
+      var cls = 'node' + typeCls + (s ? ' done' : '') + (s && s.paid && !sp ? ' paid' : '') + (isNext ? ' next' : '') + (i === justI ? ' just' : '');
+      var inner, cap = '';
+      if (s) inner = cellArt(s, n);
+      else if (sp && sp.type === 'reward') inner = giftSVG() + SPARKS;
+      else if (sp && sp.type === 'petit') inner = petitGiftSVG();
+      else if (sp && sp.type === 'goal') inner = FUJI_ICON;
+      else if (isNext) inner = '<span class="num">?</span>';
+      else inner = '<span class="num">' + n + '</span>';
+      if (s) cap = '<span class="cap">' + md(s.d) + (s.paid && !sp ? '<span class="cn">コイン</span>' : '') + '</span>';
+      else if (sp && sp.type === 'reward') cap = '<span class="banner">' + (isNext ? 'タップであける' : 'ご褒美') + '</span>';
+      else if (sp && sp.type === 'petit') cap = '<span class="banner petit">' + (isNext ? 'タップであける' : 'プチ') + '</span>';
+      else if (isNext) cap = '<span class="cap next">タップ</span>';
+      var attr = isNext ? ' data-stamp="1" aria-label="' + n + 'マス目のスタンプを押す"'
+        : s ? ' data-view="' + i + '" aria-label="' + n + 'マス目（' + md(s.d) + '）を見る"'
+        : ' tabindex="-1" aria-label="' + n + 'マス目' + (sp ? '・' + kindLabel(sp) : '') + '"';
+      h += '<button type="button" class="' + cls + '" style="left:' + (pts[i][0] / 4) + '%;top:' + (pts[i][1] / H * 100) + '%"' + attr + '>' +
+        '<span class="slot">' + inner + '</span>' + cap + '</button>';
+    }
+    return h + '</div>';
+  }
+
+  // ---- coins ----
+  function renderCoins() {
+    var held = heldCoins(), used = usedCoins(), total = S.coins.length;
+    var justI = S.just && S.just.type === 'coin' ? S.just.i : -1;
+    // 手持ちを5枚ずつの行に並べる（古いコインから）。各行の5枠目はご褒美のマーク。
+    // 5枚たまってもためておけば、下に行が増えて6枚目以降をためられる
+    var first = total - held, rows = Math.floor(held / COIN_SET) + 1, t = '';
+    for (var r = 0; r < rows; r++) {
+      t += '<div class="tray-row">';
+      for (var j = 0; j < COIN_SET; j++) {
+        var g = r * COIN_SET + j, filled = g < held, c = S.coins[first + g], last = j === COIN_SET - 1;
+        var cls = 'tslot' + (filled ? ' filled' : '') + (last ? ' goal' : '') + (filled && first + g === justI ? ' just' : '');
+        var inner = filled ? coinSVG('cf') + (last ? '<span class="gbadge">' + giftSVG() + '</span>' : '') : last ? giftSVG() + SPARKS : (g + 1);
+        var cap = filled ? md(c.d) : last ? 'ご褒美' : '';
+        if (r === 0 && last && canExchange()) {
+          t += '<button type="button" class="' + cls + ' ready" data-exchange="1" aria-label="コイン5枚をご褒美と交換する"><span class="hole">' + inner + '</span><span class="d">タップで交換</span></button>';
+        } else {
+          t += '<div class="' + cls + '"><div class="hole">' + inner + '</div><span class="d">' + cap + '</span></div>';
+        }
+      }
+      t += '</div>';
+    }
+    document.getElementById('tray').innerHTML = t;
+
+    document.getElementById('cEarned').textContent = total;
+    document.getElementById('cUsed').textContent = used;
+    document.getElementById('cNext').innerHTML = canExchange() ? '<b>交換できます</b>' : 'あと<b>' + (COIN_SET - held) + '</b>枚でご褒美';
+    document.getElementById('coinBadge').textContent = held;
+
+    var ev = S.coins.map(function (c) { return { d: c.d, t: 'earn' }; })
+      .concat(S.stamps.map(function (s, i) { return s.paid ? { d: s.d, t: 'use', n: i + 1 } : null; }).filter(Boolean))
+      .concat(S.coinRewards.map(function (r) { return { d: r.d, t: 'gift', name: r.name }; }))
+      .sort(function (a, b) { return b.d - a.d; });
+    var g2 = '<h3>コインの記録</h3>';
+    g2 += ev.length ? '<ul>' + ev.map(function (e) {
+      if (e.t === 'earn') return '<li class="earn">もう1回行ってコインゲット<span>' + mdw(e.d) + '</span></li>';
+      if (e.t === 'gift') return '<li class="use"><b>5枚使ってご褒美「' + e.name + '」と交換</b><span>' + mdw(e.d) + '</span></li>';
+      return '<li class="use"><b>コインを使って' + e.n + 'マス目を埋めた</b><span>' + mdw(e.d) + '</span></li>';
+    }).join('') + '</ul>' : '<div class="empty">まだありません</div>';
+    document.getElementById('coinLog').innerHTML = g2;
+  }
+
+  function renderProgress() {
+    var c = S.stamps.length, goal = nextSpecialAt(c);
+    document.getElementById('sCount').textContent = c;
+    document.getElementById('sNext').innerHTML = goal ? 'あと<b>' + (goal - c) + '</b>マスで' + kindLabel(SPECIAL[goal]) : '<b>ゴール！</b>';
+  }
+
+  function useBtnHTML() {
+    return canUse()
+      ? '<button type="button" class="btn use" data-use="1" aria-label="今週は行けないのでコインを1枚使う（残り' + heldCoins() + '枚）">' +
+        '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="url(#coinFace)" stroke="#C47F00" stroke-width="4"/></svg>' +
+        'コインを使う<span class="cnt">' + heldCoins() + '</span></button>'
+      : '';
+  }
+  function renderButtons() {
+    var sb = document.getElementById('stampBtn'), cb = document.getElementById('coinBtn');
+    var paid = weekPaid();
+    sb.disabled = !(nextIndex() >= 0 || (paid && !wentToday()));
+    sb.textContent = S.stamps.length >= TOTAL && !paid ? 'ゴールしました'
+      : paid ? '行けた！スタンプに変える' : thisWeekDone() ? '今週の分は押しました' : '今週ジムに行った！';
+    document.getElementById('useWrapStamp').innerHTML = useBtnHTML();
+    document.getElementById('useWrapCoin').innerHTML = useBtnHTML();
+    document.getElementById('stampHint').textContent = paid ? '今週はコインで埋めています。行けたらスタンプに変えて、コインは戻ります'
+      : thisWeekDone() ? 'もう1回行ったら「コイン」タブでコインがもらえます'
+      : canUse() ? '行けない週は「コインを使う」で、行ったことにできます' : '';
+    cb.disabled = !canEarn();
+    cb.textContent = canEarn() ? '今週もう1回行った！' : paid ? '今週はコインで埋めた週です'
+      : !thisWeekDone() ? '先に週1スタンプを押してね' : '今日の分はもらいました';
+    document.getElementById('demoDate').textContent = mdw(S.today);
+  }
+
+  function renderErase() {
+    var el = document.getElementById('erase'), isStamp = S.tab === 'stamp';
+    var what = isStamp ? 'スタンプ' : 'コイン';
+    var last = isStamp ? S.stamps[S.stamps.length - 1] : (heldCoins() > 0 ? S.coins[S.coins.length - 1] : null);
+    if (!last) { el.innerHTML = '<button type="button" class="btn ghost" disabled>最後の' + what + 'を1つ消す</button>'; return; }
+    if (!S.erasing) { el.innerHTML = '<button type="button" class="btn ghost" id="eraseAsk">最後の' + what + 'を1つ消す</button>'; return; }
+    var desc = isStamp ? S.stamps.length + 'マス目（' + mdw(last.d) + (last.paid ? '・コインで埋めた週。コインは戻ります' : '') + '）のスタンプ'
+      : mdw(last.d) + 'にためたコイン';
+    el.innerHTML = '<p>' + desc + 'を消します。よろしいですか？</p><div class="row">' +
+      '<button type="button" class="btn danger" id="eraseYes">消す</button>' +
+      '<button type="button" class="btn ghost" id="eraseNo">やめる</button></div>';
+    document.getElementById('eraseNo').focus();
+  }
+
+  function renderChat() {
+    var w = new Date(monday(S.today)), wed = new Date(w.getTime() + 2 * DAY), sun = new Date(w.getTime() + 6 * DAY);
+    var h = '<div class="day">' + mdw(wed) + '</div>' + botMsg('今週のジム、まだみたい。週末に行けそう？', '20:00');
+    var hb = document.getElementById('husband'), L = S.last;
+    if (L && L.type === 'stamp' && S.stamps[L.i]) {
+      var s = S.stamps[L.i], n = L.i + 1, sp = SPECIAL[n];
+      h += '<div class="day">' + mdw(s.d) + '</div>' +
+        '<div class="msg me"><span class="time">19:42</span><div class="bubble">行った！</div></div>' +
+        '<div class="msg"><span class="avatar">手</span><div class="bubble img"><span class="slot">' + stampSVG(s.kind, s.r, n) + '</span></div></div>' +
+        botMsg(L.title + L.text + (L.refund ? '（コインは1枚戻りました）' : ''), '19:42');
+      hb.textContent = sp && sp.type === 'goal' ? mdw(s.d) + '、40マス完走でゴールしました！富士山への準備をお願いします。'
+        : sp ? mdw(s.d) + '、' + n + 'マス目の' + kindLabel(sp) + 'に止まりました。中身は「' + sp.name + '」です。準備をお願いします。'
+        : mdw(s.d) + 'にジムに行ったようです（' + n + 'マス目）。帰ってきたら「おつかれさま」のひとことを。';
+    } else if (L && L.type === 'use' && S.stamps[L.i]) {
+      h += '<div class="day">' + mdw(sun) + '</div>' +
+        botMsg('今週まだ行けてないね。コインを使って今週の分にする？（残り' + (heldCoins() + 1) + '枚）', '18:00') +
+        '<div class="msg me"><span class="time">18:05</span><div class="bubble">コインを使う</div></div>' +
+        botMsg('コインで今週の分をクリア！ためておいた自分に感謝。来週また行こう。', '18:05');
+      hb.textContent = mdw(S.stamps[L.i].d) + '、今週はコインを使って' + (L.i + 1) + 'マス目を埋めました（残り' + heldCoins() + '枚）。';
+    } else if (L && L.type === 'gift' && S.coinRewards[L.i]) {
+      var r = S.coinRewards[L.i];
+      h += '<div class="day">' + mdw(r.d) + '</div>' +
+        '<div class="msg me"><span class="time">20:12</span><div class="bubble">ご褒美と交換する</div></div>' +
+        botMsg('コイン5枚でご褒美「' + r.name + '」！追加でがんばった分のご褒美です。', '20:12');
+      hb.textContent = mdw(r.d) + '、コイン5枚をご褒美「' + r.name + '」と交換しました。準備をお願いします。';
+    } else if (L && L.type === 'coin' && S.coins[L.i]) {
+      var c = S.coins[L.i];
+      h += '<div class="day">' + mdw(c.d) + '</div>' +
+        '<div class="msg me"><span class="time">20:10</span><div class="bubble">もう1回行った！</div></div>' +
+        botMsg('コイン1枚ゲット（手持ち' + heldCoins() + '枚）。' + (canExchange() ? '5枚たまったので、ご褒美と交換できます。' : L.text), '20:10');
+      if (canExchange()) h += '<div class="qr"><span class="c">ご褒美と交換する</span><span>ためておく</span></div>';
+      hb.textContent = mdw(c.d) + '、今週2回目以上のジムに行きました。コインは手持ち' + heldCoins() + '枚' +
+        (canExchange() ? 'で、ご褒美と交換できる状態です。' : '、ご褒美まであと' + (COIN_SET - heldCoins()) + '枚です。');
+    } else {
+      if (!thisWeekDone() && heldCoins() > 0) {
+        h += '<div class="day">' + mdw(sun) + '（予定）</div>' + botMsg('今週まだ行けてないね。コインを使って今週の分にする？（残り' + heldCoins() + '枚）', '18:00');
+        h += '<div class="qr"><span>行った！</span><span class="c">コインを使う</span></div>';
+      } else {
+        h += '<div class="qr"><span>行った！</span><span>今週は休む</span></div>';
+      }
+      var nr = nextSpecialAt(S.stamps.length), nsp = SPECIAL[nr];
+      hb.textContent = nsp && nr === S.stamps.length + 1 && !thisWeekDone() && nsp.type !== 'goal'
+        ? '次は' + kindLabel(nsp) + 'のマス（' + nsp.name + '）です。今週行けたら出ます。'
+        : thisWeekDone() ? '今週の分はスタンプ済みです。' : '今週はまだ記録がありません。水曜20時にリマインドを送りました。';
+    }
+    document.getElementById('chat').innerHTML = h;
+  }
+  function botMsg(text, time) {
+    return '<div class="msg"><span class="avatar">手</span><div class="bubble">' + text + '</div><span class="time">' + time + '</span></div>';
+  }
+
+  function render() {
+    var st = S.tab === 'stamp';
+    document.getElementById('tabStamp').setAttribute('aria-selected', st);
+    document.getElementById('tabCoin').setAttribute('aria-selected', !st);
+    document.getElementById('panelStamp').hidden = !st;
+    var pc = document.getElementById('panelCoin');
+    pc.hidden = st; pc.style.display = st ? '' : 'grid';
+    document.getElementById('board').innerHTML = renderBoard();
+    renderCoins(); renderProgress(); renderButtons(); renderErase(); renderChat();
+  }
+
+  // ---- sound (Web Audio。タップした後にだけ鳴る) ----
+  var ac;
+  function audio() {
+    if (!document.getElementById('soundOn').checked) return null;
+    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); return ac; } catch (e) { return null; }
+  }
+  function noiseBurst(a, t, dur, freq, gain) {
+    var len = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    var src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+    src.buffer = buf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = .8; g.gain.value = gain;
+    src.connect(f); f.connect(g); g.connect(a.destination); src.start(t);
+  }
+  function tone(a, t, freq, dur, gain, type, toFreq) {
+    var o = a.createOscillator(), g = a.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
+    if (toFreq) o.frequency.exponentialRampToValueAtTime(toFreq, t + dur);
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .02);
+  }
+  function soundStamp() {
+    var a = audio(); if (!a) return; var t = a.currentTime + .15;
+    tone(a, t, 180, .18, .5, 'sine', 60); noiseBurst(a, t, .06, 1200, .25);
+    [659, 880].forEach(function (f, i) { tone(a, t + .25 + i * .1, f, .35, .15, 'triangle'); });
+  }
+  function soundCoin() {
+    var a = audio(); if (!a) return; var t = a.currentTime + .1;
+    tone(a, t, 1568, .12, .2, 'square'); tone(a, t + .08, 2093, .45, .18, 'square');
+  }
+  function soundTick() {
+    var a = audio(); if (!a) return;
+    noiseBurst(a, a.currentTime, .05, 700, .35); tone(a, a.currentTime, 260, .05, .12, 'square');
+  }
+  function soundCracker() {
+    var a = audio(); if (!a) return; var t = a.currentTime;
+    noiseBurst(a, t, .25, 2200, 1.4); noiseBurst(a, t + .09, .22, 1600, 1.1);
+    tone(a, t, 900, .12, .2, 'square', 200);
+    [784, 988, 1175, 1568, 1976].forEach(function (f, i) { tone(a, t + .3 + i * .09, f, .55, .18, 'triangle'); });
+  }
+  function soundPetit() {
+    var a = audio(); if (!a) return; var t = a.currentTime;
+    noiseBurst(a, t, .12, 2400, .5);
+    [880, 1175, 1568].forEach(function (f, i) { tone(a, t + .12 + i * .08, f, .4, .15, 'triangle'); });
+  }
+
+  // ---- confetti ----
+  var COLORS;
+  function palette() {
+    if (COLORS) return COLORS;
+    var css = getComputedStyle(document.documentElement);
+    COLORS = ['--ink-red', '--ink-blue', '--ink-green', '--ink-pink', '--ink-orange', '--ink-purple', '--gold'].map(function (v) { return css.getPropertyValue(v).trim(); });
+    return COLORS;
+  }
+  var rafs = {};
+  function runFx(canvasId, bits, ms) {
+    var cv = document.getElementById(canvasId), ctx = cv.getContext('2d');
+    var w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
+    cancelAnimationFrame(rafs[canvasId]);
+    var list = bits(w, h), t0 = performance.now();
+    (function tick(t) {
+      ctx.clearRect(0, 0, w, h);
+      list.forEach(function (b) {
+        b.vy += .32; b.vx *= .985; b.vy *= .995; b.x += b.vx; b.y += b.vy; b.rot += b.vr;
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot); ctx.fillStyle = b.c;
+        if (b.long) ctx.fillRect(-1.5, -b.s * 1.4, 3, b.s * 2.8); else ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2);
+        ctx.restore();
+      });
+      if (t - t0 < ms) rafs[canvasId] = requestAnimationFrame(tick); else ctx.clearRect(0, 0, w, h);
+    })(t0);
+  }
+  function bit(x, y, ang, sp, i) {
+    return { x: x, y: y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, s: 6 + Math.random() * 8, long: Math.random() < .2,
+      rot: Math.random() * 6, vr: (Math.random() - .5) * .4, c: palette()[i % palette().length] };
+  }
+  function reduced() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  function smallBurstOn(where) {
+    if (reduced()) return;
+    var id = where === 'choice' ? 'choiceFx' : where === 'party' ? 'partyFx' : 'cheerFx';
+    runFx(id, function (w, h) {
+      var out = [];
+      for (var i = 0; i < 60; i++) out.push(bit(w / 2, h * .42, -Math.PI / 2 + (Math.random() - .5) * 2.2, 6 + Math.random() * 7, i));
+      return out;
+    }, 2200);
+  }
+  function bigBurst() {
+    if (reduced()) return;
+    runFx('partyFx', function (w, h) {
+      var out = [], power = Math.max(14, Math.min(w, h) / 30);
+      for (var i = 0; i < 160; i++) {
+        var ang = (-60 - Math.random() * 25) * Math.PI / 180, sp = power * (.6 + Math.random() * .7);
+        out.push(bit(60, h - 60, ang, sp, i));
+        out.push(bit(w - 60, h - 60, Math.PI - ang, sp, i + 3));
+      }
+      for (var j = 0; j < 80; j++) out.push(bit(Math.random() * w, -20, Math.PI / 2, Math.random() * 3, j));
+      return out;
+    }, 5000);
+  }
+
+  // ---- reactions ----
+  // ほめる画面はタップで閉じる（自動では閉じない）。quiet=true は見返すとき（紙吹雪なし）
+  function showCheer(kind, kicker, title, text, big, quiet) {
+    var card = document.getElementById('cheerCard');
+    card.className = 'cheer-card' + (kind === 'coin' ? ' coin' : '');
+    card.style.animation = 'none'; card.offsetWidth; card.style.animation = '';
+    document.getElementById('cheerKicker').textContent = kicker;
+    document.getElementById('cheerBig').innerHTML = big;
+    document.getElementById('cheerTitle').textContent = title;
+    document.getElementById('cheerText').textContent = text;
+    document.getElementById('cheer').hidden = false;
+    if (!quiet) smallBurstOn('cheer');
+  }
+  function hideCheer() { document.getElementById('cheer').hidden = true; }
+
+  var pending = null, shakeTimers = [];
+  // view=true は押したあとのマスを見返すとき。開いた状態を、クラッカーなしで出す
+  function showParty(p, view) {
+    pending = p;
+    hideCheer();
+    var el = document.getElementById('party');
+    shakeTimers.forEach(clearTimeout); shakeTimers = [];
+    el.classList.remove('open', 'shaking', 'quiet');
+    el.classList.toggle('petit', !!p.petit);
+    document.getElementById('partyBtn').disabled = false;
+    var rays = '';
+    for (var k = 0; k < 12; k++) rays += '<path d="M0 -14 L3 -46 L-3 -46 Z" fill="' + (k % 2 ? '#FFC94D' : '#F2508E') + '" transform="rotate(' + k * 30 + ')"/>';
+    document.getElementById('partyRays').innerHTML = rays;
+    document.getElementById('partyKicker').textContent = p.kicker;
+    document.getElementById('partyStamp').innerHTML = p.big;
+    document.getElementById('partyTitle').textContent = p.title || 'ご褒美ゲット！';
+    document.getElementById('partyReward').textContent = '';
+    document.getElementById('partyArt').innerHTML = '';
+    document.getElementById('partyText').textContent = '';
+    if (view) {
+      el.classList.add('open', 'quiet');
+      fillOpened();
+      document.getElementById('partyBtn').textContent = 'とじる';
+    } else {
+      document.getElementById('partyBtn').textContent = 'あける';
+      document.getElementById('partyClose').setAttribute('aria-label', '押し間違えたので閉じる（取り消す）');
+    }
+    el.hidden = false;
+    document.getElementById('partyBtn').focus();
+  }
+  function fillOpened() {
+    document.getElementById('partyReward').textContent = '「' + pending.reward + '」';
+    document.getElementById('partyArt').innerHTML = rewardArt(pending.art);
+    document.getElementById('partyText').textContent = pending.after;
+    document.getElementById('partyClose').setAttribute('aria-label', 'とじる');
+  }
+  function openParty() {
+    var el = document.getElementById('party'), btn = document.getElementById('partyBtn');
+    if (el.classList.contains('open')) { el.hidden = true; return; }
+    if (el.classList.contains('shaking')) return;
+    if (reduced()) { burstOpen(); return; }
+    // 箱の揺れをだんだん速くして、最後に爆発させる
+    el.classList.add('shaking');
+    btn.disabled = true; btn.textContent = 'ドキドキ…';
+    var t = 0, gap = 260;
+    while (t < 1700) { shakeTimers.push(setTimeout(soundTick, t)); t += gap; gap = Math.max(45, gap * .8); }
+    shakeTimers.push(setTimeout(burstOpen, 1800));
+  }
+  function burstOpen() {
+    var el = document.getElementById('party'), btn = document.getElementById('partyBtn');
+    shakeTimers.forEach(clearTimeout); shakeTimers = [];
+    el.classList.remove('shaking');
+    btn.disabled = false;
+    el.classList.add('open');
+    fillOpened();
+    btn.textContent = 'やったー！';
+    if (pending.petit) { soundPetit(); smallBurstOn('party'); return; }
+    soundCracker();
+    el.querySelectorAll('.popper').forEach(function (p) { p.style.animation = 'none'; p.offsetWidth; p.style.animation = ''; });
+    bigBurst();
+  }
+  // 開ける前に×で閉じたら、押し間違いとして取り消す。開けたあとは閉じるだけ
+  function closeParty() {
+    var el = document.getElementById('party');
+    shakeTimers.forEach(clearTimeout); shakeTimers = [];
+    var opened = el.classList.contains('open');
+    el.classList.remove('shaking');
+    el.hidden = true;
+    if (!opened && pending && pending.undo) pending.undo();
+  }
+  function undoLastStamp() { S.stamps.pop(); S.last = null; S.just = null; render(); }
+  function specialParty(n, viaCoin) {
+    var sp = SPECIAL[n];
+    if (sp.type === 'goal') {
+      return { kicker: 'GOAL！ 40マス完走', title: 'ゴール！', big: stampSVG('goal', 0, n), reward: sp.name, art: sp.art,
+        after: '9か月、本当によく続けました。', undo: undoLastStamp };
+    }
+    if (sp.type === 'petit') {
+      return { kicker: n + 'マス目はプチご褒美！', title: 'プチご褒美！', big: stampSVG('petit', 0, n), reward: sp.name, art: sp.art, petit: true,
+        after: viaCoin ? 'ためたコインのおかげ。' : 'ちょっとひと息。この調子！', undo: undoLastStamp };
+    }
+    return { kicker: n + 'マス目はご褒美！', big: stampSVG('medal', 0, n), reward: sp.name, art: sp.art,
+      after: viaCoin ? 'ためたコインのおかげ。富士山に一歩近づいた！' : '富士山に一歩近づいた！', undo: undoLastStamp };
+  }
+
+  // ---- actions ----
+  function praise() { return PRAISES[Math.floor(Math.random() * PRAISES.length)]; }
+  function addStamp(paid) {
+    var n = S.stamps.length + 1, sp = SPECIAL[n];
+    var kind = !sp ? KINDS[Math.floor(Math.random() * KINDS.length)].id : sp.type === 'reward' ? 'medal' : sp.type;
+    var r = sp ? 0 : Math.round(Math.random() * 20 - 10);
+    var p = sp ? [kindLabel(sp) + '！', '中身は「' + sp.name + '」でした。'] : praise();
+    S.stamps.push({ d: new Date(S.today), kind: kind, r: r, paid: !!paid, p: p });
+    return n;
+  }
+  function doStamp() {
+    var wi = weekStamp();
+    if (wi >= 0 && S.stamps[wi].paid) {
+      // コインで埋めていた週に行けた → スタンプに差し替え、コインを戻す
+      if (wentToday()) return;
+      var st = S.stamps[wi], n0 = wi + 1;
+      st.paid = false; st.d = new Date(S.today);
+      if (!SPECIAL[n0]) st.p = praise();
+      S.last = { type: 'stamp', i: wi, title: st.p[0], text: st.p[1], refund: true };
+      S.just = { type: 'stamp', i: wi }; S.erasing = false;
+      render(); soundStamp();
+      showCheer('stamp', n0 + 'マス目をスタンプに', st.p[0], 'やっぱり行けたね！コインは1枚戻りました。', '<span class="slot">' + stampSVG(st.kind, st.r, n0) + '</span>');
+      return;
+    }
+    if (nextIndex() < 0) return;
+    var n = addStamp(false), s = S.stamps[n - 1];
+    S.last = { type: 'stamp', i: n - 1, title: s.p[0], text: s.p[1] };
+    S.just = { type: 'stamp', i: n - 1 }; S.erasing = false;
+    render();
+    if (SPECIAL[n]) showParty(specialParty(n, false));
+    else { soundStamp(); showCheer('stamp', n + 'マス目', s.p[0], s.p[1], '<span class="slot">' + stampSVG(s.kind, s.r, n) + '</span>'); }
+  }
+  // 押したあとのマスをタップ → 押したときと同じ画面（紙吹雪・クラッカーなし）
+  function viewSquare(i) {
+    var s = S.stamps[i], n = i + 1;
+    if (!s) return;
+    if (SPECIAL[n]) { showParty(specialParty(n, s.paid), true); return; }
+    if (s.paid) { showCheer('coin', n + 'マス目（' + mdw(s.d) + '）', 'コインで今週クリア！', 'ためておいた自分に感謝。', coinSVG('coinsvg'), true); return; }
+    showCheer('stamp', n + 'マス目（' + mdw(s.d) + '）', s.p ? s.p[0] : 'えらい！', s.p ? s.p[1] : '', '<span class="slot">' + stampSVG(s.kind, s.r, n) + '</span>', true);
+  }
+  function useCoin() {
+    if (!canUse()) return;
+    var n = addStamp(true);
+    S.last = { type: 'use', i: n - 1 };
+    S.just = { type: 'stamp', i: n - 1 }; S.erasing = false;
+    S.tab = 'stamp';
+    render();
+    if (SPECIAL[n]) showParty(specialParty(n, true));
+    else { soundCoin(); showCheer('coin', n + 'マス目', 'コインで今週クリア！', 'ためておいた自分に感謝。来週また行こう。', coinSVG('coinsvg')); }
+  }
+  function earnCoin() {
+    if (!canEarn()) return;
+    S.coins.push({ d: new Date(S.today) });
+    var i = S.coins.length - 1;
+    S.last = { type: 'coin', i: i, text: COIN_PRAISES[Math.floor(Math.random() * COIN_PRAISES.length)] };
+    S.just = { type: 'coin', i: i }; S.erasing = false;
+    render();
+    soundCoin();
+    if (heldCoins() % COIN_SET === 0) showChoice();
+    else showCheer('coin', canExchange() ? '手持ち' + heldCoins() + '枚' : 'ご褒美まであと' + (COIN_SET - heldCoins()) + '枚', 'コインゲット！', S.last.text + ' 行けない週にも使えます。', coinSVG('coinsvg'));
+  }
+
+  // ---- 5枚たまったら、交換するか、ためておくかを選ぶ ----
+  function showChoice() {
+    hideCheer();
+    var pile = '';
+    [[0, 30], [22, 22], [44, 30], [66, 22], [86, 30]].forEach(function (p, k) {
+      pile += coinSVG('').replace('<svg class=""', '<svg style="left:' + p[0] + 'px;top:' + p[1] + 'px;z-index:' + k + '"');
+    });
+    document.getElementById('choicePile').innerHTML = pile;
+    document.getElementById('choiceTitle').textContent = heldCoins() === COIN_SET ? 'コインが5枚たまった！' : 'コインが' + heldCoins() + '枚あります';
+    document.getElementById('choice').hidden = false;
+    smallBurstOn('choice');
+    document.getElementById('exchangeBtn').focus();
+  }
+  function hideChoice() { document.getElementById('choice').hidden = true; }
+  function exchange() {
+    if (!canExchange()) return;
+    hideChoice();
+    var name = COIN_REWARDS[S.coinRewards.length % COIN_REWARDS.length];
+    S.coinRewards.push({ name: name, d: new Date(S.today) });
+    S.last = { type: 'gift', i: S.coinRewards.length - 1 };
+    S.just = null; S.erasing = false;
+    render();
+    showParty({ kicker: 'コイン5枚と交換！', big: coinSVG('coinsvg'), reward: name, art: 'sweets', after: '追加でがんばった分のご褒美。',
+      undo: function () { S.coinRewards.pop(); S.last = null; render(); } });
+  }
+  function eraseLast() {
+    if (S.tab === 'stamp') S.stamps.pop();
+    else if (heldCoins() > 0) S.coins.pop();
+    S.erasing = false; S.just = null; S.last = null;
+    render();
+    document.getElementById('erase').querySelector('button').focus();
+  }
+
+  // ---- demo ----
+  function advance(days) {
+    S.today = new Date(S.today.getTime() + days * DAY);
+    S.just = null; S.last = null; S.erasing = false;
+  }
+
+  document.getElementById('board').addEventListener('click', function (e) {
+    if (e.target.closest('[data-stamp]')) { doStamp(); return; }
+    var v = e.target.closest('[data-view]');
+    if (v) viewSquare(Number(v.getAttribute('data-view')));
+  });
+  document.getElementById('stampBtn').addEventListener('click', doStamp);
+  document.getElementById('coinBtn').addEventListener('click', earnCoin);
+  document.getElementById('useWrapStamp').addEventListener('click', function (e) { if (e.target.closest('[data-use]')) useCoin(); });
+  document.getElementById('useWrapCoin').addEventListener('click', function (e) { if (e.target.closest('[data-use]')) useCoin(); });
+  document.getElementById('partyBtn').addEventListener('click', openParty);
+  document.getElementById('partyClose').addEventListener('click', closeParty);
+  document.getElementById('exchangeBtn').addEventListener('click', exchange);
+  document.getElementById('keepBtn').addEventListener('click', function () {
+    hideChoice();
+    showCheer('coin', '手持ち' + heldCoins() + '枚', 'ためておくね！', '交換はコインタブのご褒美からいつでもできます。', coinSVG('coinsvg'));
+  });
+  document.getElementById('tray').addEventListener('click', function (e) { if (e.target.closest('[data-exchange]')) showChoice(); });
+  document.getElementById('cheer').addEventListener('click', hideCheer);
+  document.getElementById('tabStamp').addEventListener('click', function () { S.tab = 'stamp'; S.just = null; S.erasing = false; render(); });
+  document.getElementById('tabCoin').addEventListener('click', function () { S.tab = 'coin'; S.just = null; S.erasing = false; render(); });
+  document.getElementById('erase').addEventListener('click', function (e) {
+    var id = e.target.id;
+    if (id === 'eraseAsk') { S.erasing = true; renderErase(); }
+    else if (id === 'eraseNo') { S.erasing = false; renderErase(); document.getElementById('eraseAsk').focus(); }
+    else if (id === 'eraseYes') eraseLast();
+  });
+  document.getElementById('nextDayBtn').addEventListener('click', function () { advance(1); render(); });
+  document.getElementById('nextWeekBtn').addEventListener('click', function () { advance(7); render(); });
+  document.getElementById('skipBtn').addEventListener('click', function () {
+    // 5週ぶん「行った」ことにして進める。特別なマスの手前で止める
+    for (var i = 0; i < 5; i++) {
+      if (!thisWeekDone()) {
+        if (nextIndex() < 0 || SPECIAL[S.stamps.length + 1]) break;
+        addStamp(false);
+      }
+      advance(7);
+    }
+    render();
+  });
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    S = sample();
+    hideCheer(); hideChoice(); document.getElementById('party').hidden = true;
+    render();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideCheer(); });
+
+  // 動作確認用（ページの見た目には影響しない）
+  window.__gym = { S: function () { return S; }, held: heldCoins };
+
+  render();
+})();
+</script>
