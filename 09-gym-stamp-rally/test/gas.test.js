@@ -270,8 +270,10 @@ check('古いメニューを消してから作る', env.calls.some((c) => c.meth
 check('許可した2人にだけ割り当てる', env.calls.filter((c) => /\/user\/U\w+\/richmenu\/rm-new/.test(c.url)).length === 2);
 
 // ---------------------------------------------------------------- 枠ページ経由のURL
-env.props.WEB_FRAME_URL = 'https://shun-7778.github.io/04-food-expiry-bot/gym/'; g.PROP_CACHE_ = null;
-check('WEB_FRAME_URL を入れると、枠ページ経由の URL になる', g.webUrl_('stamp').startsWith('https://shun-7778.github.io/04-food-expiry-bot/gym/?u=https%3A%2F%2Fscript.google.com'));
+check('既定では、注意バーを出さない枠ページ経由の URL になる', g.webUrl_('stamp').startsWith('https://shun-7778.github.io/04-food-expiry-bot/gym/?u=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FAKfyTEST%2Fexec&k=' + token + '&tab=stamp'), g.webUrl_('stamp'));
+check('メニューのリンクも枠ページ経由', created && created.body.areas[0].action.uri.startsWith('https://shun-7778.github.io/04-food-expiry-bot/gym/?u='));
+env.props.WEB_FRAME_URL = 'none'; g.PROP_CACHE_ = null;
+check('WEB_FRAME_URL を none にすると、枠を使わず直接開く', g.webUrl_('coin') === 'https://script.google.com/macros/s/AKfyTEST/exec?k=' + token + '&tab=coin', g.webUrl_('coin'));
 
 check('処理中のエラーログがない', g.__errors.length === 0, g.__errors.join(' | '));
 console.log(results.join('\n'));

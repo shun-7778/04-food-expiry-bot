@@ -100,14 +100,15 @@
 
 ---
 
-## 7.（任意）Google の注意バーを消す
+## 7. Google の注意バーについて
 
 GAS の画面を直接開くと、上に「Google Apps Script のユーザーによって作成されたもの」という
-注意バーが出る。消したいときは、GitHub Pages の枠ページ（`docs/gym/index.html`）を挟む。
+注意バーが出る（公開範囲を「全員」にしても消えない）。これを避けるため、画面は GitHub Pages の
+枠ページ（`docs/gym/index.html`、`main` の `docs/` から配信）の中に表示している。
 
-1. このブランチを `main` に取り込む（Pages は `main` の `docs/` から配信している）
-2. スクリプトプロパティ **`WEB_FRAME_URL`** に `https://shun-7778.github.io/04-food-expiry-bot/gym/` を入れる
-3. `setupRichMenu` をもう一度実行する（メニューのリンクが枠ページ経由に変わる）
+- 既定で `https://shun-7778.github.io/04-food-expiry-bot/gym/` を使う（`webapp.gs` の `DEFAULT_FRAME_URL`）
+- 別の URL にしたいときはスクリプトプロパティ `WEB_FRAME_URL` に入れる。`none` にすると枠を使わず直接開く
+- どちらを変えたときも `setupRichMenu` をもう一度実行する（メニューのリンクに URL が焼き込まれるため）
 
 ---
 

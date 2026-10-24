@@ -63,12 +63,16 @@ function assertExecUrl_() {
 function assertExecUrlOrService_() { return assertExecUrl_(); }
 
 /**
- * 画面を包む枠ページ（GitHub Pages）。Apps Script を直接開くと上に Google の注意バーが出るので、
- * それを避けるために挟む。スクリプトプロパティ WEB_FRAME_URL に枠ページの URL を入れたときだけ使う。
- * 例: https://shun-7778.github.io/04-food-expiry-bot/gym/
+ * 画面を包む枠ページ（GitHub Pages の docs/gym/）。Apps Script を直接開くと上に Google の注意バーが出るので、
+ * それを避けるために挟む。枠ページには何も秘密を置かず、表示先とトークンは URL で渡す。
+ * スクリプトプロパティ WEB_FRAME_URL で差し替えられる。'none' にすると枠を使わず直接開く。
  */
+// ⚠ GitHub のリポジトリ名を変えると、この URL も変わる。変えたら setupRichMenu() を実行し直すこと
+var DEFAULT_FRAME_URL = 'https://shun-7778.github.io/04-food-expiry-bot/gym/';
+
 function webUrl_(tab) {
-  var frame = prop_('WEB_FRAME_URL');
+  var frame = prop_('WEB_FRAME_URL') || DEFAULT_FRAME_URL;
+  if (frame === 'none') frame = '';
   var exec = assertExecUrl_();
   if (frame) return frame + '?u=' + encodeURIComponent(exec) + '&k=' + webToken_() + '&tab=' + webTab_(tab);
   return exec + '?k=' + webToken_() + '&tab=' + webTab_(tab);
