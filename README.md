@@ -9,6 +9,8 @@
 | `04-food-expiry/` | LINE Bot 本体（Google Apps Script）。登録・消費・週次通知 |
 | `05-recipe-stock-check/` | レシピと在庫を突き合わせて買い物リストを作る仕組み |
 | `.claude/skills/recipe-stock-check/` | 上記を Claude Code から呼ぶためのスキル定義 |
+| `09-gym-stamp-rally/` | ジムスタンプラリー（Let's Go Mt.Fuji！！）の LINE Bot。週1回のジム通いをスタンプで記録し、声かけする。手順は [SETUP.md](09-gym-stamp-rally/SETUP.md) |
+| `docs/` | GitHub Pages の枠ページ。`docs/index.html` は食材管理、`docs/gym/` はジムスタンプラリー |
 
 ## 動作の全体像
 
