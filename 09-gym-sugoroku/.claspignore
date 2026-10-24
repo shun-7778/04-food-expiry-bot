@@ -1,0 +1,12 @@
+# clasp が GAS へ送るのは、Bot 本体の .gs と web.html と appsscript.json だけ。
+# richmenu.html（画像の元）や richmenu.mjs（画像を作るスクリプト）が混ざらないよう、
+# まず全部を除外し、送るものだけを許可する。
+**/**
+
+!logic.gs
+!main.gs
+!webapp.gs
+!security.gs
+!RichMenuImage.gs
+!web.html
+!appsscript.json

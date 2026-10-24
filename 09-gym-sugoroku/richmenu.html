@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!-- リッチメニューの画像の元（2500×843）。richmenu.mjs が Edge で撮って richmenu.png と RichMenuImage.gs を作る -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@700;900&display=swap">
+<style>
+  html, body { margin: 0; width: 2500px; height: 843px; overflow: hidden; background: #FFFFFF; }
+  .menu { display: grid; grid-template-columns: 833px 833px 834px; height: 843px; }
+  .cell { position: relative; display: grid; align-content: center; justify-items: center; gap: 26px; border-right: 6px solid #E2E9EF; }
+  .cell:last-child { border-right: 0; }
+  .cell svg { width: 300px; height: 300px; }
+  .t { font-family: "Dela Gothic One", sans-serif; font-size: 120px; line-height: 1; color: #22303A; }
+  .s { font-family: "Zen Maru Gothic", sans-serif; font-weight: 900; font-size: 56px; color: #6B7A86; }
+  .main { background: linear-gradient(180deg, #FFEBDD 0%, #E8F2FC 100%); }
+  .main .t { color: #0B7F74; }
+  .coin .t { color: #C47F00; }
+</style>
+</head>
+<body>
+<div class="menu">
+  <div class="cell main">
+    <svg viewBox="0 0 100 100">
+      <path d="M6 86 L40 34 Q50 22 60 34 L94 86 Z" fill="#5E8FD0"/>
+      <path d="M40 34 Q50 22 60 34 L68 46 L60 43 L55 51 L50 44 L45 51 L40 43 L32 46 Z" fill="#FFFFFF"/>
+      <circle cx="78" cy="22" r="14" fill="#12A99B"/>
+      <path d="M71 22 L76 27 L86 16" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="t">すごろく</div>
+    <div class="s">スタンプを押す</div>
+  </div>
+  <div class="cell coin">
+    <svg viewBox="0 0 100 100">
+      <defs><radialGradient id="cf" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#FFE68A"/><stop offset=".55" stop-color="#F5B300"/><stop offset="1" stop-color="#D99100"/></radialGradient></defs>
+      <circle cx="50" cy="54" r="40" fill="#C47F00"/>
+      <circle cx="50" cy="50" r="40" fill="url(#cf)" stroke="#C47F00" stroke-width="2"/>
+      <circle cx="50" cy="50" r="30" fill="none" stroke="#C47F00" stroke-width="2.5" stroke-dasharray="3 4"/>
+      <g fill="#B26F00"><rect x="33" y="47" width="34" height="6" rx="2"/><rect x="26" y="38" width="7" height="24" rx="2"/><rect x="67" y="38" width="7" height="24" rx="2"/></g>
+    </svg>
+    <div class="t">コイン</div>
+    <div class="s">ためる・使う</div>
+  </div>
+  <div class="cell">
+    <svg viewBox="0 0 100 100">
+      <rect x="14" y="56" width="16" height="30" rx="4" fill="#5FD3C4"/>
+      <rect x="42" y="40" width="16" height="46" rx="4" fill="#12A99B"/>
+      <rect x="70" y="20" width="16" height="66" rx="4" fill="#F5B300"/>
+      <path d="M10 90 L90 90" stroke="#22303A" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+    <div class="t">状況</div>
+    <div class="s">いまの進み具合</div>
+  </div>
+</div>
+</body>
+</html>

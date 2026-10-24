@@ -15,6 +15,14 @@
 !05-recipe-stock-check/
 !05-recipe-stock-check/**
 
+# ジムすごろく LINE Bot
+!09-gym-sugoroku/
+!09-gym-sugoroku/**
+
+# GitHub Pages の枠ページ
+!docs/
+!docs/**
+
 # Claude Code スキル定義
 !.claude/
 !.claude/skills/
@@ -25,3 +33,8 @@
 .claude/settings.local.json
 **/node_modules/
 **/.DS_Store
+
+# clasp のローカル設定（スクリプトIDが入る）と、動作確認の画面写真
+09-gym-sugoroku/.clasp.json
+09-gym-sugoroku/test/shots/
+.clasprc.json
