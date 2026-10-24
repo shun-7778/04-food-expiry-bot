@@ -55,29 +55,44 @@ var COL = { ID: 1, CREATED: 2, TYPE: 3, DATE: 4, KIND: 5, R: 6, TITLE: 7, TEXT: 
 
 /**
  * 記録先のスプレッドシートを作る。GASエディタから1回だけ実行する。
- * すでに作ってあれば URL を表示するだけで、作り直さない。
+ * すでに SPREADSHEET_ID があれば（ドライブで作って ID を入れた場合も）作り直さず、シートを整えるだけ。
  */
 function setupSpreadsheet() {
   var id = prop_('SPREADSHEET_ID');
   if (id) {
+    sheet_();
     console.log('設定済みです: ' + SpreadsheetApp.openById(id).getUrl());
     return;
   }
   var ss = SpreadsheetApp.create('ジムスタンプラリー');
-  var sh = ss.getSheets()[0].setName(SHEET_NAME);
-  sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight('bold');
-  sh.setFrozenRows(1);
-  // 日付を文字のまま持つ（シートが勝手に日付型に変えないように）
-  sh.getRange('D:D').setNumberFormat('@');
+  prepareSheet_(ss.getSheets()[0]);
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
   PROP_CACHE_ = null;
   console.log('作成しました: ' + ss.getUrl());
 }
 
+/**
+ * シートを「記録」として使えるように整える（名前・見出し・日付列の書式）。
+ * ドライブで先にスプレッドシートを作り、SPREADSHEET_ID だけ入れた場合も、初回の読み書きでここを通る。
+ */
+function prepareSheet_(sh) {
+  sh.setName(SHEET_NAME);
+  sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  // 日付を文字のまま持つ（シートが勝手に日付型に変えないように）
+  sh.getRange('D:D').setNumberFormat('@');
+  return sh;
+}
+
 function sheet_() {
   var ss = SpreadsheetApp.openById(prop_('SPREADSHEET_ID', true));
   var sh = ss.getSheetByName(SHEET_NAME);
-  if (!sh) throw new Error('「' + SHEET_NAME + '」シートがありません。setupSpreadsheet() を実行してください。');
+  // 「記録」が無ければ、まだ何も書いていない先頭のシートを整えて使う
+  if (!sh) {
+    var first = ss.getSheets()[0];
+    if (first.getLastRow() > 1) throw new Error('「' + SHEET_NAME + '」シートがありません。スプレッドシートを確認してください。');
+    sh = prepareSheet_(first);
+  }
   return sh;
 }
 

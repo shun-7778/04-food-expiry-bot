@@ -33,14 +33,16 @@ function makeEnv() {
       setFontWeight() { return this; }, setNumberFormat() { return this; }
     };
   }
+  let sheetName = 'シート1';
   const sheet = {
-    setName() { return sheet; },
+    setName(n) { sheetName = n; return sheet; },
+    getName() { return sheetName; },
     getRange(a, b, c, d) { if (typeof a === 'string') return rangeOf(1, 4, 1, 1); return rangeOf(a, b, c, d); },
     getLastRow() { return sheetRows.length; },
     appendRow(row) { sheetRows.push(row.slice()); },
     setFrozenRows() {}
   };
-  const ss = { getId: () => 'SSID', getUrl: () => 'https://docs.google.com/ss', getSheets: () => [sheet], getSheetByName: (n) => (n === '記録' ? sheet : null) };
+  const ss = { getId: () => 'SSID', getUrl: () => 'https://docs.google.com/ss', getSheets: () => [sheet], getSheetByName: (n) => (n === sheetName ? sheet : null) };
 
   function pad(n) { return ('0' + n).slice(-2); }
   const ctx = {
@@ -98,6 +100,9 @@ function makeEnv() {
     ctx, props, calls, triggers,
     setNow(ymd, hourJst = 12) { const [y, m, d] = ymd.split('-').map(Number); NOW = RealDate.UTC(y, m - 1, d, hourJst - 9, 0, 0); },
     rows: () => sheetRows,
+    sheetName: () => sheetName,
+    // ドライブで作ったスプレッドシート（見出し1行だけ・シート名は別）を用意する
+    driveSheet() { sheetRows = [['ID', '登録日時', '種類', '日付', 'スタンプ', '角度', '見出し', 'ことば', '状態', '更新日時']]; sheetName = 'ジムスタンプラリー'; },
     pushes: () => calls.filter((c) => /message\/(push|multicast)/.test(c.url)),
     replies: () => calls.filter((c) => /message\/reply/.test(c.url)),
     clear() { calls.length = 0; }
@@ -109,6 +114,18 @@ function post(env, events, s) {
 }
 const WIFE = 'Uwife', HUSB = 'Uhusb', STRANGER = 'Ustranger';
 const txt = (uid, text) => ({ type: 'message', replyToken: 'rt-' + text, source: { userId: uid }, message: { type: 'text', text } });
+
+// ---------------------------------------------------------------- ドライブで作ったスプレッドシートを使う場合
+{
+  const e2 = makeEnv();
+  Object.assign(e2.props, { LINE_CHANNEL_ACCESS_TOKEN: 'tok', PLAYER_USER_ID: WIFE, SPREADSHEET_ID: 'SSID', WEB_EXEC_URL: 'https://script.google.com/macros/s/AKfyTEST/exec' });
+  e2.driveSheet();
+  const r2 = e2.ctx.webStamp(e2.ctx.webToken_());
+  check('ドライブで作ったスプレッドシートでも、ID を入れるだけで記録できる', r2.state.squares.length === 1 && e2.rows().length === 2);
+  check('そのとき先頭のシートが「記録」に名前を変えられる', e2.sheetName() === '記録');
+  e2.ctx.setupSpreadsheet();
+  check('ID が入っていれば setupSpreadsheet は作り直さない', e2.rows().length === 2);
+}
 
 // ---------------------------------------------------------------- 準備
 const env = makeEnv();
