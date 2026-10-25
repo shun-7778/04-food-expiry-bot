@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """リッチメニュー画像を生成する。
 
-2列×4行。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
+2列×3行。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
 色の役割は次のとおり。
-  ペールブルー／青 … 左列（買い物リスト表示／追加／削除・材料確認）
-  緑               … 右列の在庫まわり（在庫確認・期限登録・使用済）
+  ペールブルー／青 … 左列（買い物リスト表示／追加・材料確認）
+  緑               … 右列の在庫まわり（在庫確認・期限登録）
   グレー           … 取消（在庫にも買い物リストにも属さないので中間色）
 
 配色は2通りある。使う人ごとにどちらを貼るかを選べるよう、2枚を別々に作る。
@@ -26,9 +26,10 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 2500, 1686
+# 1段の高さは4段だった頃（1686/4 ≒ 421）と同じにし、3段ぶんの高さにした
+W, H = 2500, 1263
 COLS = 2
-ROWS = 4
+ROWS = 3
 
 THEMES = {
     # 下地は LINE のメニューバーと同じ #1E1E1E。タイルはヘッダと同じ #2A2A2A に置き、
@@ -149,31 +150,6 @@ def icon_plus_circle(cx, cy, s, c, lw):
     d.line([(cx, cy - a), (cx, cy + a)], fill=c, width=lw)
 
 
-def icon_check_circle(cx, cy, s, c, lw):
-    """丸にチェック＝使用済"""
-    r = s * 0.47
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=c, width=lw)
-    d.line([(cx - r * 0.42, cy + r * 0.02), (cx - r * 0.10, cy + r * 0.34),
-            (cx + r * 0.46, cy - r * 0.32)], fill=c, width=lw, joint="curve")
-
-
-def icon_trash(cx, cy, s, c, lw):
-    """ごみ箱＝買い物リスト削除"""
-    w, h = s * 0.70, s * 0.78
-    x0, y0 = cx - w / 2, cy - h / 2 + s * 0.10
-    # 本体
-    d.line([(x0, y0), (x0 + w * 0.10, y0 + h), (x0 + w * 0.90, y0 + h), (x0 + w, y0)],
-           fill=c, width=lw, joint="curve")
-    # ふたと取っ手
-    d.line([(x0 - w * 0.14, y0), (x0 + w * 1.14, y0)], fill=c, width=lw)
-    d.line([(cx - w * 0.24, y0 - s * 0.13), (cx + w * 0.24, y0 - s * 0.13)], fill=c, width=lw)
-    d.line([(cx - w * 0.24, y0 - s * 0.13), (cx - w * 0.24, y0)], fill=c, width=lw)
-    d.line([(cx + w * 0.24, y0 - s * 0.13), (cx + w * 0.24, y0)], fill=c, width=lw)
-    # 中の縦線
-    for fx in (0.36, 0.64):
-        d.line([(x0 + w * fx, y0 + h * 0.22), (x0 + w * fx, y0 + h * 0.80)], fill=c, width=lw)
-
-
 def icon_undo(cx, cy, s, c, lw):
     """左へ戻る円形の矢印＝取消"""
     r = s * 0.42
@@ -199,13 +175,11 @@ def icon_undo(cx, cy, s, c, lw):
 CELLS = [
     (0, 0, "買い物リスト表示", icon_list,          PALE_BLUE, TEXT),
     (0, 1, "買い物リスト追加", icon_plus_circle,   PALE_BLUE, TEXT),
-    (0, 2, "買い物リスト削除", icon_trash,         PALE_BLUE, TEXT),
-    (0, 3, "材料確認",       icon_camera,        PALE_BLUE, TEXT),
+    (0, 2, "材料確認",       icon_camera,        PALE_BLUE, TEXT),
     (1, 0, "在庫確認",       icon_box,           GREEN,     TEXT),
     (1, 1, "期限登録",       icon_calendar_plus, GREEN,     TEXT),
-    (1, 2, "使用済",         icon_check_circle,  GREEN,     TEXT),
     # 取消は在庫にも買い物リストにも属さないので、アイコンだけ中間色にする
-    (1, 3, "取消",           icon_undo,          GRAY,      TEXT),
+    (1, 2, "取消",           icon_undo,          GRAY,      TEXT),
 ]
 
 CELL_W = W // COLS

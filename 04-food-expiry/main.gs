@@ -4439,14 +4439,16 @@ function commitOrNotify_(commit, label) {
  * ただし postback イベント自体は届くので、doPost 側では無視している
  * （handleEvent_ が message 以外を早期 return する）。
  */
-var RICHMENU_SIZE = { width: 2500, height: 1686 };
+// 1段の高さは4段だった頃（1686/4 ≒ 421）と同じにし、3段ぶんの高さにした
+var RICHMENU_SIZE = { width: 2500, height: 1263 };
 
-// richmenu.png の格子と一致させること（2列×4行）。
-// 1250 = 2500/2、421 = 1686/4 の切り捨て。1686は4で割り切れないので
-// 最下段だけ余りを足して、下端がぴったり1686になるようにする
+// richmenu.png の格子と一致させること（2列×3行）。
+// 1250 = 2500/2、421 = 1263/3。割り切れない高さに変えたときのために、
+// 最下段だけ余りを足して下端が画像の高さにぴったり合うようにしておく
+var RICHMENU_ROWS = 3;
 var RICHMENU_COL_W = RICHMENU_SIZE.width / 2;
-var RICHMENU_ROW_H = Math.floor(RICHMENU_SIZE.height / 4);
-var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * 3;
+var RICHMENU_ROW_H = Math.floor(RICHMENU_SIZE.height / RICHMENU_ROWS);
+var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * (RICHMENU_ROWS - 1);
 
 /**
  * 画像と同じ並び（左列を上から、続いて右列を上から）。
@@ -4467,16 +4469,18 @@ var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * 3;
  * 「買い物リストを全部削除」はメニューから外した。買い物リスト表示の
  * バブル最下段に「全て削除」があり、そちらのほうが誤爆しにくいため
  * （文字で「買い物リストを全部削除」と送る経路は残してある）。
+ *
+ * 「買い物リスト削除」「使用済」も使わないのでメニューから外した。
+ * どちらも画面のスワイプや通知バブルの「使用済」で済むため
+ * （文字で「買い物リスト削除 牛乳」「使用済 牛乳」と送る経路は残してある）。
  */
 var RICHMENU_CELLS = [
   { col: 0, row: 0, webTab: 'shop', label: '買い物リスト表示' },
   { col: 0, row: 1, fill: '買い物リスト追加\n' },
-  { col: 0, row: 2, fill: '買い物リスト削除\n' },
-  { col: 0, row: 3, cameraRoll: true },                      // 材料確認
+  { col: 0, row: 2, cameraRoll: true },                      // 材料確認
   { col: 1, row: 0, webTab: 'stock', label: '在庫確認' },
   { col: 1, row: 1, fill: '期限登録\n' },
-  { col: 1, row: 2, fill: '使用済\n' },
-  { col: 1, row: 3, send: '取消' }
+  { col: 1, row: 2, send: '取消' }
 ];
 
 function buildRichMenu_(theme) {
@@ -4488,7 +4492,7 @@ function buildRichMenu_(theme) {
     chatBarText: 'メニュー',
     areas: RICHMENU_CELLS.map(function (cell) {
       // 最下段だけ、割り切れなかったぶんを足して下端を画像に合わせる
-      var h = cell.row === 3 ? RICHMENU_LAST_ROW_H : RICHMENU_ROW_H;
+      var h = cell.row === RICHMENU_ROWS - 1 ? RICHMENU_LAST_ROW_H : RICHMENU_ROW_H;
       return {
         bounds: {
           x: cell.col * RICHMENU_COL_W,
