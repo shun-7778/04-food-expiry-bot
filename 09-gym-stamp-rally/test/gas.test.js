@@ -192,6 +192,7 @@ const frText = fr ? fr.body.messages[0].text : '';
 check('金曜：本人にだけ1通送る', env.pushes().length === 1 && fr.body.to === WIFE, JSON.stringify(env.pushes().map((c) => c.body)));
 check('金曜：「1週間おつかれさま！」から始まる', frText.startsWith('1週間おつかれさま！'), frText);
 check('金曜（まだ）：週末に行けそうか聞く', g.FRIDAY_TODO_LINES.some((l) => frText.includes(l)), frText);
+check('金曜：ご褒美までは「あと◯回！」で、カッコ書きにしない', /まであと\d+回！/.test(frText) && !/[（(]/.test(frText.split('\n').slice(0, 3).join('')), frText);
 check('金曜（まだ）：コインがあれば「コインを使う」ボタン付き', fr && fr.body.messages[0].quickReply.items.some((i) => i.action.data === 'use_coin'), fr && JSON.stringify(fr.body));
 
 // ---------------------------------------------------------------- LINE から「コインを使う」

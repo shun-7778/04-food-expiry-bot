@@ -244,8 +244,7 @@ function fridayMessage_(st, rand) {
   var lines = [FRIDAY_HELLO];
   if (st.weekPaid) lines.push(FRIDAY_PAID_LINE);
   else lines.push(gymPick_(st.weekDone ? FRIDAY_DONE_LINES : FRIDAY_TODO_LINES, rand));
-  var left = st.next ? st.next.label + 'まであと' + (st.next.n - st.squares.length) + 'マス' : '';
-  if (left) lines.push('（' + left + '）');
+  if (st.next) lines.push(st.next.label + 'まであと' + (st.next.n - st.squares.length) + '回！');
   var msg = { type: 'text', text: lines.join('\n') };
   if (!st.weekDone && st.held > 0) {
     msg.text += '\n行けなさそうなら、コインで今週クリアにもできるよ（残り' + st.held + '枚）';
