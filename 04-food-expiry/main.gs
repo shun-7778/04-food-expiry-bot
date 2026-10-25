@@ -4833,6 +4833,10 @@ function testConfig() {
       console.log('メニュー' + (i + 1) + ': 写真選択画面を開く');
       return;
     }
+    if (cell.webTab) {
+      console.log('メニュー' + (i + 1) + '「' + cell.label + '」: 画面を開く（' + cell.webTab + '）');
+      return;
+    }
     var cmd = parseCommand_(cell.fill + 'テスト');
     console.log('メニュー' + (i + 1) + '「' + cell.fill.trim() + '」: '
       + (cmd ? cmd.action + ' OK' : '*** COMMAND_WORDS に未登録 ***'));
