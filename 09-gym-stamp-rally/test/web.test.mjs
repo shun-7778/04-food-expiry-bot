@@ -14,7 +14,7 @@ const shots = path.join(dir, 'shots'); fs.mkdirSync(shots, { recursive: true });
 const mock = `<script>
 ${fs.readFileSync(path.join(SRC, 'logic.gs'), 'utf8')}
 // ---- 模擬サーバー（webapp.gs の API と同じ形で返す） ----
-var MOCK = { rows: [], today: '2026-10-24', opened: [], fail: false };
+var MOCK = { rows: [], today: '2026-10-24', opened: [], fail: false, delay: 60 };
 function mockAct(plan) {
   var st = gymState_(MOCK.rows, MOCK.today);
   var p = plan(st, MOCK.today, Math.random, MOCK.rows);
@@ -38,7 +38,7 @@ function runner() {
   r.withSuccessHandler = function (f) { ok = f; return r; };
   r.withFailureHandler = function (f) { ng = f; return r; };
   Object.keys(API).forEach(function (k) {
-    r[k] = function () { var a = arguments; setTimeout(function () { try { ok(JSON.parse(JSON.stringify(API[k].apply(null, a)))); } catch (e) { ng(e); } }, 60); };
+    r[k] = function () { var a = arguments; setTimeout(function () { try { ok(JSON.parse(JSON.stringify(API[k].apply(null, a)))); } catch (e) { ng(e); } }, MOCK.delay); };
   });
   return r;
 }
@@ -110,8 +110,26 @@ try {
   check('季節の絵が文字やマスと重ならない', ov === 0, '重なり ' + ov);
   await shot('w01-top');
 
-  // スタンプ
-  await click('#stampBtn'); await settle();
+  // サーバーの返事を待つあいだも、画面全体が崩れない（以前は body が黒く細くなっていた）
+  const layout = () => ev(`(function(){var b=document.body.getBoundingClientRect(), s=getComputedStyle(document.body);
+    return { w: Math.round(b.width), iw: innerWidth, bg: s.backgroundColor, pos: s.position }; })()`);
+  const sameLayout = (a, b) => a.w === b.w && a.bg === b.bg && a.pos === b.pos;
+  const before = await layout();
+  await ev('MOCK.delay=1500');
+  await ev(`document.dispatchEvent(new Event('visibilitychange'))`); await sleep(300);
+  const reloading = await layout();
+  check('読み直し中も画面の幅・背景が変わらない', sameLayout(before, reloading) && reloading.w === reloading.iw, JSON.stringify([before, reloading]));
+  check('読み直し中は「記録中…」を出さない', !(await visible('#busy')));
+  await sleep(1500);
+  await click('#stampBtn'); await sleep(300);
+  const recording = await layout();
+  check('記録中も画面の幅・背景が変わらない', sameLayout(before, recording), JSON.stringify([before, recording]));
+  check('記録中は上に「記録中…」の小さな表示が出る', (await visible('#busy')) && (await ev('document.getElementById("busy").getBoundingClientRect().width')) < 200);
+  await shot('w00-recording');
+  await sleep(1500); await ev('MOCK.delay=60');
+
+  // スタンプ（上で押したぶん）
+  await settle();
   check('押すと記録され、ほめる画面が出る', (await nRows()) === 1 && (await visible('#cheer')));
   await sleep(3500);
   check('ほめる画面は自動で閉じない', await visible('#cheer'));

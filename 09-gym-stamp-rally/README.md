@@ -100,7 +100,7 @@ GAS に送るものは `.claspignore` で決めている（許可したものだ
 ```bash
 cd 09-gym-stamp-rally
 node test/gas.test.js        # サーバー側の確認（55項目）
-node test/web.test.mjs       # 画面の確認（Edge・スマホ幅、34項目）
+node test/web.test.mjs       # 画面の確認（Edge・スマホ幅、38項目）
 clasp push -f                # GAS にコードを送る
 clasp deploy -i <デプロイID> -d "説明"   # 公開中のデプロイを新しい版に（URL は変わらない）
 ```
@@ -130,6 +130,9 @@ Node.js と Windows の Edge があれば動く。
   スクリプトプロパティ `WEB_EXEC_URL` に、デプロイ時に表示された `/exec` の URL を入れてある。
 - **`[hidden]` の CSS**：試作（Claude の Artifact）では自動で付いていた `[hidden]{display:none!important}` が
   GAS には無く、ほめる画面などが最初から全部出ていた。`web.html` の先頭に入れてある。消さないこと。
+- **読み込み・記録中に画面が黒く細くなる**：処理中に body へ付けるクラスを `busy` にしていたため、
+  「記録中…」バッジ用の `.busy`（固定位置・濃い背景）が body 全体に効いていた。今は `is-busy`。
+  模擬サーバーの返事が速いと気づけないので、`web.test.mjs` は返事を遅らせて確かめている。
 - **トークンが違うときの案内**も `setXFrameOptionsMode(ALLOWALL)` にしないと、枠ページの中で空白になる。
 - **`clasp create` は `appsscript.json` を初期値（ニューヨーク時間・Web アプリ設定なし）で上書きする。**
   作り直すときは元に戻してから push する。

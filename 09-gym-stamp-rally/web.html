@@ -411,7 +411,8 @@ img { max-width: 100%; }
 .loading { text-align: center; color: var(--muted); padding: 40px 0; }
 .busy { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 40;
   background: var(--fg); color: #fff; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 999px; }
-body.busy .board-col { pointer-events: none; }
+/* body に付けるのは is-busy（.busy にすると上のバッジの見た目が body 全体に効き、画面が黒く細くなる） */
+body.is-busy .board-col { pointer-events: none; }
 .err { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 41;
   width: min(420px, calc(100% - 32px)); background: #FFF0EE; color: var(--danger); border: 2px solid var(--danger);
   font-size: 14px; font-weight: 700; padding: 10px 14px; border-radius: 14px; }
@@ -568,7 +569,8 @@ body.busy .board-col { pointer-events: none; }
   // ---- server ----
   function call(fn, args, done) {
     if (V.busy) return;
-    setBusy(true);
+    // 読み直し（webState）は記録ではないので「記録中…」を出さず、裏で静かに差し替える
+    setBusy(true, fn !== 'webState');
     var runner = google.script.run
       .withSuccessHandler(function (res) {
         setBusy(false);
@@ -587,10 +589,10 @@ body.busy .board-col { pointer-events: none; }
     var r = google.script.run.withFailureHandler(function (err) { console.warn(err); });
     r[fn].apply(r, [TOKEN].concat(args || []));
   }
-  function setBusy(on) {
+  function setBusy(on, badge) {
     V.busy = on;
-    document.body.classList.toggle('busy', on);
-    document.getElementById('busy').hidden = !on;
+    document.body.classList.toggle('is-busy', on);
+    document.getElementById('busy').hidden = !(on && badge);
   }
   var errTimer;
   function showError(msg) {
