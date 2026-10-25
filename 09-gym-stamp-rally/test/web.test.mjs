@@ -116,7 +116,11 @@ try {
     return [].slice.call(p.children).map(function(e){return e.id||e.className;}); })()`);
   await ev('window.scrollTo(0, 1500)'); await sleep(200);
   check('下にスクロールしてもタブが上に見えている', await ev('(function(){var r=document.querySelector(".tabs").getBoundingClientRect();return r.top>=0&&r.top<40;})()'));
-  await ev('window.scrollTo(0, 0)');
+  const tabShadow = () => ev('getComputedStyle(document.querySelector(".tabs")).boxShadow');
+  check('浮いているタブには影が付き、白い縁取りは無い', (await tabShadow()).includes('18px') && !(await tabShadow()).includes('0px 0px 0px 8px'), await tabShadow());
+  await shot('w00-tabs-floating');
+  await ev('window.scrollTo(0, 0)'); await sleep(300);
+  check('一番上では影を付けない', (await tabShadow()) === 'none', await tabShadow());
   const so = await order('#panelStamp');
   check('スタンプ：ボタン → 消す → 案内（一番下）の順', so.slice(-3).join() === 'sticky-act,erase,stampHint', so.join());
   check('「消す」の上に区切り線が無い', (await ev('getComputedStyle(document.getElementById("erase")).borderTopStyle')) === 'none');
