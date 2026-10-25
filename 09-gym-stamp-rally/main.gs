@@ -58,6 +58,7 @@ var COL = { ID: 1, CREATED: 2, TYPE: 3, DATE: 4, KIND: 5, R: 6, TITLE: 7, TEXT: 
  * すでに SPREADSHEET_ID があれば（ドライブで作って ID を入れた場合も）作り直さず、シートを整えるだけ。
  */
 function setupSpreadsheet() {
+  requireEditor_();
   var id = prop_('SPREADSHEET_ID');
   if (id) {
     sheet_();
@@ -257,21 +258,26 @@ function fridayMessage_(st, rand) {
 }
 
 /** 金曜の夜：週1回の声かけ */
-function remindFriday() {
+function remindFriday(e) {
+  if (!isOwnTrigger_(e) && !isEditor_()) throw new Error('声かけはトリガーか GAS エディタからだけ実行できます。');
   var st = currentState_();
   if (!st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
   sendPush_([playerId_()], [fridayMessage_(st, Math.random)]);
 }
 
 // 以前の水曜・日曜のトリガーが残っていたら、動いたときに金曜のトリガーへ付け替える（何も送らない）
-function remindMidweek() { setupTriggers(); }
-function remindWeekend() { setupTriggers(); }
+function remindMidweek(e) { if (isOwnTrigger_(e)) setupTriggers_(); }
+function remindWeekend(e) { if (isOwnTrigger_(e)) setupTriggers_(); }
 
 /**
  * 声かけのトリガーを設定する。GASエディタから1回だけ実行する。
  * 同じ関数の古いトリガーがあれば張り替える。時刻は GAS の仕様で「その時台のどこか」になる。
  */
 function setupTriggers() {
+  requireEditor_();
+  setupTriggers_();
+}
+function setupTriggers_() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (['remindMidweek', 'remindWeekend', 'remindFriday'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -399,6 +405,7 @@ function buildRichMenu_() {
  * メニューには画面のトークン入りURLが入るので、全員の既定にはせず、許可した人にだけ貼る。
  */
 function setupRichMenu() {
+  requireEditor_();
   console.log('公開URL: ' + assertExecUrl_());
   var users = allowedUserIds_();
   if (!users.length) throw new Error('PLAYER_USER_ID が未設定です。メニューには画面のURLが入るため、配る相手を決めてから作ります。');
@@ -424,6 +431,7 @@ function setupRichMenu() {
 }
 
 function deleteRichMenus() {
+  requireEditor_();
   var list = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
   (list.richmenus || []).forEach(function (m) {
     lineApi_('delete', 'https://api.line.me/v2/bot/richmenu/' + m.richMenuId);
@@ -435,6 +443,7 @@ function deleteRichMenus() {
 
 /** 設定の確認。GASエディタから実行する。何も書き換えない */
 function testConfig() {
+  requireEditor_();
   ['LINE_CHANNEL_ACCESS_TOKEN', 'PLAYER_USER_ID', 'WATCHER_USER_IDS', 'SPREADSHEET_ID'].forEach(function (k) {
     console.log(k + ': ' + (prop_(k) ? 'OK' : (k === 'WATCHER_USER_IDS' ? '未設定（お知らせを送らない）' : '*** 未設定 ***')));
   });

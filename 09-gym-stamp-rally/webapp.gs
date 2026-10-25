@@ -82,6 +82,7 @@ function webUrl_(tab) {
 
 /** GASエディタから実行するとURLがログに出る */
 function showWebUrl() {
+  requireEditor_();
   console.log('スタンプラリー: ' + webUrl_('stamp'));
   console.log('コイン  : ' + webUrl_('coin'));
   return webUrl_('stamp');
