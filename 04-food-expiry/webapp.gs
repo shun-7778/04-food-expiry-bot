@@ -125,6 +125,7 @@ function webDirectUrl_(tab) {
 
 /** GASエディタから実行するとURLがログに出る */
 function showWebUrl() {
+  requireEditor_();
   console.log('買い物: ' + webUrl_('shop'));
   console.log('在庫  : ' + webUrl_('stock'));
   console.log('枠なし: ' + webDirectUrl_('shop'));

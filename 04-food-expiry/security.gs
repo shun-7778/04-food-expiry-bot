@@ -69,6 +69,34 @@ function secretEquals_(a, b) {
   return diff === 0;
 }
 
+// ---------------------------------------------------------------- 管理用の関数を守る
+
+/**
+ * 名前が _ で終わらない関数は、公開中の画面（トークン違いの案内ページも含む）から
+ * google.script.run で誰でも呼べてしまう。以前は showWebUrl() から画面のトークンが取れた。
+ * そこで管理用の関数は GAS エディタから持ち主が実行したときだけ動かし、
+ * 週1の通知は本物のトリガーから呼ばれたときだけ動かす。
+ * 画面から呼ばれてよいのは web〜 の API（中で webAssert_ を通す）だけ。関数を足すときは注意。
+ */
+function isEditor_() {
+  try {
+    var me = Session.getActiveUser().getEmail();
+    return !!me && me === Session.getEffectiveUser().getEmail();
+  } catch (err) {
+    return false;
+  }
+}
+function requireEditor_() {
+  if (!isEditor_()) throw new Error('この操作は GAS エディタからだけ実行できます。');
+}
+
+/** このプロジェクトに登録されているトリガーから呼ばれたか（triggerUid は外からは分からない） */
+function isOwnTrigger_(e) {
+  var uid = e && e.triggerUid;
+  if (!uid) return false;
+  return ScriptApp.getProjectTriggers().some(function (t) { return String(t.getUniqueId()) === String(uid); });
+}
+
 // ---------------------------------------------------------------- webhook（POST）
 
 /**
@@ -99,6 +127,7 @@ function webhookRequestOk_(e) {
  * 出た URL を LINE Developers Console の Webhook URL に貼り替えること。
  */
 function setupWebhookSecret() {
+  requireEditor_();
   var url = ScriptApp.getService().getUrl() + '?s=' + secret_(PROP_WEBHOOK_SECRET, true);
   console.log('LINE Developers Console の Webhook URL にこれを設定してください:');
   console.log(url);
@@ -110,6 +139,7 @@ function setupWebhookSecret() {
  * 実行した瞬間から古い URL は無効になるので、すぐ LINE 側を貼り替えること。
  */
 function rotateWebhookSecret() {
+  requireEditor_();
   PropertiesService.getScriptProperties().deleteProperty(PROP_WEBHOOK_SECRET);
   PROP_CACHE_ = null;
   return setupWebhookSecret();
@@ -136,6 +166,7 @@ function webTokenOk_(token) {
  * 実行後は LINE に「リンク」と送れば新しい URL が返る。
  */
 function rotateWebToken() {
+  requireEditor_();
   PropertiesService.getScriptProperties().deleteProperty(PROP_WEB_TOKEN);
   PROP_CACHE_ = null;
   return showWebUrl();

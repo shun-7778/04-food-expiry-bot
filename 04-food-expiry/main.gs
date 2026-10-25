@@ -1603,6 +1603,7 @@ function sheet_() {
  * エディタから1回だけ実行する。すでに設定済みなら何もしない。
  */
 function setupSpreadsheet() {
+  requireEditor_();
   var existing = prop_('SPREADSHEET_ID', false);
   if (existing) {
     console.log('設定済みです: ' + SpreadsheetApp.openById(existing).getUrl());
@@ -1630,6 +1631,7 @@ function setupSpreadsheet() {
  * エディタから1回だけ実行する。
  */
 function migrateAddCategoryColumn() {
+  requireEditor_();
   var sh = sheet_();
   sh.insertColumnAfter(3);
   sh.getRange(1, 1, 1, COL_COUNT).setValues([HEADERS]).setFontWeight('bold');
@@ -1645,6 +1647,7 @@ function migrateAddCategoryColumn() {
  * （区分だけ空欄のまま残る）。エディタから1回だけ実行する。
  */
 function migrateAddShopCategoryColumn() {
+  requireEditor_();
   var sh = shopSheet_();
   sh.insertColumnAfter(2);
   sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
@@ -1657,6 +1660,7 @@ function migrateAddShopCategoryColumn() {
  * 既存行にも上から順に連番を振る。エディタから1回だけ実行する。
  */
 function migrateAddStockIdColumn() {
+  requireEditor_();
   var sh = sheet_();
   sh.insertColumnBefore(1);
   sh.getRange(1, 1, 1, COL_COUNT).setValues([HEADERS]).setFontWeight('bold');
@@ -1677,6 +1681,7 @@ function migrateAddStockIdColumn() {
  * 既存行にも上から順に連番を振る。エディタから1回だけ実行する。
  */
 function migrateAddShopIdColumn() {
+  requireEditor_();
   var sh = shopSheet_();
   sh.insertColumnBefore(1);
   sh.getRange(1, 1, 1, SHOP_COL_COUNT).setValues([SHOP_HEADERS]).setFontWeight('bold');
@@ -1698,6 +1703,7 @@ function migrateAddShopIdColumn() {
  * エディタから1回だけ実行する。
  */
 function migrateAddShopRecipeColumn() {
+  requireEditor_();
   var sh = shopSheet_();
   if (sh.getMaxColumns() < SHOP_COL_COUNT) {
     sh.insertColumnsAfter(sh.getMaxColumns(), SHOP_COL_COUNT - sh.getMaxColumns());
@@ -1712,6 +1718,7 @@ function migrateAddShopRecipeColumn() {
  * 既存の行は空のままでよい。エディタから1回だけ実行する。
  */
 function migrateAddShopAmountColumn() {
+  requireEditor_();
   var sh = shopSheet_();
   if (sh.getMaxColumns() < SHOP_COL_COUNT) {
     sh.insertColumnsAfter(sh.getMaxColumns(), SHOP_COL_COUNT - sh.getMaxColumns());
@@ -2744,7 +2751,8 @@ function weeklyAltText_(sections) {
   return '食材の期限: ' + parts.join(' / ');
 }
 
-function notifyWeekly() {
+function notifyWeekly(e) {
+  if (!isOwnTrigger_(e) && !isEditor_()) throw new Error('週1の通知はトリガーか GAS エディタからだけ実行できます。');
   var sections = weeklyNotifySections_();
   if (!sections) { console.log('通知対象なし。push をスキップ'); return; }
 
@@ -2849,6 +2857,7 @@ function sendPush_(to, messages) {
  * エディタから1回だけ実行する。同じ関数の古いトリガーがあれば張り替える。
  */
 function setupWeeklyTrigger() {
+  requireEditor_();
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'notifyWeekly') {
       console.log('既存トリガーを張り替えます');
@@ -4544,6 +4553,7 @@ function lineApi_(method, url, options) {
  * 古いものは消してから作るので、何度実行しても増えない。
  */
 function setupRichMenu() {
+  requireEditor_();
   // メニューには画面のURLを焼き込むので、先に本物の /exec が分かっているか確かめる
   console.log('公開URL: ' + assertExecUrl_());
 
@@ -4679,6 +4689,7 @@ function lineApiIgnore404_(method, url) {
  * 両方が設定されていたりすると、開いた直後に片方からもう片方へ切り替わって見える。
  */
 function showRichMenuStatus() {
+  requireEditor_();
   var list = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
   var menus = list.richmenus || [];
   console.log('登録されているリッチメニュー: ' + menus.length + '件'
@@ -4716,6 +4727,7 @@ function showRichMenuStatus() {
  * 代わりに設定したいときは setUserThemeById_(userId, 'light') を使う
  */
 function showThemes() {
+  requireEditor_();
   var props = PropertiesService.getScriptProperties();
   var menus = richMenuIds_();
   var names = userNameMap_();
@@ -4739,6 +4751,7 @@ function setUserThemeById_(userId, theme) {
 
 /** リッチメニューを全部消す。表示を止めたいときにエディタから実行する */
 function deleteRichMenus() {
+  requireEditor_();
   var list = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
   var menus = list.richmenus || [];
   if (!menus.length) { console.log('リッチメニューはありません'); return; }
@@ -4757,6 +4770,7 @@ function deleteRichMenus() {
  * シートには何も書かないので、何度実行しても副作用はない。
  */
 function testItemNames() {
+  requireEditor_();
   [
     '牛乳コチュジャンプロテイン',   // 区切りなしの並び
     '牛乳と卵',                   // 「と」は助詞
@@ -4782,6 +4796,7 @@ function testItemNames() {
 
 /** エディタから実行して、プロパティ設定と Claude API 疎通を確認する */
 function testConfig() {
+  requireEditor_();
   ['LINE_CHANNEL_ACCESS_TOKEN', 'ANTHROPIC_API_KEY'].forEach(function (k) {
     console.log(k + ': ' + (prop_(k, false) ? 'OK' : '*** 未設定 ***'));
   });
