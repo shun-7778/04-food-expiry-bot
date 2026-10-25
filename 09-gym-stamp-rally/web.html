@@ -295,7 +295,6 @@ span.stamp > svg { display: block; width: 100%; height: 100%; }
 .notes { font-size: 13px; color: var(--muted); display: grid; gap: 6px; }
 .notes h2 { font-size: 14px; margin: 0; color: var(--fg); }
 .notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
-.sound { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 
 /* overlays */
 .overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; overflow: hidden; }
@@ -416,7 +415,6 @@ body.is-busy .board-col { pointer-events: none; }
 .err { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 41;
   width: min(420px, calc(100% - 32px)); background: #FFF0EE; color: var(--danger); border: 2px solid var(--danger);
   font-size: 14px; font-weight: 700; padding: 10px 14px; border-radius: 14px; }
-.sound { justify-content: center; }
 </style>
 </head>
 <body>
@@ -483,7 +481,6 @@ body.is-busy .board-col { pointer-events: none; }
     </div>
 
     <div class="erase" id="erase"></div>
-    <label class="sound"><input type="checkbox" id="soundOn" checked> 音を鳴らす</label>
   </section>
 </div>
 
@@ -1009,51 +1006,6 @@ body.is-busy .board-col { pointer-events: none; }
     document.getElementById('loading').hidden = true;
   }
 
-  // ---- sound (Web Audio。タップした後にだけ鳴る) ----
-  var ac;
-  function audio() {
-    if (!document.getElementById('soundOn').checked) return null;
-    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); return ac; } catch (e) { return null; }
-  }
-  function noiseBurst(a, t, dur, freq, gain) {
-    var len = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
-    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
-    var src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
-    src.buffer = buf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = .8; g.gain.value = gain;
-    src.connect(f); f.connect(g); g.connect(a.destination); src.start(t);
-  }
-  function tone(a, t, freq, dur, gain, type, toFreq) {
-    var o = a.createOscillator(), g = a.createGain();
-    o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
-    if (toFreq) o.frequency.exponentialRampToValueAtTime(toFreq, t + dur);
-    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .02);
-  }
-  function soundStamp() {
-    var a = audio(); if (!a) return; var t = a.currentTime + .15;
-    tone(a, t, 180, .18, .5, 'sine', 60); noiseBurst(a, t, .06, 1200, .25);
-    [659, 880].forEach(function (f, i) { tone(a, t + .25 + i * .1, f, .35, .15, 'triangle'); });
-  }
-  function soundCoin() {
-    var a = audio(); if (!a) return; var t = a.currentTime + .1;
-    tone(a, t, 1568, .12, .2, 'square'); tone(a, t + .08, 2093, .45, .18, 'square');
-  }
-  function soundTick() {
-    var a = audio(); if (!a) return;
-    noiseBurst(a, a.currentTime, .05, 700, .35); tone(a, a.currentTime, 260, .05, .12, 'square');
-  }
-  function soundCracker() {
-    var a = audio(); if (!a) return; var t = a.currentTime;
-    noiseBurst(a, t, .25, 2200, 1.4); noiseBurst(a, t + .09, .22, 1600, 1.1);
-    tone(a, t, 900, .12, .2, 'square', 200);
-    [784, 988, 1175, 1568, 1976].forEach(function (f, i) { tone(a, t + .3 + i * .09, f, .55, .18, 'triangle'); });
-  }
-  function soundPetit() {
-    var a = audio(); if (!a) return; var t = a.currentTime;
-    noiseBurst(a, t, .12, 2400, .5);
-    [880, 1175, 1568].forEach(function (f, i) { tone(a, t + .12 + i * .08, f, .4, .15, 'triangle'); });
-  }
-
   // ---- confetti ----
   var COLORS;
   function palette() {
@@ -1163,11 +1115,9 @@ body.is-busy .board-col { pointer-events: none; }
     if (el.classList.contains('open')) { el.hidden = true; return; }
     if (el.classList.contains('shaking')) return;
     if (reduced()) { burstOpen(); return; }
-    // 箱の揺れをだんだん速くして、最後に爆発させる
+    // 箱を揺らして、最後に爆発させる
     el.classList.add('shaking');
     btn.disabled = true; btn.textContent = 'ドキドキ…';
-    var t = 0, gap = 260;
-    while (t < 1700) { shakeTimers.push(setTimeout(soundTick, t)); t += gap; gap = Math.max(45, gap * .8); }
     shakeTimers.push(setTimeout(burstOpen, 1800));
   }
   function burstOpen() {
@@ -1180,8 +1130,7 @@ body.is-busy .board-col { pointer-events: none; }
     btn.textContent = 'やったー！';
     // 開けたことをサーバーに伝える（ここで初めて LINE に知らせる）
     if (pending.id) tell('webOpened', [pending.id]);
-    if (pending.petit) { soundPetit(); smallBurstOn('party'); return; }
-    soundCracker();
+    if (pending.petit) { smallBurstOn('party'); return; }
     el.querySelectorAll('.popper').forEach(function (p) { p.style.animation = 'none'; p.offsetWidth; p.style.animation = ''; });
     bigBurst();
   }
@@ -1217,8 +1166,7 @@ body.is-busy .board-col { pointer-events: none; }
     V.just = { type: 'stamp', i: ev.n - 1 };
     render();
     if (ev.type === 'special') { showParty(specialParty(s, ev.id)); return; }
-    if (ev.type === 'use') { soundCoin(); showCheer('coin', ev.n + 'マス目', ev.title, ev.text + '来週また行こう。', coinSVG('coinsvg')); return; }
-    soundStamp();
+    if (ev.type === 'use') { showCheer('coin', ev.n + 'マス目', ev.title, ev.text + '来週また行こう。', coinSVG('coinsvg')); return; }
     showCheer('stamp', ev.n + 'マス目' + (ev.type === 'convert' ? 'をスタンプに' : ''), ev.title,
       ev.type === 'convert' ? 'やっぱり行けたね！コインは1枚戻りました。' : ev.text, '<span class="slot">' + stampSVG(s.kind, s.r, s.n) + '</span>');
   }
@@ -1229,7 +1177,6 @@ body.is-busy .board-col { pointer-events: none; }
     call('webEarnCoin', [], function (ev) {
       V.just = { type: 'coin', i: ST.coins.length - 1 };
       render();
-      soundCoin();
       if (ev.choice) showChoice();
       else showCheer('coin', ST.canExchange ? '手持ち' + ST.held + '枚' : 'ご褒美まであと' + (ST.coinSet - ST.held) + '枚', 'コインゲット！', ev.text + ' 行けない週にも使えます。', coinSVG('coinsvg'));
     });

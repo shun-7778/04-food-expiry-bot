@@ -101,6 +101,7 @@ try {
 
   check('読み込むとスタンプラリーが出る', await visible('#app'));
   check('最初はほめる画面・ご褒美の箱・選択画面が出ていない', !(await visible('#cheer')) && !(await visible('#party')) && !(await visible('#choice')) && !(await visible('#busy')));
+  check('音のスイッチは無い（音は鳴らさない）', !(await ev('!!document.getElementById("soundOn") || /AudioContext/.test(document.documentElement.innerHTML)')));
   check('マスが40個', (await ev('document.querySelectorAll(".node").length')) === 40);
   check('横スクロールが出ない', (await ev('document.documentElement.scrollWidth - innerWidth')) <= 0);
   const ov = await ev(`(function(){var d=[].slice.call(document.querySelectorAll('.deco > g')).map(function(g){return g.getBoundingClientRect();});

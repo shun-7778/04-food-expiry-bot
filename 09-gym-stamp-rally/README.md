@@ -68,7 +68,7 @@
 | `main.gs` | 記録シートの読み書き、LINE の送受信（Webhook）、声かけ、リッチメニュー、`testConfig` | ○ |
 | `webapp.gs` | 画面（`doGet`）と、画面から呼ぶ API（`webStamp` など）、公開 URL・枠ページ URL | ○ |
 | `security.gs` | Webhook の合言葉（`?s=`）と画面のトークン（`?k=`） | ○ |
-| `web.html` | スタンプラリーの画面（見た目・アニメーション・効果音もすべてここ） | ○ |
+| `web.html` | スタンプラリーの画面（見た目・アニメーションもすべてここ。音は鳴らさない） | ○ |
 | `RichMenuImage.gs` | リッチメニューの画像（base64）。`richmenu.mjs` が作る。手で直さない | ○ |
 | `appsscript.json` | タイムゾーン（東京）と Web アプリの公開設定 | ○ |
 | `richmenu.html` / `richmenu.mjs` / `richmenu.png` | メニュー画像の元・作るスクリプト・できた画像 | × |
