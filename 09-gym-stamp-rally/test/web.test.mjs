@@ -111,6 +111,21 @@ try {
   check('季節の絵が文字やマスと重ならない', ov === 0, '重なり ' + ov);
   await shot('w01-top');
 
+  // 並び：タブは上に固定、「消す」は大きなボタンのすぐ下、案内は一番下、区切り線とコインの記録は無い
+  const order = (panel) => ev(`(function(){var p=document.querySelector(${JSON.stringify(panel)});
+    return [].slice.call(p.children).map(function(e){return e.id||e.className;}); })()`);
+  await ev('window.scrollTo(0, 1500)'); await sleep(200);
+  check('下にスクロールしてもタブが上に見えている', await ev('(function(){var r=document.querySelector(".tabs").getBoundingClientRect();return r.top>=0&&r.top<40;})()'));
+  await ev('window.scrollTo(0, 0)');
+  const so = await order('#panelStamp');
+  check('スタンプ：ボタン → 消す → 案内（一番下）の順', so.slice(-3).join() === 'sticky-act,erase,stampHint', so.join());
+  check('「消す」の上に区切り線が無い', (await ev('getComputedStyle(document.getElementById("erase")).borderTopStyle')) === 'none');
+  check('コインの記録は無い', !(await ev('!!document.getElementById("coinLog") || document.body.innerText.includes("コインの記録")')));
+  await click('#tabCoin');
+  const co = await order('#panelCoin');
+  check('コイン：ボタンのすぐ下に「消す」', co.slice(-2).join() === 'sticky-act,erase', co.join());
+  await click('#tabStamp');
+
   // サーバーの返事を待つあいだも、画面全体が崩れない（以前は body が黒く細くなっていた）
   const layout = () => ev(`(function(){var b=document.body.getBoundingClientRect(), s=getComputedStyle(document.body);
     return { w: Math.round(b.width), iw: innerWidth, bg: s.backgroundColor, pos: s.position }; })()`);

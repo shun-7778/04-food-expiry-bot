@@ -65,7 +65,8 @@ h1 svg { width: clamp(44px, 9vw, 60px); height: auto; flex: 0 0 auto; }
 @media (max-width: 860px) { .side { position: static; } }
 
 /* tabs */
-.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface); padding: 5px; border-radius: 16px; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface); padding: 5px; border-radius: 16px;
+  position: sticky; top: calc(8px + env(safe-area-inset-top, 0px)); z-index: 6; box-shadow: 0 0 0 8px var(--bg); }
 .tab {
   font: inherit; font-weight: 700; font-size: 15px; border: 0; border-radius: 12px; padding: 10px 8px; cursor: pointer;
   background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -226,13 +227,6 @@ span.stamp > svg { display: block; width: 100%; height: 100%; }
 .cslot.just .hole svg { animation: flipIn .6s cubic-bezier(.2,.9,.3,1.3) both; }
 .wallet .empty { color: var(--muted); font-size: 13px; }
 @keyframes flipIn { from { transform: translateY(-60%) rotateY(540deg) scale(1.4); opacity: 0; } to { transform: none; opacity: 1; } }
-.log { display: grid; gap: 6px; }
-.log h3 { margin: 0; font-size: 14px; }
-.log ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.log li { display: flex; justify-content: space-between; gap: 8px; background: var(--bg); border-radius: 12px; padding: 8px 12px; font-size: 14px; }
-.log li span { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.log li.use b { color: var(--gold-deep); }
-.log .empty { color: var(--muted); font-size: 13px; }
 
 /* buttons */
 .btn {
@@ -265,9 +259,10 @@ span.stamp > svg { display: block; width: 100%; height: 100%; }
 }
 .sticky-act .btn.coin:not([disabled]) { box-shadow: 0 4px 0 var(--gold-deep), 0 10px 24px rgba(34,48,58,.18); }
 .sub-act { display: flex; justify-content: center; }
-.hint { text-align: center; font-size: 13px; color: var(--muted); margin: -6px 0 0; }
+.hint { text-align: center; font-size: 13px; color: var(--muted); margin: 0; }
+.hint:empty { display: none; }
 
-.erase { display: grid; justify-items: center; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.erase { display: grid; justify-items: center; gap: 8px; }
 .erase p { margin: 0; font-size: 14px; text-align: center; }
 .erase .row { display: flex; gap: 8px; }
 .demo { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
@@ -465,6 +460,7 @@ body.is-busy .board-col { pointer-events: none; }
       </div>
       <div id="board"></div>
       <div class="sticky-act"><button type="button" class="btn" id="stampBtn">今週ジムに行った！</button><span id="useWrapStamp"></span></div>
+      <!-- ここに「最後のスタンプを1つ消す」（#erase）が render で差し込まれる -->
       <p class="hint" id="stampHint"></p>
     </div>
 
@@ -477,7 +473,6 @@ body.is-busy .board-col { pointer-events: none; }
         <div class="tray" id="tray"></div>
       </div>
       <div class="sticky-act"><button type="button" class="btn coin" id="coinBtn">今週もう1回行った！</button><span id="useWrapCoin"></span></div>
-      <div class="log" id="coinLog"></div>
     </div>
 
     <div class="erase" id="erase"></div>
@@ -935,18 +930,6 @@ body.is-busy .board-col { pointer-events: none; }
     document.getElementById('cUsed').textContent = ST.used;
     document.getElementById('cNext').innerHTML = ST.canExchange ? '<b>交換できます</b>' : 'あと<b>' + (set - held) + '</b>枚でご褒美';
     document.getElementById('coinBadge').textContent = held;
-
-    var ev = ST.coins.map(function (c) { return { d: c.date, id: c.id, t: 'earn' }; })
-      .concat(ST.squares.filter(function (s) { return s.paid; }).map(function (s) { return { d: s.date, id: s.id, t: 'use', n: s.n }; }))
-      .concat(ST.exchanges.map(function (x) { return { d: x.date, id: x.id, t: 'gift', name: x.name }; }))
-      .sort(function (a, b) { return b.id - a.id; });
-    var g2 = '<h3>コインの記録</h3>';
-    g2 += ev.length ? '<ul>' + ev.map(function (e) {
-      if (e.t === 'earn') return '<li class="earn">もう1回行ってコインゲット<span>' + mdw(e.d) + '</span></li>';
-      if (e.t === 'gift') return '<li class="use"><b>5枚使ってご褒美「' + e.name + '」と交換</b><span>' + mdw(e.d) + '</span></li>';
-      return '<li class="use"><b>コインを使って' + e.n + 'マス目を埋めた</b><span>' + mdw(e.d) + '</span></li>';
-    }).join('') + '</ul>' : '<div class="empty">まだありません</div>';
-    document.getElementById('coinLog').innerHTML = g2;
   }
 
   function renderProgress() {
@@ -971,7 +954,7 @@ body.is-busy .board-col { pointer-events: none; }
     document.getElementById('useWrapStamp').innerHTML = useBtnHTML();
     document.getElementById('useWrapCoin').innerHTML = useBtnHTML();
     document.getElementById('stampHint').textContent = ST.weekPaid ? '今週はコインで埋めています。行けたらスタンプに変えて、コインは戻ります'
-      : ST.weekDone ? 'もう1回行ったら「コイン」タブでコインがもらえます'
+      : ST.weekDone ? 'もう1回行ったらコインがもらえるよ！'
       : ST.canUse ? '行けない週は「コインを使う」で、行ったことにできます' : '';
     cb.disabled = !ST.canEarn;
     cb.textContent = ST.canEarn ? '今週もう1回行った！' : ST.weekPaid ? '今週はコインで埋めた週です'
@@ -1000,6 +983,8 @@ body.is-busy .board-col { pointer-events: none; }
     document.getElementById('panelStamp').hidden = !st;
     var pc = document.getElementById('panelCoin');
     pc.hidden = st; pc.style.display = st ? '' : 'grid';
+    // 「最後の〜を1つ消す」は、開いているタブの大きなボタンのすぐ下に置く
+    document.querySelector((st ? '#panelStamp' : '#panelCoin') + ' .sticky-act').after(document.getElementById('erase'));
     document.getElementById('board').innerHTML = renderBoard();
     renderCoins(); renderProgress(); renderButtons(); renderErase();
     document.getElementById('app').hidden = false;
