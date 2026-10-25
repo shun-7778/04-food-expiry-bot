@@ -12,6 +12,9 @@
 | `09-gym-stamp-rally/` | ジムスタンプラリー（Let's Go Mt.Fuji！！）の LINE Bot。週1回のジム通いをスタンプで記録し、声かけする。仕様と直し方は [README](09-gym-stamp-rally/README.md)、手順は [SETUP.md](09-gym-stamp-rally/SETUP.md) |
 | `docs/` | GitHub Pages の枠ページ。`docs/index.html` は食材管理、`docs/gym/` はジムスタンプラリー |
 
+`04-food-expiry/.claspignore` は、clasp が GAS へ送るファイルを Bot 本体の
+3ファイルだけに限定している（`icons/*.html` などが混入しないように）。
+
 ## 動作の全体像
 
 ```
@@ -50,9 +53,28 @@
 [04-food-expiry/SETUP.md](04-food-expiry/SETUP.md) に、LINE チャネルの作成から
 週次トリガーの設定までの手順をまとめてある。
 
+## コードの反映
+
+`04-food-expiry/` はこのリポジトリが原本で、**実行される実体は Google Apps Script 側**。
+変更しただけでは動作は変わらない。
+
+`clasp`（Apps Script の公式CLI）を設定してあれば、次の2つで反映できる。
+
+```bash
+cd 04-food-expiry
+clasp push                              # コードを GAS へ
+clasp deploy -i <デプロイID> -d "説明"   # 新バージョンとして本番へ
+```
+
+**`push` だけでは LINE に反映されない。** ウェブアプリはデプロイし直すまで
+古いバージョンが動き続ける。
+
+初回の設定手順は [04-food-expiry/SETUP.md の付録](04-food-expiry/SETUP.md#付録-clasp-で反映を自動化する)
+にまとめてある。clasp を使わない場合は、GAS エディタに手で貼り直して
+「デプロイを管理 → 編集 → 新バージョン」でも同じことができる。
+
 ## 注意
 
-`04-food-expiry/Code.gs` はこのリポジトリが原本で、**実行される実体は Google Apps Script 側**。
-変更したら GAS エディタに貼り直し、新バージョンとしてデプロイする必要がある。
-
 API キーやアクセストークンはコードに含めず、GAS のスクリプトプロパティで管理している。
+clasp の認証情報（`~/.clasprc.json`）とプロジェクト設定（`.clasp.json`）も
+リポジトリには入れない。

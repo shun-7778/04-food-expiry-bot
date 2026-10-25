@@ -38,4 +38,6 @@
 09-gym-stamp-rally/.clasp.json
 09-gym-stamp-rally/test/shots/
 09-gym-stamp-rally/LOCAL.md
+# clasp のローカル設定。スクリプトIDとデプロイIDが入るので追跡しない
+04-food-expiry/.clasp.json
 .clasprc.json
