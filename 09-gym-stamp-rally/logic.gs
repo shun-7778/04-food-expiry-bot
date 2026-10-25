@@ -31,7 +31,7 @@ var GYM_SPECIAL = {
 };
 var GYM_COIN_REWARD = '手作りお菓子';
 
-var GYM_KINDS = ['dumbbell', 'heart', 'star', 'sakura', 'flame', 'hanamaru'];
+var GYM_KINDS = ['dumbbell', 'heart', 'star', 'sakura', 'flame', 'hanamaru', 'shoe', 'crown', 'drop', 'clover'];
 var GYM_PRAISES = [
   ['えらい！', '今週もちゃんと行けたね！'],
   ['すごい！', '行くまでが一番大変。そこを越えたのがすごい！'],

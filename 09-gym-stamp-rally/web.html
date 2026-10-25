@@ -33,6 +33,10 @@
   --ink-pink: #F2508E;
   --ink-orange: #FF8A1F;
   --ink-purple: #8C5CF5;
+  --ink-teal: #0EA5A4;
+  --ink-amber: #E39B00;
+  --ink-sky: #1AA3E0;
+  --ink-lime: #6DAA12;
   --gold: #F5B300;
   --gold-deep: #C47F00;
   --gold-soft: #FFF3C4;
@@ -553,7 +557,8 @@ body.is-busy .board-col { pointer-events: none; }
   var ST = null;
   var V = { tab: START_TAB, just: null, erasing: false, busy: false };
 
-  var INKS = { dumbbell: '--ink-blue', heart: '--ink-pink', star: '--ink-green', sakura: '--ink-red', flame: '--ink-orange', hanamaru: '--ink-purple' };
+  var INKS = { dumbbell: '--ink-blue', heart: '--ink-pink', star: '--ink-green', sakura: '--ink-red', flame: '--ink-orange', hanamaru: '--ink-purple',
+    shoe: '--ink-teal', crown: '--ink-amber', drop: '--ink-sky', clover: '--ink-lime' };
 
   // ---- dates（'yyyy-MM-dd'） ----
   function md(ymd) { var p = ymd.split('-'); return Number(p[1]) + '/' + Number(p[2]); }
@@ -639,7 +644,25 @@ body.is-busy .board-col { pointer-events: none; }
         return '<path fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="5" d="' + scallop(50, 50, 41, 10) + '"/>' + label('よく', 46, 18) + label('できました', 66, 14);
       case 'hanamaru':
         return '<path fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="5" d="' + scallop(50, 50, 41, 12) + '"/>' +
-          '<path fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" d="M45 50 a5 5 0 1 1 10 0 a10 10 0 1 1 -20 0 a15 15 0 1 1 30 0 a20 20 0 1 1 -40 0 a25 25 0 1 1 50 0"/>';
+          '<path transform="translate(50 40) scale(.72) translate(-50 -50)" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" d="M45 50 a5 5 0 1 1 10 0 a10 10 0 1 1 -20 0 a15 15 0 1 1 30 0 a20 20 0 1 1 -40 0 a25 25 0 1 1 50 0"/>' +
+          label('さいこう！', 77, 12);
+      case 'shoe':
+        return disc() + '<path fill="currentColor" d="M20 60 L21 36 Q22 31 27 31 L37 31 Q40 41 50 44 L69 48 Q80 50 80 58 L80 60 Z"/>' +
+          '<rect x="19" y="60" width="62" height="6" rx="3" fill="currentColor" fill-opacity=".55"/>' +
+          '<path fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" d="M40 39 L35 45 M46 42 L41 48 M52 45 L47 51"/>' + label('GO!GO!', 80, 13);
+      case 'crown':
+        return disc() + '<path fill="currentColor" d="M24 60 L22 32 L37 45 L50 24 L63 45 L78 32 L76 60 Z"/>' +
+          '<circle cx="22" cy="30" r="4" fill="currentColor"/><circle cx="50" cy="22" r="4" fill="currentColor"/><circle cx="78" cy="30" r="4" fill="currentColor"/>' +
+          '<rect x="24" y="61" width="52" height="6" rx="2" fill="currentColor"/><circle cx="50" cy="51" r="4" fill="#fff"/>' + label('えらすぎ', 81, 12);
+      case 'drop':
+        return disc() + '<path fill="currentColor" d="M50 16 C59 31 67 39 67 50 C67 60 59 66 50 66 C41 66 33 60 33 50 C33 39 41 31 50 16Z"/>' +
+          '<path fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" d="M42 48 Q42 41 47 36"/>' + label('いい汗！', 80, 13);
+      case 'clover':
+        return disc() + '<g fill="currentColor">' + [0, 90, 180, 270].map(function (rot) {
+            return '<path transform="rotate(' + rot + ' 50 44)" d="M50 44 C44 38 38 36 38 30 C38 25 43 23 46 25 C48 26 49 28 50 30 C51 28 52 26 54 25 C57 23 62 25 62 30 C62 36 56 38 50 44Z"/>';
+          }).join('') + '</g>' +
+          '<path fill="none" stroke="#fff" stroke-width="2" d="M50 31 L50 57 M37 44 L63 44"/>' +
+          '<path fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" d="M53 56 Q55 62 60 65"/>' + label('やったね', 80, 13);
       case 'medal':
         return '<path fill="var(--gold)" fill-opacity=".35" stroke="currentColor" stroke-width="4" d="' + scallop(50, 50, 44, 16) + '"/>' +
           '<circle cx="50" cy="50" r="32" fill="var(--gold-soft)" stroke="currentColor" stroke-width="2.5"/>' + label(String(n), 60, 32) + label('回達成', 76, 11);

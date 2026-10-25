@@ -249,6 +249,17 @@ try {
   await shot('w05-reward');
   await click('#partyBtn');
 
+  // スタンプは10種類。どれも台紙に絵と言葉が出る
+  const kinds = await ev('GYM_KINDS');
+  check('スタンプは10種類', kinds.length === 10, JSON.stringify(kinds));
+  await ev(`(function(){MOCK.rows=[];GYM_KINDS.forEach(function(k,i){MOCK.rows.push({id:i+1,type:'スタンプ',date:'2026-11-0'+(i%9+1),kind:k,r:0,title:'a',text:'b',status:'有効'});});})()`);
+  await setToday('2026-12-28'); await click('#tabStamp'); await ev('window.scrollTo(0,0)');
+  const drawn = await ev(`[].slice.call(document.querySelectorAll('.node.done .stamp')).slice(0,10).map(function(s){var t=s.querySelector('text');return [s.querySelectorAll('path,circle,rect,polygon').length, t?t.textContent:''];})`);
+  check('10種類とも絵が描かれる', drawn.length === 10 && drawn.every((d) => d[0] >= 1 && d[1]), JSON.stringify(drawn));
+  const words = drawn.map((d) => d[1]).join(',');
+  check('新しい4種類と、はなまるに言葉が入る', ['さいこう！', 'GO!GO!', 'えらすぎ', 'いい汗！', 'やったね'].every((w) => words.includes(w)), words);
+  await shot('w07-kinds', { x: 0, y: 0, width: 390, height: 900 });
+
   const fullH = await ev('document.documentElement.scrollHeight');
   await ev('window.scrollTo(0,0)');
   await shot('w06-full', { x: 0, y: 0, width: 390, height: Math.min(fullH, 3000) });
