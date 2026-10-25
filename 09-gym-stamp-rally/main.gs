@@ -225,41 +225,48 @@ function notifyAfter_(event, state, replyToken) {
 
 // ---------------------------------------------------------------- 声かけ（時間トリガー）
 
-var MIDWEEK_LINES = [
-  '今週のジム、行けそう？',
-  '今週まだみたい。週末に行けそう？',
-  '水曜日。今週のスタンプ、まだ空いてるよ。'
+// 金曜の夜に週1回だけ。「1週間おつかれさま！」のあとに、今週行けたかどうかで続きを変える
+var FRIDAY_HELLO = '1週間おつかれさま！';
+var FRIDAY_DONE_LINES = [
+  '今週は仕事もジムもがんばってえらい！！',
+  '今週もちゃんとジムに行けてる！ほんとにすごい！！',
+  'ジムも行けた最高の1週間！週末はゆっくり休んでね〜'
 ];
-var WEEKEND_LINES = [
-  '今週ラストチャンス！今日行けそう？',
-  '今週あと少し。30分だけでも行けたらスタンプ1つ。'
+var FRIDAY_TODO_LINES = [
+  '週末、ジム行けそう？？30分だけでもスタンプ1つ！',
+  '週末にジムでリフレッシュしよう！スタンプが待ってるよ〜',
+  '今週のスタンプはまだ空いてるよ！週末に行けたら気分も上がる！'
 ];
+var FRIDAY_PAID_LINE = '今週はコインでクリア済み！週末に行けたらスタンプに変えられるよ〜';
 
-/** 水曜の夜：今週まだ行っていなければ声をかける */
-function remindMidweek() {
-  var st = currentState_();
-  if (st.weekDone || !st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
-  var text = gymPick_(MIDWEEK_LINES, Math.random);
-  if (st.next) text += '\n' + st.next.label + 'まであと' + (st.next.n - st.squares.length) + 'マス。';
-  sendPush_([playerId_()], [{ type: 'text', text: text }]);
-}
-
-/** 日曜の夕方：まだ行っていなければ、コインがあれば使うかどうかも聞く */
-function remindWeekend() {
-  var st = currentState_();
-  if (st.weekDone || !st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
-  var msg;
-  if (st.held > 0) {
-    msg = { type: 'text', text: '今週まだ行けてないね。今日行けそう？\n行けなかったら、コインを使って今週の分にする？（残り' + st.held + '枚）' };
+/** 金曜の声かけの中身。今週が終わっていなければ、コインがあるときだけ「コインを使う」ボタンを付ける */
+function fridayMessage_(st, rand) {
+  var lines = [FRIDAY_HELLO];
+  if (st.weekPaid) lines.push(FRIDAY_PAID_LINE);
+  else lines.push(gymPick_(st.weekDone ? FRIDAY_DONE_LINES : FRIDAY_TODO_LINES, rand));
+  var left = st.next ? st.next.label + 'まであと' + (st.next.n - st.squares.length) + 'マス' : '';
+  if (left) lines.push('（' + left + '）');
+  var msg = { type: 'text', text: lines.join('\n') };
+  if (!st.weekDone && st.held > 0) {
+    msg.text += '\n行けなさそうなら、コインで今週クリアにもできるよ（残り' + st.held + '枚）';
     // その場でコインを使えるボタンだけ付ける（画面はメニューから開く）
     msg.quickReply = { items: [{
       type: 'action', action: { type: 'postback', label: 'コインを使う', data: 'use_coin', displayText: 'コインを使う' }
     }] };
-  } else {
-    msg = { type: 'text', text: gymPick_(WEEKEND_LINES, Math.random) };
   }
-  sendPush_([playerId_()], [msg]);
+  return msg;
 }
+
+/** 金曜の夜：週1回の声かけ */
+function remindFriday() {
+  var st = currentState_();
+  if (!st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
+  sendPush_([playerId_()], [fridayMessage_(st, Math.random)]);
+}
+
+// 以前の水曜・日曜のトリガーが残っていたら、動いたときに金曜のトリガーへ付け替える（何も送らない）
+function remindMidweek() { setupTriggers(); }
+function remindWeekend() { setupTriggers(); }
 
 /**
  * 声かけのトリガーを設定する。GASエディタから1回だけ実行する。
@@ -267,11 +274,10 @@ function remindWeekend() {
  */
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (['remindMidweek', 'remindWeekend'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['remindMidweek', 'remindWeekend', 'remindFriday'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('remindMidweek').timeBased().onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(20).create();
-  ScriptApp.newTrigger('remindWeekend').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(17).create();
-  console.log('水曜20時台と日曜17時台の声かけを設定しました');
+  ScriptApp.newTrigger('remindFriday').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(20).create();
+  console.log('金曜20時台の声かけを設定しました');
 }
 
 // ---------------------------------------------------------------- Webhook

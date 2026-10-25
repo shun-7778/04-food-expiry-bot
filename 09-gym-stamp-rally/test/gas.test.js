@@ -84,7 +84,7 @@ function makeEnv() {
       getProjectTriggers: () => triggers.slice(),
       deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
       newTrigger(fn) { const t = { fn, getHandlerFunction: () => fn }; const chain = { timeBased: () => chain, onWeekDay: (d) => { t.day = d; return chain; }, atHour: (h) => { t.hour = h; return chain; }, create: () => { triggers.push(t); return t; } }; return chain; },
-      WeekDay: { WEDNESDAY: 'WED', SUNDAY: 'SUN' }
+      WeekDay: { WEDNESDAY: 'WED', FRIDAY: 'FRI', SUNDAY: 'SUN' }
     },
     ContentService: { createTextOutput: (s) => ({ setMimeType() { return s; } }), MimeType: { JSON: 'json' } },
     HtmlService: {
@@ -183,16 +183,16 @@ env.setNow('2026-10-26');  // 月曜＝新しい週
 threw = ''; try { g.webEarnCoin(token); } catch (e) { threw = e.message; }
 check('新しい週はスタンプ前にコインをもらえない', /先に今週のスタンプ/.test(threw), threw);
 
-// ---------------------------------------------------------------- 声かけ
+// ---------------------------------------------------------------- 声かけ（金曜の夜に週1回）
 env.clear();
-env.setNow('2026-10-28', 20);
-g.remindMidweek();
-check('水曜：まだ行っていなければ本人に声かけ', env.pushes().length === 1 && env.pushes()[0].body.to === WIFE, JSON.stringify(env.pushes().map((c) => c.body)));
-env.clear();
-env.setNow('2026-11-01', 17);
-g.remindWeekend();
-const wk = env.pushes()[0];
-check('日曜：コインがあれば「コインを使う」ボタン付きで聞く', wk && wk.body.messages[0].quickReply.items.some((i) => i.action.data === 'use_coin'), wk && JSON.stringify(wk.body));
+env.setNow('2026-10-30', 20);
+g.remindFriday();
+const fr = env.pushes()[0];
+const frText = fr ? fr.body.messages[0].text : '';
+check('金曜：本人にだけ1通送る', env.pushes().length === 1 && fr.body.to === WIFE, JSON.stringify(env.pushes().map((c) => c.body)));
+check('金曜：「1週間おつかれさま！」から始まる', frText.startsWith('1週間おつかれさま！'), frText);
+check('金曜（まだ）：週末に行けそうか聞く', g.FRIDAY_TODO_LINES.some((l) => frText.includes(l)), frText);
+check('金曜（まだ）：コインがあれば「コインを使う」ボタン付き', fr && fr.body.messages[0].quickReply.items.some((i) => i.action.data === 'use_coin'), fr && JSON.stringify(fr.body));
 
 // ---------------------------------------------------------------- LINE から「コインを使う」
 env.clear();
@@ -202,11 +202,16 @@ check('「コインを使う」で今週が埋まり、コインが減る', st.s
 check('LINE からの操作は返信で返す（無料枠を使わない）', env.replies().length === 1 && env.pushes().filter((c) => c.body.to === WIFE).length === 0);
 check('夫には穴埋めしたことを知らせる', env.pushes().some((c) => c.body.to === HUSB && /コインを使って/.test(c.body.messages[0].text)));
 env.clear();
-g.remindWeekend();
-check('今週が埋まっていれば日曜の声かけはしない', env.pushes().length === 0);
+g.remindFriday();
+const frPaid = env.pushes()[0] && env.pushes()[0].body.messages[0];
+check('金曜（コインで埋めた週）：クリア済みと伝え、ボタンは付けない', frPaid && frPaid.text.includes(g.FRIDAY_PAID_LINE) && !frPaid.quickReply, frPaid && JSON.stringify(frPaid));
 
 // ---------------------------------------------------------------- コインで埋めた週に結局行けた
 r = g.webStamp(token);
+env.clear();
+g.remindFriday();
+const frDone = env.pushes()[0] && env.pushes()[0].body.messages[0];
+check('金曜（行けた週）：ほめて、ボタンは付けない', frDone && frDone.text.startsWith('1週間おつかれさま！') && g.FRIDAY_DONE_LINES.some((l) => frDone.text.includes(l)) && !frDone.quickReply, frDone && JSON.stringify(frDone));
 check('穴埋めした週に行けたらスタンプに変わり、コインが戻る', r.event.type === 'convert' && !r.state.squares[1].paid && r.state.held === 1, JSON.stringify(r.event));
 
 // ---------------------------------------------------------------- ご褒美マス（6マス目はプチ）
@@ -261,7 +266,14 @@ check('11マス目のご褒美は登山靴', r.event.type === 'special' && r.sta
 
 // ---------------------------------------------------------------- トリガーとメニュー
 g.setupTriggers(); g.setupTriggers();
-check('声かけのトリガーは2つ（何度実行しても増えない）', env.triggers.length === 2 && env.triggers.some((t) => t.fn === 'remindMidweek' && t.day === 'WED' && t.hour === 20) && env.triggers.some((t) => t.fn === 'remindWeekend' && t.day === 'SUN' && t.hour === 17));
+check('声かけのトリガーは金曜20時台の1つ（何度実行しても増えない）', env.triggers.length === 1 && env.triggers[0].fn === 'remindFriday' && env.triggers[0].day === 'FRI' && env.triggers[0].hour === 20, JSON.stringify(env.triggers));
+// 以前の水曜・日曜のトリガーが残っていても、動いた時点で金曜に付け替わり、何も送らない
+env.triggers.length = 0;
+env.triggers.push({ fn: 'remindMidweek', getHandlerFunction: () => 'remindMidweek' }, { fn: 'remindWeekend', getHandlerFunction: () => 'remindWeekend' });
+env.clear();
+g.remindMidweek();
+check('古いトリガーが動くと金曜の1つに付け替わる', env.triggers.length === 1 && env.triggers[0].fn === 'remindFriday', JSON.stringify(env.triggers.map((t) => t.fn)));
+check('古いトリガーが動いても LINE は送らない', env.pushes().length === 0);
 env.clear();
 g.setupRichMenu();
 const created = env.calls.find((c) => /\/richmenu$/.test(c.url) && c.method === 'post');
