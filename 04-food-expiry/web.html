@@ -201,11 +201,12 @@ body {
 .gsec.r4 .t, .gsec.r4 .jump { color: var(--r4); }
 .gsec.none .t { color: var(--sub); }
 
-/* 「個別／料理ごと」の切り替え。選んでいる側は「追加」ボタンと同じ緑地・白文字にする */
+/* 「個別／料理ごと」の切り替え。選んでいる側は「追加」ボタンと同じ緑地・白文字にする。
+   選んでいない側も品目と同じ白地＋影にして、押せるボタンだと分かるようにする */
 .seg { display: flex; gap: 8px; margin-top: 8px; }
 .seg button {
   flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 9px 10px;
-  background: var(--pill); color: var(--sub);
+  background: var(--card); color: var(--text); box-shadow: var(--shadow);
   font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .seg button.on { background: var(--green); color: #fff; box-shadow: var(--shadow); }
