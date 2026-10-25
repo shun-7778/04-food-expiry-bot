@@ -107,8 +107,10 @@ function webUrl_(tab) {
   // 誰のために作ったURLかを載せる。画面はこれを見て「あなた」を決め、端末に覚える。
   // URL そのものが鍵なので、呼び名を足しても渡せる範囲は変わらない
   var by = userName_();
+  // 枠ページへは # の後ろで渡す。? だと GitHub のサーバーにトークンごと届いて
+  // アクセスログに残りうるが、# の後ろは端末の中だけで読まれて送られない
   return WEB_FRAME_URL
-    + '?u=' + encodeURIComponent(execUrl_())
+    + '#u=' + encodeURIComponent(execUrl_())
     + '&k=' + webToken_()
     + '&tab=' + webTab_(tab)
     + (by ? '&p=' + encodeURIComponent(by) : '');

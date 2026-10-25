@@ -272,7 +272,7 @@ function startLoading_(events) {
  *
  * ALLOWED_USER_IDS にカンマ区切りで並べる。1人だけなら従来どおり
  * ALLOWED_USER_ID でもよく、両方あれば両方を許す（設定を書き換えずに人を増やせる）。
- * どちらも空なら誰でも使えてしまうので、webhook の秘密だけが頼りになる。必ず設定すること。
+ * どちらも空なら誰も使えない（isAllowedSender_ が全員を弾く）。必ず設定すること。
  */
 function allowedUserIds_() {
   var raw = (prop_('ALLOWED_USER_IDS', false) || '') + ',' + (prop_('ALLOWED_USER_ID', false) || '');
@@ -412,10 +412,17 @@ function withLock_(fn) {
   }
 }
 
-/** 許可した人以外からの投稿を弾く。未設定なら誰でも通す */
+/**
+ * 許可した人以外からの投稿を弾く。
+ * 未設定なら誰も通さない。設定漏れのまま公開されて、webhook の秘密だけが頼りになるのを避ける
+ * （自分の userId を知る「id」コマンドは、この判定より前で答えるので設定前でも使える）
+ */
 function isAllowedSender_(event) {
   var allowed = allowedUserIds_();
-  if (!allowed.length) return true;
+  if (!allowed.length) {
+    console.warn('ALLOWED_USER_IDS が未設定のため、すべての投稿を無視しています');
+    return false;
+  }
 
   var id = event && event.source && event.source.userId;
   return !!id && allowed.indexOf(id) >= 0;
@@ -4778,6 +4785,24 @@ function testConfig() {
   ['LINE_CHANNEL_ACCESS_TOKEN', 'ANTHROPIC_API_KEY'].forEach(function (k) {
     console.log(k + ': ' + (prop_(k, false) ? 'OK' : '*** 未設定 ***'));
   });
+
+  // 守りの設定。どちらも欠けると、外から読み書きされる穴になる
+  console.log('ALLOWED_USER_IDS: ' + (allowedUserIds_().length
+    ? allowedUserIds_().length + '人 OK' : '*** 未設定（誰も使えません） ***'));
+  var secret = webhookSecret_();
+  if (!secret) {
+    console.log('WEBHOOK_SECRET: *** 未設定（誰でも POST できます）。setupWebhookSecret() を実行すること ***');
+  } else {
+    // LINE に登録された Webhook URL が今の秘密を持っているか。秘密そのものはログに出さない
+    var ep = UrlFetchApp.fetch('https://api.line.me/v2/bot/channel/webhook/endpoint', {
+      headers: { Authorization: 'Bearer ' + prop_('LINE_CHANNEL_ACCESS_TOKEN', true) },
+      muteHttpExceptions: true
+    });
+    var endpoint = ep.getResponseCode() === 200 ? (JSON.parse(ep.getContentText()).endpoint || '') : '';
+    console.log('WEBHOOK_SECRET: 設定済み / LINE 側の URL: '
+      + (endpoint.indexOf('s=' + secret) >= 0 ? '一致 OK'
+        : '*** 不一致。setupWebhookSecret() の URL を LINE に貼り直すこと ***'));
+  }
 
   [MODEL_VISION, MODEL_TEXT].forEach(function (model) {
     var res = UrlFetchApp.fetch('https://api.anthropic.com/v1/models/' + model, {

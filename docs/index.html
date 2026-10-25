@@ -19,11 +19,13 @@
 // 買い物リスト／在庫の画面（Google Apps Script）を、そのまま枠として表示するだけのページ。
 // Apps Script を直接開くと Google の注意バーが上に出るので、それを避けるために挟んでいる。
 //
-// 表示先とトークンは URL のパラメータで受け取る（このページ自体には何も持たせない）:
-//   ?u=<Apps Script の /exec URL を encodeURIComponent したもの>&k=<トークン>&tab=<shop|stock>
+// 表示先とトークンは URL の # の後ろで受け取る（このページ自体には何も持たせない）:
+//   #u=<Apps Script の /exec URL を encodeURIComponent したもの>&k=<トークン>&tab=<shop|stock>
 // tab は最初に開くタブ。リッチメニューの「買い物リスト表示」「在庫確認」から使う。
+// # の後ろはサーバーへ送られないので、トークンが GitHub のログに残らない。
+// 以前配った ? 付きのリンクも開けるよう、# が無ければ ? を読む。
 (function () {
-  var q = new URLSearchParams(location.search);
+  var q = new URLSearchParams(location.hash.length > 1 ? location.hash.slice(1) : location.search);
   var url = q.get('u') || '';
   var key = q.get('k') || '';
   // 知らない値を素通しせず、決め打ちの2つだけを中へ渡す
