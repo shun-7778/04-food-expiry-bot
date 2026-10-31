@@ -42,6 +42,31 @@ function secretEquals_(a, b) {
   return diff === 0;
 }
 
+// ---------------------------------------------------------------- 管理用の関数を守る
+// 名前が _ で終わらない関数は、公開中の画面（トークンが違うときの案内ページも含む）から
+// google.script.run で誰でも呼べてしまう。そこで管理用の関数は GAS エディタから実行したときだけ動かし、
+// 声かけは本物のトリガーから呼ばれたときだけ動かす。
+
+/** GAS エディタからスクリプトの持ち主が実行しているか（匿名の画面から呼ばれると、ここは空になる） */
+function isEditor_() {
+  try {
+    var me = Session.getActiveUser().getEmail();
+    return !!me && me === Session.getEffectiveUser().getEmail();
+  } catch (err) {
+    return false;
+  }
+}
+function requireEditor_() {
+  if (!isEditor_()) throw new Error('この操作は GAS エディタからだけ実行できます。');
+}
+
+/** このプロジェクトに登録されているトリガーから呼ばれたか（triggerUid は外からは分からない） */
+function isOwnTrigger_(e) {
+  var uid = e && e.triggerUid;
+  if (!uid) return false;
+  return ScriptApp.getProjectTriggers().some(function (t) { return String(t.getUniqueId()) === String(uid); });
+}
+
 // ---------------------------------------------------------------- webhook（POST）
 
 function webhookSecret_() { return secret_(PROP_WEBHOOK_SECRET, false); }
@@ -58,6 +83,7 @@ function webhookRequestOk_(e) {
 
 /** 合言葉を作り、LINE に登録する Webhook URL をログに出す。GASエディタから実行する */
 function setupWebhookSecret() {
+  requireEditor_();
   var url = assertExecUrlOrService_() + '?s=' + secret_(PROP_WEBHOOK_SECRET, true);
   console.log('LINE Developers Console の Webhook URL にこれを設定してください:');
   console.log(url);
@@ -66,6 +92,7 @@ function setupWebhookSecret() {
 
 /** 合言葉を作り直す。実行した瞬間に古い URL は無効になるので、すぐ LINE 側を貼り替えること */
 function rotateWebhookSecret() {
+  requireEditor_();
   PropertiesService.getScriptProperties().deleteProperty(PROP_WEBHOOK_SECRET);
   PROP_CACHE_ = null;
   return setupWebhookSecret();
@@ -81,6 +108,7 @@ function webTokenOk_(token) { return secretEquals_(token, webToken_()); }
  * 実行後は setupRichMenu() も実行し直す（メニューに古いURLが焼き込まれているため）。
  */
 function rotateWebToken() {
+  requireEditor_();
   PropertiesService.getScriptProperties().deleteProperty(PROP_WEB_TOKEN);
   PROP_CACHE_ = null;
   return showWebUrl();

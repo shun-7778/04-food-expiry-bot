@@ -58,6 +58,7 @@ var COL = { ID: 1, CREATED: 2, TYPE: 3, DATE: 4, KIND: 5, R: 6, TITLE: 7, TEXT: 
  * すでに SPREADSHEET_ID があれば（ドライブで作って ID を入れた場合も）作り直さず、シートを整えるだけ。
  */
 function setupSpreadsheet() {
+  requireEditor_();
   var id = prop_('SPREADSHEET_ID');
   if (id) {
     sheet_();
@@ -225,53 +226,63 @@ function notifyAfter_(event, state, replyToken) {
 
 // ---------------------------------------------------------------- 声かけ（時間トリガー）
 
-var MIDWEEK_LINES = [
-  '今週のジム、行けそう？',
-  '今週まだみたい。週末に行けそう？',
-  '水曜日。今週のスタンプ、まだ空いてるよ。'
+// 金曜の夜に週1回だけ。「1週間おつかれさま！」のあとに、今週行けたかどうかで続きを変える
+var FRIDAY_HELLO = '1週間おつかれさま！';
+var FRIDAY_DONE_LINES = [
+  '今週は仕事もジムもがんばってえらい！！',
+  '今週もちゃんとジムに行けてる！ほんとにすごい！！',
+  'ジムも行けた最高の1週間！週末はゆっくり休んでね〜'
 ];
-var WEEKEND_LINES = [
-  '今週ラストチャンス！今日行けそう？',
-  '今週あと少し。30分だけでも行けたらスタンプ1つ。'
+var FRIDAY_TODO_LINES = [
+  '週末、ジム行けそう？？30分だけでもスタンプ1つ！',
+  '週末にジムでリフレッシュしよう！スタンプが待ってるよ〜',
+  '今週のスタンプはまだ空いてるよ！週末に行けたら気分も上がる！'
 ];
+var FRIDAY_PAID_LINE = '今週はコインでクリア済み！週末に行けたらスタンプに変えられるよ〜';
 
-/** 水曜の夜：今週まだ行っていなければ声をかける */
-function remindMidweek() {
-  var st = currentState_();
-  if (st.weekDone || !st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
-  var text = gymPick_(MIDWEEK_LINES, Math.random);
-  if (st.next) text += '\n' + st.next.label + 'まであと' + (st.next.n - st.squares.length) + 'マス。';
-  sendPush_([playerId_()], [{ type: 'text', text: text }]);
-}
-
-/** 日曜の夕方：まだ行っていなければ、コインがあれば使うかどうかも聞く */
-function remindWeekend() {
-  var st = currentState_();
-  if (st.weekDone || !st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
-  var msg;
-  if (st.held > 0) {
-    msg = { type: 'text', text: '今週まだ行けてないね。今日行けそう？\n行けなかったら、コインを使って今週の分にする？（残り' + st.held + '枚）' };
+/** 金曜の声かけの中身。今週が終わっていなければ、コインがあるときだけ「コインを使う」ボタンを付ける */
+function fridayMessage_(st, rand) {
+  var lines = [FRIDAY_HELLO];
+  if (st.weekPaid) lines.push(FRIDAY_PAID_LINE);
+  else lines.push(gymPick_(st.weekDone ? FRIDAY_DONE_LINES : FRIDAY_TODO_LINES, rand));
+  if (st.next) lines.push(st.next.label + 'まであと' + (st.next.n - st.squares.length) + '回！');
+  var msg = { type: 'text', text: lines.join('\n') };
+  if (!st.weekDone && st.held > 0) {
+    msg.text += '\n行けなさそうなら、コインで今週クリアにもできるよ（残り' + st.held + '枚）';
     // その場でコインを使えるボタンだけ付ける（画面はメニューから開く）
     msg.quickReply = { items: [{
       type: 'action', action: { type: 'postback', label: 'コインを使う', data: 'use_coin', displayText: 'コインを使う' }
     }] };
-  } else {
-    msg = { type: 'text', text: gymPick_(WEEKEND_LINES, Math.random) };
   }
-  sendPush_([playerId_()], [msg]);
+  return msg;
 }
+
+/** 金曜の夜：週1回の声かけ */
+function remindFriday(e) {
+  if (!isOwnTrigger_(e) && !isEditor_()) throw new Error('声かけはトリガーか GAS エディタからだけ実行できます。');
+  var st = currentState_();
+  if (!st.inPeriod || !playerId_()) { console.log('声かけ不要'); return; }
+  sendPush_([playerId_()], [fridayMessage_(st, Math.random)]);
+}
+
+// 以前の水曜・日曜のトリガーが残っていたら、動いたときに金曜のトリガーへ付け替える（何も送らない）
+function remindMidweek(e) { if (isOwnTrigger_(e)) setupTriggers_(); }
+function remindWeekend(e) { if (isOwnTrigger_(e)) setupTriggers_(); }
 
 /**
  * 声かけのトリガーを設定する。GASエディタから1回だけ実行する。
  * 同じ関数の古いトリガーがあれば張り替える。時刻は GAS の仕様で「その時台のどこか」になる。
  */
 function setupTriggers() {
+  requireEditor_();
+  setupTriggers_();
+}
+function setupTriggers_() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (['remindMidweek', 'remindWeekend'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['remindMidweek', 'remindWeekend', 'remindFriday'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('remindMidweek').timeBased().onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(20).create();
-  ScriptApp.newTrigger('remindWeekend').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(17).create();
-  console.log('水曜20時台と日曜17時台の声かけを設定しました');
+  ScriptApp.newTrigger('remindFriday').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(20).create();
+  console.log('金曜20時台の声かけを設定しました');
 }
 
 // ---------------------------------------------------------------- Webhook
@@ -394,6 +405,7 @@ function buildRichMenu_() {
  * メニューには画面のトークン入りURLが入るので、全員の既定にはせず、許可した人にだけ貼る。
  */
 function setupRichMenu() {
+  requireEditor_();
   console.log('公開URL: ' + assertExecUrl_());
   var users = allowedUserIds_();
   if (!users.length) throw new Error('PLAYER_USER_ID が未設定です。メニューには画面のURLが入るため、配る相手を決めてから作ります。');
@@ -419,6 +431,7 @@ function setupRichMenu() {
 }
 
 function deleteRichMenus() {
+  requireEditor_();
   var list = JSON.parse(lineApi_('get', 'https://api.line.me/v2/bot/richmenu/list').getContentText());
   (list.richmenus || []).forEach(function (m) {
     lineApi_('delete', 'https://api.line.me/v2/bot/richmenu/' + m.richMenuId);
@@ -430,6 +443,7 @@ function deleteRichMenus() {
 
 /** 設定の確認。GASエディタから実行する。何も書き換えない */
 function testConfig() {
+  requireEditor_();
   ['LINE_CHANNEL_ACCESS_TOKEN', 'PLAYER_USER_ID', 'WATCHER_USER_IDS', 'SPREADSHEET_ID'].forEach(function (k) {
     console.log(k + ': ' + (prop_(k) ? 'OK' : (k === 'WATCHER_USER_IDS' ? '未設定（お知らせを送らない）' : '*** 未設定 ***')));
   });

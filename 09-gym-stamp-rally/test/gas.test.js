@@ -23,6 +23,9 @@ function makeEnv() {
   const calls = [];            // LINE API 呼び出し
   let sheetRows = null;        // シートの中身（2次元配列）
   const triggers = [];
+  let trigSeq = 0;
+  // 今の実行者。'owner' は GAS エディタから持ち主が実行、'' は公開中の画面から匿名で呼ばれたとき
+  const who = { active: 'owner@example.com' };
 
   function rangeOf(r, c, nr, nc) {
     nr = nr || 1; nc = nc || 1;
@@ -83,8 +86,12 @@ function makeEnv() {
       getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/AKfyTEST/exec' }),
       getProjectTriggers: () => triggers.slice(),
       deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
-      newTrigger(fn) { const t = { fn, getHandlerFunction: () => fn }; const chain = { timeBased: () => chain, onWeekDay: (d) => { t.day = d; return chain; }, atHour: (h) => { t.hour = h; return chain; }, create: () => { triggers.push(t); return t; } }; return chain; },
-      WeekDay: { WEDNESDAY: 'WED', SUNDAY: 'SUN' }
+      newTrigger(fn) { const uid = 'trg-' + (++trigSeq); const t = { fn, uid, getHandlerFunction: () => fn, getUniqueId: () => uid }; const chain = { timeBased: () => chain, onWeekDay: (d) => { t.day = d; return chain; }, atHour: (h) => { t.hour = h; return chain; }, create: () => { triggers.push(t); return t; } }; return chain; },
+      WeekDay: { WEDNESDAY: 'WED', FRIDAY: 'FRI', SUNDAY: 'SUN' }
+    },
+    Session: {
+      getActiveUser: () => ({ getEmail: () => who.active }),
+      getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' })
     },
     ContentService: { createTextOutput: (s) => ({ setMimeType() { return s; } }), MimeType: { JSON: 'json' } },
     HtmlService: {
@@ -97,7 +104,7 @@ function makeEnv() {
   vm.createContext(ctx);
   files.forEach((f) => vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f }));
   return {
-    ctx, props, calls, triggers,
+    ctx, props, calls, triggers, who,
     setNow(ymd, hourJst = 12) { const [y, m, d] = ymd.split('-').map(Number); NOW = RealDate.UTC(y, m - 1, d, hourJst - 9, 0, 0); },
     rows: () => sheetRows,
     sheetName: () => sheetName,
@@ -183,16 +190,17 @@ env.setNow('2026-10-26');  // 月曜＝新しい週
 threw = ''; try { g.webEarnCoin(token); } catch (e) { threw = e.message; }
 check('新しい週はスタンプ前にコインをもらえない', /先に今週のスタンプ/.test(threw), threw);
 
-// ---------------------------------------------------------------- 声かけ
+// ---------------------------------------------------------------- 声かけ（金曜の夜に週1回）
 env.clear();
-env.setNow('2026-10-28', 20);
-g.remindMidweek();
-check('水曜：まだ行っていなければ本人に声かけ', env.pushes().length === 1 && env.pushes()[0].body.to === WIFE, JSON.stringify(env.pushes().map((c) => c.body)));
-env.clear();
-env.setNow('2026-11-01', 17);
-g.remindWeekend();
-const wk = env.pushes()[0];
-check('日曜：コインがあれば「コインを使う」ボタン付きで聞く', wk && wk.body.messages[0].quickReply.items.some((i) => i.action.data === 'use_coin'), wk && JSON.stringify(wk.body));
+env.setNow('2026-10-30', 20);
+g.remindFriday();
+const fr = env.pushes()[0];
+const frText = fr ? fr.body.messages[0].text : '';
+check('金曜：本人にだけ1通送る', env.pushes().length === 1 && fr.body.to === WIFE, JSON.stringify(env.pushes().map((c) => c.body)));
+check('金曜：「1週間おつかれさま！」から始まる', frText.startsWith('1週間おつかれさま！'), frText);
+check('金曜（まだ）：週末に行けそうか聞く', g.FRIDAY_TODO_LINES.some((l) => frText.includes(l)), frText);
+check('金曜：ご褒美までは「あと◯回！」で、カッコ書きにしない', /まであと\d+回！/.test(frText) && !/[（(]/.test(frText.split('\n').slice(0, 3).join('')), frText);
+check('金曜（まだ）：コインがあれば「コインを使う」ボタン付き', fr && fr.body.messages[0].quickReply.items.some((i) => i.action.data === 'use_coin'), fr && JSON.stringify(fr.body));
 
 // ---------------------------------------------------------------- LINE から「コインを使う」
 env.clear();
@@ -202,11 +210,16 @@ check('「コインを使う」で今週が埋まり、コインが減る', st.s
 check('LINE からの操作は返信で返す（無料枠を使わない）', env.replies().length === 1 && env.pushes().filter((c) => c.body.to === WIFE).length === 0);
 check('夫には穴埋めしたことを知らせる', env.pushes().some((c) => c.body.to === HUSB && /コインを使って/.test(c.body.messages[0].text)));
 env.clear();
-g.remindWeekend();
-check('今週が埋まっていれば日曜の声かけはしない', env.pushes().length === 0);
+g.remindFriday();
+const frPaid = env.pushes()[0] && env.pushes()[0].body.messages[0];
+check('金曜（コインで埋めた週）：クリア済みと伝え、ボタンは付けない', frPaid && frPaid.text.includes(g.FRIDAY_PAID_LINE) && !frPaid.quickReply, frPaid && JSON.stringify(frPaid));
 
 // ---------------------------------------------------------------- コインで埋めた週に結局行けた
 r = g.webStamp(token);
+env.clear();
+g.remindFriday();
+const frDone = env.pushes()[0] && env.pushes()[0].body.messages[0];
+check('金曜（行けた週）：ほめて、ボタンは付けない', frDone && frDone.text.startsWith('1週間おつかれさま！') && g.FRIDAY_DONE_LINES.some((l) => frDone.text.includes(l)) && !frDone.quickReply, frDone && JSON.stringify(frDone));
 check('穴埋めした週に行けたらスタンプに変わり、コインが戻る', r.event.type === 'convert' && !r.state.squares[1].paid && r.state.held === 1, JSON.stringify(r.event));
 
 // ---------------------------------------------------------------- ご褒美マス（6マス目はプチ）
@@ -261,7 +274,16 @@ check('11マス目のご褒美は登山靴', r.event.type === 'special' && r.sta
 
 // ---------------------------------------------------------------- トリガーとメニュー
 g.setupTriggers(); g.setupTriggers();
-check('声かけのトリガーは2つ（何度実行しても増えない）', env.triggers.length === 2 && env.triggers.some((t) => t.fn === 'remindMidweek' && t.day === 'WED' && t.hour === 20) && env.triggers.some((t) => t.fn === 'remindWeekend' && t.day === 'SUN' && t.hour === 17));
+check('声かけのトリガーは金曜20時台の1つ（何度実行しても増えない）', env.triggers.length === 1 && env.triggers[0].fn === 'remindFriday' && env.triggers[0].day === 'FRI' && env.triggers[0].hour === 20, JSON.stringify(env.triggers));
+// 以前の水曜・日曜のトリガーが残っていても、動いた時点で金曜に付け替わり、何も送らない
+env.triggers.length = 0;
+env.triggers.push({ fn: 'remindMidweek', getHandlerFunction: () => 'remindMidweek', getUniqueId: () => 'old-wed' }, { fn: 'remindWeekend', getHandlerFunction: () => 'remindWeekend', getUniqueId: () => 'old-sun' });
+env.clear();
+env.who.active = '';   // トリガーからの実行（エディタではない）
+g.remindMidweek({ triggerUid: 'old-wed' });
+env.who.active = 'owner@example.com';
+check('古いトリガーが動くと金曜の1つに付け替わる', env.triggers.length === 1 && env.triggers[0].fn === 'remindFriday', JSON.stringify(env.triggers.map((t) => t.fn)));
+check('古いトリガーが動いても LINE は送らない', env.pushes().length === 0);
 env.clear();
 g.setupRichMenu();
 const created = env.calls.find((c) => /\/richmenu$/.test(c.url) && c.method === 'post');
@@ -277,6 +299,32 @@ check('既定では、注意バーを出さない枠ページ経由の URL に�
 check('メニューのリンクも枠ページ経由', created && created.body.areas[0].action.uri.startsWith('https://shun-7778.github.io/04-food-expiry-bot/gym/?u='));
 env.props.WEB_FRAME_URL = 'none'; g.PROP_CACHE_ = null;
 check('WEB_FRAME_URL を none にすると、枠を使わず直接開く', g.webUrl_('coin') === 'https://script.google.com/macros/s/AKfyTEST/exec?k=' + token + '&tab=coin', g.webUrl_('coin'));
+
+// ---------------------------------------------------------------- 管理用の関数は画面から呼べない
+// 公開中の画面（トークン違いの案内ページを含む）からは google.script.run で _ の付かない関数を誰でも呼べる。
+// そのときの実行者は匿名（Session.getActiveUser() が空）になる
+env.props.WEB_FRAME_URL = ''; g.PROP_CACHE_ = null;
+env.who.active = '';
+const propsBefore = JSON.stringify(env.props);
+const trigBefore = JSON.stringify(env.triggers.map((t) => t.fn));
+env.clear();
+const admin = ['showWebUrl', 'setupWebhookSecret', 'rotateWebhookSecret', 'rotateWebToken', 'setupTriggers', 'setupRichMenu', 'deleteRichMenus', 'testConfig', 'setupSpreadsheet', 'remindFriday'];
+const leaked = [];
+admin.forEach((fn) => {
+  let res, threw = false;
+  try { res = g[fn](); } catch (e) { threw = true; }
+  if (!threw) leaked.push(fn + (typeof res === 'string' && /k=|s=/.test(res) ? '（秘密入りのURLを返した）' : ''));
+});
+check('匿名では管理用の関数がすべて止まる', leaked.length === 0, leaked.join(', '));
+check('匿名で呼ばれても、設定・トリガー・LINE は何も変わらない', JSON.stringify(env.props) === propsBefore && JSON.stringify(env.triggers.map((t) => t.fn)) === trigBefore && env.calls.length === 0);
+let fakeTrig = false; try { g.remindFriday({ triggerUid: 'nise-mono' }); } catch (e) { fakeTrig = true; }
+check('ありもしないトリガー ID を名乗っても声かけは送れない', fakeTrig && env.pushes().length === 0);
+g.remindMidweek({ triggerUid: 'nise-mono' });
+check('古い声かけ関数を偽のトリガーで呼んでもトリガーは変わらない', JSON.stringify(env.triggers.map((t) => t.fn)) === trigBefore);
+env.setNow('2026-11-06', 20);
+g.remindFriday({ triggerUid: env.triggers[0].uid });
+check('本物の金曜トリガーからなら、エディタでなくても声かけが届く', env.pushes().length === 1 && env.pushes()[0].body.to === WIFE);
+env.who.active = 'owner@example.com';
 
 check('処理中のエラーログがない', g.__errors.length === 0, g.__errors.join(' | '));
 console.log(results.join('\n'));
