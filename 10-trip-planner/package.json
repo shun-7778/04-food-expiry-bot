@@ -1,0 +1,17 @@
+{
+  "name": "10-trip-planner",
+  "version": "1.0.0",
+  "description": "旅行スケジュールをPDFにする（Claude Code スキル trip-planner）",
+  "private": true,
+  "scripts": {
+    "setup": "npx playwright install chromium && pip install pymupdf fonttools && python scripts/make_fonts.py",
+    "build": "node scripts/build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.56.1"
+  }
+}

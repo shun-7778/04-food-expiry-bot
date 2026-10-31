@@ -19,6 +19,10 @@
 !09-gym-stamp-rally/
 !09-gym-stamp-rally/**
 
+# 旅行スケジュール PDF（trip-planner）
+!10-trip-planner/
+!10-trip-planner/**
+
 # GitHub Pages の枠ページ
 !docs/
 !docs/**
@@ -28,6 +32,8 @@
 !.claude/skills/
 !.claude/skills/recipe-stock-check/
 !.claude/skills/recipe-stock-check/**
+!.claude/skills/trip-planner/
+!.claude/skills/trip-planner/**
 
 # --- 許可の中でも除外するもの ---
 .claude/settings.local.json
@@ -41,3 +47,7 @@
 # clasp のローカル設定。スクリプトIDとデプロイIDが入るので追跡しない
 04-food-expiry/.clasp.json
 .clasprc.json
+# trip-planner：旅程データ（出発駅・日程＝不在の日が分かる）と出力、フォント（大きい・OFL）は公開しない
+10-trip-planner/trips/
+10-trip-planner/output/
+10-trip-planner/scripts/fonts/

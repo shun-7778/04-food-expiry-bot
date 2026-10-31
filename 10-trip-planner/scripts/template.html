@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<style>
+/* フォントは build.mjs が file:// の絶対パスに差し替える。
+   可変フォントだと Chromium が Type3（輪郭化）で埋め込むので、静的な Regular/Bold を使う */
+@font-face {
+  font-family: "Noto Sans JP";
+  src: url("{{FONT_DIR}}/NotoSansJP-Regular.ttf") format("truetype");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "Noto Sans JP";
+  src: url("{{FONT_DIR}}/NotoSansJP-Bold.ttf") format("truetype");
+  font-weight: 700;
+}
+@page { size: A4 portrait; margin: 12mm 12mm 14mm; }
+
+/* 要素名だけのセレクタは使わない。すべて .tp- で始まるクラスで限定する */
+.tp-doc {
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.55;
+  color: #1f2933;
+  margin: 0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.tp-page { break-after: page; }
+.tp-page:last-child { break-after: auto; }
+
+.tp-h1 { font-size: 15pt; font-weight: 700; margin: 0 0 3mm; padding-bottom: 1.5mm; border-bottom: 2px solid #2f4b7c; color: #1a2340; }
+.tp-h2 { font-size: 11.5pt; font-weight: 700; margin: 5mm 0 2mm; color: #1a2340; }
+.tp-note { font-size: 8.5pt; color: #52606d; margin: 1mm 0; }
+
+/* 表紙 */
+.tp-cover { padding-top: 40mm; }
+.tp-cover-kicker { font-size: 10pt; letter-spacing: .3em; color: #2f4b7c; margin: 0; }
+.tp-cover-title { font-size: 28pt; font-weight: 700; margin: 3mm 0 2mm; color: #1a2340; line-height: 1.25; }
+.tp-cover-dates { font-size: 14pt; font-weight: 400; margin: 0 0 12mm; color: #2f4b7c; }
+.tp-cover-grid { display: grid; grid-template-columns: 26mm 1fr; gap: 2.5mm 4mm; font-size: 10.5pt; border-top: 1px solid #cbd2d9; padding-top: 6mm; }
+.tp-cover-key { color: #52606d; font-weight: 700; }
+.tp-cover-foot { margin-top: 18mm; font-size: 8.5pt; color: #7b8794; }
+
+/* 天気 */
+.tp-wx-day { border: 1px solid #cbd2d9; border-radius: 2mm; padding: 3mm 4mm; margin-bottom: 4mm; break-inside: avoid; }
+.tp-wx-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; }
+.tp-wx-date { font-size: 11pt; font-weight: 700; }
+.tp-wx-sum { font-size: 10pt; }
+.tp-wx-hours { display: grid; grid-template-columns: repeat(auto-fill, minmax(17mm, 1fr)); gap: 1.5mm; margin-top: 2.5mm; }
+.tp-wx-h { text-align: center; border-radius: 1.5mm; padding: 1mm 0; font-size: 8pt; background: #f0f4f8; white-space: nowrap; }
+.tp-wx-h.tp-wx-sun { background: #fff4d6; }
+.tp-wx-h.tp-wx-rain { background: #d9e8fb; }
+.tp-wx-h-time { font-weight: 700; display: block; }
+
+/* タイムライン */
+.tp-day-title { font-size: 13pt; font-weight: 700; margin: 0; color: #1a2340; }
+.tp-day-sub { font-size: 9pt; color: #52606d; margin: 0.5mm 0 3mm; }
+.tp-tl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tp-tl-col-time { width: 21mm; }
+.tp-tl-col-type { width: 14mm; }
+.tp-tl-row { break-inside: avoid; }
+.tp-tl-cell { border-bottom: 1px solid #e4e7eb; padding: 1.2mm 1.5mm; vertical-align: top; line-height: 1.45; }
+.tp-tl-time { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 9pt; }
+.tp-tl-until { display: block; font-weight: 400; color: #7b8794; font-size: 8pt; }
+.tp-tl-title { font-weight: 700; }
+.tp-tl-detail { display: block; color: #3e4c59; font-size: 8.8pt; }
+.tp-tl-alt { display: block; margin-top: .6mm; padding: 1mm 2mm; background: #fff8e1; border-left: 2.5px solid #f0b429; font-size: 8.5pt; }
+.tp-tl-warn { display: block; margin-top: .6mm; padding: 1mm 2mm; background: #fde8e8; border-left: 2.5px solid #e12d39; font-size: 8.5pt; }
+
+.tp-tag { display: inline-block; min-width: 9.5mm; text-align: center; border-radius: 1mm; padding: .2mm 1mm; font-size: 8pt; font-weight: 700; color: #fff; white-space: nowrap; }
+.tp-tag-train { background: #2f4b7c; }
+.tp-tag-bus   { background: #0f8a5f; }
+.tp-tag-walk  { background: #7b8794; }
+.tp-tag-sight { background: #c65d00; }
+.tp-tag-meal  { background: #b8325a; }
+.tp-tag-stay  { background: #6b46c1; }
+
+/* リスト（事前にやること・注意点） */
+.tp-list { margin: 0; padding-left: 5mm; }
+.tp-list-item { margin: 0 0 1.6mm; }
+.tp-check { list-style: none; padding-left: 0; }
+.tp-check .tp-list-item { padding-left: 6mm; position: relative; }
+.tp-check .tp-list-item::before { content: ""; position: absolute; left: 0; top: .9mm; width: 3mm; height: 3mm; border: 1.2px solid #52606d; border-radius: .6mm; }
+.tp-pill { display: inline-block; font-size: 7.5pt; font-weight: 700; padding: 0 1.5mm; border-radius: 1mm; margin-right: 1.5mm; white-space: nowrap; }
+.tp-pill-unk { background: #fde8e8; color: #a61b1b; }
+.tp-pill-alt { background: #fff1c2; color: #8d5b00; }
+.tp-pill-tip { background: #e3f2ff; color: #1a4f8b; }
+
+/* 出典 */
+.tp-src { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8pt; }
+.tp-src-col-no { width: 7mm; }
+.tp-src-col-at { width: 27mm; }
+.tp-src-cell { border-bottom: 1px solid #e4e7eb; padding: .9mm 1mm; vertical-align: top; line-height: 1.4; }
+.tp-src-url { color: #2f4b7c; word-break: break-all; }
+</style>
+</head>
+<body class="tp-doc">
+{{BODY}}
+</body>
+</html>
