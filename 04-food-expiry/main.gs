@@ -143,11 +143,12 @@ var RECIPE_COL = {
   ADDED: 2,    // 登録日時
   TITLE: 3,    // 料理名（写真から読み取ったもの。読めなければ空）
   URL: 4,      // リールなどのリンク。本人が送ってきたもの
-  USER: 5      // 登録した人の userId
+  USER: 5,     // 登録した人の userId
+  HIDDEN: 6    // 画面の「履歴」から消したもの。行は消さない（ID が行番号で決まるため）
 };
-var RECIPE_COL_COUNT = 5;
+var RECIPE_COL_COUNT = 6;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示'];
 
 // 通知のしきい値（日数）
 var NOTIFY_1M_DAYS = 30;
@@ -769,6 +770,8 @@ function detachRecipeLink_(token) {
   if (!set.url && !set.recipeId) return 'この一覧にリンクは付いていません。';
 
   var cleared = shopSetRecipe_(set.shopIds || [], '');
+  // 取り違えたリンクなので、画面の「履歴」にも残さない
+  if (set.recipeId) recipeSetHidden_(set.recipeId, true);
   updateAddSet_(token, { url: '', recipeId: '' });
 
   return 'リンクの紐づけを外しました。'
@@ -2334,7 +2337,9 @@ function replyRecipeMatch_(replyToken, items, dish) {
 
   // リンクを写真より先に送っていた場合は、ここで結びつける
   var waiting = takeWaitingLink_();
-  if (waiting) updateAddSet_(token, { url: waiting });
+  // リンク付きの照合は、材料を1品も足さなくてもレシピ行を作る。
+  // 画面の「履歴」は、家にあるものだけで作れた料理のリンクも出すため
+  if (waiting) ensureRecipeId_(updateAddSet_(token, { url: waiting }));
 
   // 紐づけ中の表示。料理名が読めていればそれを、読めていなければ帯だけ出す
   var linkNote = waiting ? (dish || true) : '';
@@ -2899,6 +2904,10 @@ function recipeSheet_() {
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, RECIPE_COL_COUNT).setValues([RECIPE_HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (sh.getMaxColumns() < RECIPE_COL_COUNT) {
+    // 列を足す前に作ったシート。移行処理を手で回さなくて済むよう、ここで足す
+    sh.insertColumnsAfter(sh.getMaxColumns(), RECIPE_COL_COUNT - sh.getMaxColumns());
+    sh.getRange(1, 1, 1, RECIPE_COL_COUNT).setValues([RECIPE_HEADERS]).setFontWeight('bold');
   }
 
   RECIPE_SHEET_CACHE_ = sh;
@@ -2912,9 +2921,23 @@ function recipeAdd_(title, url) {
   var id = String(last);   // 見出し行があるので、行数がそのまま次の連番になる
 
   sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
-    id, nowStamp_(), title || '', url || '', CURRENT_USER_ || ''
+    id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', ''
   ]]);
   return id;
+}
+
+/** レシピ行の「非表示」を付け外しする。画面の「履歴」から消す・戻すときに使う */
+function recipeSetHidden_(id, hidden) {
+  var sh = recipeSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return;
+
+  var ids = sh.getRange(2, RECIPE_COL.ID, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== String(id)) continue;
+    sh.getRange(i + 2, RECIPE_COL.HIDDEN).setValue(hidden ? '非表示' : '');
+    return;
+  }
 }
 
 /** レシピID → { title, url } の対応表。買い物リストを表示するたびに1回だけ読む */
@@ -2930,7 +2953,8 @@ function recipeMap_() {
   if (last < 2) return {};
 
   var map = {};
-  sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues().forEach(function (r) {
+  // 料理名とリンクまでしか使わない。「非表示」列が無い古いシートでも読めるよう、そこで止める
+  sh.getRange(2, 1, last - 1, RECIPE_COL.URL).getValues().forEach(function (r) {
     var key = String(r[RECIPE_COL.ID - 1] || '');
     if (!key) return;
     map[key] = {

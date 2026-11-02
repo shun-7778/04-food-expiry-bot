@@ -203,6 +203,8 @@ body {
 /* 料理ごとで品目が無いときの案内。見出しが無いぶん切り替えボタンに密着して
    ボタンの影が被るので、見出しと同じだけ離す */
 .empty.lone { margin-top: 14px; }
+/* 「履歴」の一覧の頭。見出しを出さないぶん、料理ごとの見出しと同じだけ空ける */
+.gap { height: 14px; }
 
 /* 「個別／料理ごと」の切り替え。選んでいる側は「追加」ボタンと同じ緑地・白文字にする。
    選んでいない側も品目と同じ白地＋影にして、押せるボタンだと分かるようにする */
@@ -312,6 +314,7 @@ body {
     <div class="seg">
       <button id="seg-list" class="on">個別</button>
       <button id="seg-recipe">料理ごと</button>
+      <button id="seg-history">履歴</button>
     </div>
   </div>
 
@@ -370,7 +373,7 @@ var pending = 0;      // 書き込み待ちの件数。0 になるまでサー�
 var waiting = {};     // 書き込み待ちの品目。その行に「読み込み中」を出す
 var tempSeq = 0;      // 追加した直後の、まだ ID が無い品目に振る仮の番号
 var filter = '';   // '' / 'over' / 'soon' / 'ok'
-// 買い物リストの見せ方。'list'（個別）/ 'recipe'（料理ごと）。
+// 買い物リストの見せ方。'list'（個別）/ 'recipe'（料理ごと）/ 'history'（レシピのリンクの履歴）。
 // 開くたびに個別から始める（覚えない）。料理ごとはその場で切り替えて使う
 var shopView = 'list';
 var who = '';            // この端末を使っている人の呼び名。足したものに残す（起動時に控えから読む）
@@ -382,6 +385,7 @@ var SOON_DAYS = 7;   // 「期限が近い」とみなす残り日数。絞り�
 // 「購入済み」「使用済み」にはその場で操作した分しか並ばない
 var doneShop = [];
 var doneStock = [];
+var doneHistory = [];   // 「履歴」で消したリンク。その場では「削除済み」として残し、戻せるようにする
 
 function $(id) { return document.getElementById(id); }
 
@@ -534,8 +538,14 @@ function recipeLevel(it) {
  */
 function renderShop() {
   var rows = shopRows();
-  $('seg-list').className = shopView === 'recipe' ? '' : 'on';
+  $('seg-list').className = shopView === 'list' ? 'on' : '';
   $('seg-recipe').className = shopView === 'recipe' ? 'on' : '';
+  $('seg-history').className = shopView === 'history' ? 'on' : '';
+
+  if (shopView === 'history') {
+    renderHistory();
+    return;
+  }
 
   // 個別でも帯の色は使うので、色を決める束ね直しは先にやっておく
   var groups = groupByRecipe(rows);
@@ -562,6 +572,36 @@ function renderShop() {
   groups.forEach(function (g) {
     box.appendChild(groupHeader(g));
     g.items.forEach(function (it) { box.appendChild(shopCard(it)); });
+  });
+}
+
+/**
+ * 「履歴」。インスタのリンクから照合したレシピを、新しい順に並べる。
+ * 買った品目が消えても、作るときにリールを開き直せるようにするためのもの。
+ * 何日分・何件までを出すかはサーバー側（HISTORY_DAYS / HISTORY_LIMIT）で決めている
+ */
+function renderHistory() {
+  // 見出しが無いのは料理ごとと同じ。案内は lone で切り替えボタンから離す
+  $('shop-sec').hidden = true;
+  var box = $('list-todo');
+  box.textContent = '';
+
+  var items = ((state.history && state.history.items) || []).concat(doneHistory)
+    .sort(function (a, b) { return Number(b.id) - Number(a.id); });
+
+  if (!items.length) {
+    var e = document.createElement('div');
+    e.className = 'empty lone';
+    e.textContent = '履歴はありません';
+    box.appendChild(e);
+    return;
+  }
+
+  // 料理ごとの見出しと同じ色を、上から順に割り当てる。一覧の先頭には見出しの余白を空ける
+  box.appendChild(document.createElement('div')).className = 'gap';
+  items.forEach(function (it, i) {
+    it.level = 'r' + (i % RECIPE_COLORS);
+    box.appendChild(historyCard(it));
   });
 }
 
@@ -976,6 +1016,29 @@ function shopCard(it) {
   });
 }
 
+function historyCard(it) {
+  var title = it.title || 'レシピ';
+  if (it.done) {
+    return card({
+      done: true,
+      name: title,
+      meta: '削除済み',
+      waiting: !!waiting[it.id],
+      right: { label: '取消', run: function () { undoHistory(it); } }
+    });
+  }
+
+  return card({
+    level: it.level,
+    name: title,
+    meta: addedMeta(it),
+    waiting: !!waiting[it.id],
+    // 品名の位置にもう料理名が出ているので、錠剤は「開く」だけにする
+    src: { url: it.url, title: 'レシピを開く' },
+    right: { label: '削除', run: function () { hideHistory(it); } }
+  });
+}
+
 function stockCard(it) {
   if (it.done) {
     return card({
@@ -1096,6 +1159,25 @@ function undoShop(it) {
   send('webSetShop', [it.id, false]);
 }
 
+/** 「履歴」から消す。シートの行は残し、非表示の印を付けるだけ */
+function hideHistory(it) {
+  takeOut(state.history.items, it.id);
+  it.done = true;
+  doneHistory.push(it);
+  waiting[it.id] = true;
+  render();
+  send('webSetHistory', [it.id, true]);
+}
+
+function undoHistory(it) {
+  dropFrom(doneHistory, it);
+  delete it.done;
+  state.history.items.push(it);
+  waiting[it.id] = true;
+  render();
+  send('webSetHistory', [it.id, false]);
+}
+
 function undoStock(it) {
   dropFrom(doneStock, it);
   var toShop = it.toShop;
@@ -1140,6 +1222,7 @@ function setShopView(mode) {
 
 $('seg-list').addEventListener('click', function () { setShopView('list'); });
 $('seg-recipe').addEventListener('click', function () { setShopView('recipe'); });
+$('seg-history').addEventListener('click', function () { setShopView('history'); });
 
 $('add-btn').addEventListener('click', add);
 $('add-name').addEventListener('keydown', function (e) {
@@ -1283,6 +1366,7 @@ $('reload').addEventListener('click', function () {
   // 枠の中で location.reload() すると白い画面になるので、中身だけ取り直す
   doneShop = [];
   doneStock = [];
+  doneHistory = [];
   waiting = {};
   load();
 });

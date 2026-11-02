@@ -145,6 +145,7 @@ function webData(token) {
   // その人の行だけを返すように絞ること（webSetShop などの書き込み側も同じ）。
   return {
     shop: webShopData_(), stock: webStockData_(),
+    history: webHistoryData_(),   // 買い物リストの「履歴」に出すレシピのリンク
     users: userNames_(),     // 画面の「あなた」の選択肢
     order: CATEGORY_ORDER    // 買い物リストを並べる順（店を回る順）
   };
@@ -163,6 +164,13 @@ function webSetShop(token, id, done) {
     sh.getRange(row, SHOP_COL.STATUS, 1, 2)
       .setValues([[done ? SHOP_STATUS.DONE : SHOP_STATUS.TODO, nowStamp_()]]);
   }
+  return webData(token);
+}
+
+/** 「履歴」のリンクを消す・戻す。hidden=true で消す。レシピ行そのものは残す */
+function webSetHistory(token, id, hidden) {
+  webAssert_(token);
+  recipeSetHidden_(id, hidden);
   return webData(token);
 }
 
@@ -331,6 +339,68 @@ function webShopData_() {
   });
 
   return { todo: todo };
+}
+
+var HISTORY_DAYS = 7;    // 「履歴」に出すのは登録からこの日数以内
+var HISTORY_LIMIT = 5;   // 「履歴」に出す最大件数
+
+/**
+ * 「履歴」に出すレシピのリンク。新しい順に HISTORY_LIMIT 件まで。
+ *
+ * 同じリンクを何度か送っていたら、いちばん新しい行だけで判断する。
+ * その行が消されていれば、古い同じリンクが代わりに出てくることもない。
+ * 家族の分もまとめて出す（買い物リストと同じく共有のもの）
+ */
+function webHistoryData_() {
+  var id = prop_('SPREADSHEET_ID', false);
+  if (!id) return { items: [] };
+
+  var sh = SpreadsheetApp.openById(id).getSheetByName(RECIPE_SHEET_NAME);
+  if (!sh) return { items: [] };   // まだ1件も登録していない
+
+  var last = sh.getLastRow();
+  if (last < 2) return { items: [] };
+
+  // 「非表示」列が無い古いシートでは、ある列までだけ読む（どれも消されていない扱い）
+  var cols = Math.min(sh.getMaxColumns(), RECIPE_COL_COUNT);
+  var rows = sh.getRange(2, 1, last - 1, cols).getValues();
+  var names = userNameMap_();
+  var since = Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  var seen = {};
+  var items = [];
+
+  // 下ほど新しい（ID は行の順に振っている）ので、下から見る
+  for (var i = rows.length - 1; i >= 0 && items.length < HISTORY_LIMIT; i--) {
+    var r = rows[i];
+    var url = String(r[RECIPE_COL.URL - 1] || '');
+    if (!url || seen[url]) continue;
+    seen[url] = true;
+
+    if (r[RECIPE_COL.HIDDEN - 1]) continue;
+    var at = recipeTime_(r[RECIPE_COL.ADDED - 1]);
+    if (!at || at < since) continue;
+
+    items.push({
+      id: String(r[RECIPE_COL.ID - 1]),
+      title: String(r[RECIPE_COL.TITLE - 1] || ''),
+      url: url,
+      added: Utilities.formatDate(new Date(at), 'Asia/Tokyo', 'yyyy-MM-dd'),
+      by: names[String(r[RECIPE_COL.USER - 1] || '')] || ''
+    });
+  }
+
+  return { items: items };
+}
+
+/**
+ * レシピ行の登録日時をミリ秒にする。シートが日時として読み替えていれば Date、
+ * 書いたままなら「2026-11-03 20:15」の文字列で来る。読めなければ 0
+ */
+function recipeTime_(v) {
+  if (v instanceof Date) return v.getTime();
+  var m = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/.exec(String(v || '').trim());
+  if (!m) return 0;
+  return new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T' + (m[4] || '00') + ':' + (m[5] || '00') + ':00+09:00').getTime();
 }
 
 /** 在庫だけを返す。消費済を出さない考え方は買い物リストと同じ */
