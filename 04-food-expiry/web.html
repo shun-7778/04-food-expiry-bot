@@ -200,6 +200,9 @@ body {
 .gsec.r3 .t, .gsec.r3 .jump { color: var(--r3); }
 .gsec.r4 .t, .gsec.r4 .jump { color: var(--r4); }
 .gsec.none .t { color: var(--sub); }
+/* 料理ごとで品目が無いときの案内。見出しが無いぶん切り替えボタンに密着して
+   ボタンの影が被るので、見出しと同じだけ離す */
+.empty.lone { margin-top: 14px; }
 
 /* 「個別／料理ごと」の切り替え。選んでいる側は「追加」ボタンと同じ緑地・白文字にする。
    選んでいない側も品目と同じ白地＋影にして、押せるボタンだと分かるようにする */
@@ -550,7 +553,7 @@ function renderShop() {
 
   if (!rows.length) {
     var e = document.createElement('div');
-    e.className = 'empty';
+    e.className = 'empty lone';
     e.textContent = '買うものはありません';
     box.appendChild(e);
     return;
