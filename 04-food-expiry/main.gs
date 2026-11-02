@@ -3596,7 +3596,7 @@ function bubbleActionRow_(name, actionLabel, action, sub, actionColor) {
         paddingEnd: '10px',
         paddingTop: '8px',
         paddingBottom: '8px',
-        action: action,
+        action: withDisplayText_(action),
         contents: [
           { type: 'text', text: actionLabel, color: actionColor || pal_().green, size: 'md', align: 'end' }
         ]
@@ -3713,11 +3713,24 @@ function bubblePillButton_(label, action, color) {
     paddingEnd: '14px',
     paddingTop: '5px',
     paddingBottom: '5px',
-    action: action,
+    action: withDisplayText_(action),
     contents: [
       { type: 'text', text: label, color: color, size: 'md', align: 'center' }
     ]
   };
+}
+
+/**
+ * バブルのボタンを押したとき、押した人の発言としてボタンの文言（「全て追加」など）を
+ * トークに出す。返事が来るまでの間も、何を押したかが履歴に残って分かるようにするため。
+ * displayText は画面に出るだけで、message イベントとしては届かない（品名として読まれない）
+ */
+function withDisplayText_(action) {
+  if (!action || action.type !== 'postback' || action.displayText || !action.label) return action;
+  var copy = {};
+  Object.keys(action).forEach(function (k) { copy[k] = action[k]; });
+  copy.displayText = action.label;
+  return copy;
 }
 
 /** 最下段などに置く、横いっぱいの1行ボタン */
