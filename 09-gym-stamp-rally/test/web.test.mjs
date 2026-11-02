@@ -14,7 +14,7 @@ const shots = path.join(dir, 'shots'); fs.mkdirSync(shots, { recursive: true });
 const mock = `<script>
 ${fs.readFileSync(path.join(SRC, 'logic.gs'), 'utf8')}
 // ---- 模擬サーバー（webapp.gs の API と同じ形で返す） ----
-var MOCK = { rows: [], today: '2026-10-24', opened: [], fail: false };
+var MOCK = { rows: [], today: '2026-10-24', opened: [], fail: false, delay: 60 };
 function mockAct(plan) {
   var st = gymState_(MOCK.rows, MOCK.today);
   var p = plan(st, MOCK.today, Math.random, MOCK.rows);
@@ -38,7 +38,7 @@ function runner() {
   r.withSuccessHandler = function (f) { ok = f; return r; };
   r.withFailureHandler = function (f) { ng = f; return r; };
   Object.keys(API).forEach(function (k) {
-    r[k] = function () { var a = arguments; setTimeout(function () { try { ok(JSON.parse(JSON.stringify(API[k].apply(null, a)))); } catch (e) { ng(e); } }, 60); };
+    r[k] = function () { var a = arguments; setTimeout(function () { try { ok(JSON.parse(JSON.stringify(API[k].apply(null, a)))); } catch (e) { ng(e); } }, MOCK.delay); };
   });
   return r;
 }
@@ -101,6 +101,7 @@ try {
 
   check('読み込むとスタンプラリーが出る', await visible('#app'));
   check('最初はほめる画面・ご褒美の箱・選択画面が出ていない', !(await visible('#cheer')) && !(await visible('#party')) && !(await visible('#choice')) && !(await visible('#busy')));
+  check('音のスイッチは無い（音は鳴らさない）', !(await ev('!!document.getElementById("soundOn") || /AudioContext/.test(document.documentElement.innerHTML)')));
   check('マスが40個', (await ev('document.querySelectorAll(".node").length')) === 40);
   check('横スクロールが出ない', (await ev('document.documentElement.scrollWidth - innerWidth')) <= 0);
   const ov = await ev(`(function(){var d=[].slice.call(document.querySelectorAll('.deco > g')).map(function(g){return g.getBoundingClientRect();});
@@ -110,8 +111,45 @@ try {
   check('季節の絵が文字やマスと重ならない', ov === 0, '重なり ' + ov);
   await shot('w01-top');
 
-  // スタンプ
-  await click('#stampBtn'); await settle();
+  // 並び：タブは上に固定、「消す」は大きなボタンのすぐ下、案内は一番下、区切り線とコインの記録は無い
+  const order = (panel) => ev(`(function(){var p=document.querySelector(${JSON.stringify(panel)});
+    return [].slice.call(p.children).map(function(e){return e.id||e.className;}); })()`);
+  await ev('window.scrollTo(0, 1500)'); await sleep(200);
+  check('下にスクロールしてもタブが上に見えている', await ev('(function(){var r=document.querySelector(".tabs").getBoundingClientRect();return r.top>=0&&r.top<40;})()'));
+  const tabShadow = () => ev('getComputedStyle(document.querySelector(".tabs")).boxShadow');
+  check('浮いているタブには影が付き、白い縁取りは無い', (await tabShadow()).includes('18px') && !(await tabShadow()).includes('0px 0px 0px 8px'), await tabShadow());
+  await shot('w00-tabs-floating');
+  await ev('window.scrollTo(0, 0)'); await sleep(300);
+  check('一番上では影を付けない', (await tabShadow()) === 'none', await tabShadow());
+  const so = await order('#panelStamp');
+  check('スタンプ：ボタン → 消す → 案内（一番下）の順', so.slice(-3).join() === 'sticky-act,erase,stampHint', so.join());
+  check('「消す」の上に区切り線が無い', (await ev('getComputedStyle(document.getElementById("erase")).borderTopStyle')) === 'none');
+  check('コインの記録は無い', !(await ev('!!document.getElementById("coinLog") || document.body.innerText.includes("コインの記録")')));
+  await click('#tabCoin');
+  const co = await order('#panelCoin');
+  check('コイン：ボタンのすぐ下に「消す」', co.slice(-2).join() === 'sticky-act,erase', co.join());
+  await click('#tabStamp');
+
+  // サーバーの返事を待つあいだも、画面全体が崩れない（以前は body が黒く細くなっていた）
+  const layout = () => ev(`(function(){var b=document.body.getBoundingClientRect(), s=getComputedStyle(document.body);
+    return { w: Math.round(b.width), iw: innerWidth, bg: s.backgroundColor, pos: s.position }; })()`);
+  const sameLayout = (a, b) => a.w === b.w && a.bg === b.bg && a.pos === b.pos;
+  const before = await layout();
+  await ev('MOCK.delay=1500');
+  await ev(`document.dispatchEvent(new Event('visibilitychange'))`); await sleep(300);
+  const reloading = await layout();
+  check('読み直し中も画面の幅・背景が変わらない', sameLayout(before, reloading) && reloading.w === reloading.iw, JSON.stringify([before, reloading]));
+  check('読み直し中は「記録中…」を出さない', !(await visible('#busy')));
+  await sleep(1500);
+  await click('#stampBtn'); await sleep(300);
+  const recording = await layout();
+  check('記録中も画面の幅・背景が変わらない', sameLayout(before, recording), JSON.stringify([before, recording]));
+  check('記録中は上に「記録中…」の小さな表示が出る', (await visible('#busy')) && (await ev('document.getElementById("busy").getBoundingClientRect().width')) < 200);
+  await shot('w00-recording');
+  await sleep(1500); await ev('MOCK.delay=60');
+
+  // スタンプ（上で押したぶん）
+  await settle();
   check('押すと記録され、ほめる画面が出る', (await nRows()) === 1 && (await visible('#cheer')));
   await sleep(3500);
   check('ほめる画面は自動で閉じない', await visible('#cheer'));
@@ -210,6 +248,17 @@ try {
   check('クラッカーが画面からはみ出ない', pop.every((p) => p[0] >= 0 && p[1] <= 390), JSON.stringify(pop));
   await shot('w05-reward');
   await click('#partyBtn');
+
+  // スタンプは10種類。どれも台紙に絵と言葉が出る
+  const kinds = await ev('GYM_KINDS');
+  check('スタンプは10種類', kinds.length === 10, JSON.stringify(kinds));
+  await ev(`(function(){MOCK.rows=[];GYM_KINDS.forEach(function(k,i){MOCK.rows.push({id:i+1,type:'スタンプ',date:'2026-11-0'+(i%9+1),kind:k,r:0,title:'a',text:'b',status:'有効'});});})()`);
+  await setToday('2026-12-28'); await click('#tabStamp'); await ev('window.scrollTo(0,0)');
+  const drawn = await ev(`[].slice.call(document.querySelectorAll('.node.done .stamp')).slice(0,10).map(function(s){var t=s.querySelector('text');return [s.querySelectorAll('path,circle,rect,polygon').length, t?t.textContent:''];})`);
+  check('10種類とも絵が描かれる', drawn.length === 10 && drawn.every((d) => d[0] >= 1 && d[1]), JSON.stringify(drawn));
+  const words = drawn.map((d) => d[1]).join(',');
+  check('新しい4種類と、はなまるに言葉が入る', ['さいこう！', 'GO!GO!', 'えらすぎ', 'いい汗！', 'やったね'].every((w) => words.includes(w)), words);
+  await shot('w07-kinds', { x: 0, y: 0, width: 390, height: 900 });
 
   const fullH = await ev('document.documentElement.scrollHeight');
   await ev('window.scrollTo(0,0)');

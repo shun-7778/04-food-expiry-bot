@@ -33,6 +33,10 @@
   --ink-pink: #F2508E;
   --ink-orange: #FF8A1F;
   --ink-purple: #8C5CF5;
+  --ink-teal: #0EA5A4;
+  --ink-amber: #E39B00;
+  --ink-sky: #1AA3E0;
+  --ink-lime: #6DAA12;
   --gold: #F5B300;
   --gold-deep: #C47F00;
   --gold-soft: #FFF3C4;
@@ -65,7 +69,10 @@ h1 svg { width: clamp(44px, 9vw, 60px); height: auto; flex: 0 0 auto; }
 @media (max-width: 860px) { .side { position: static; } }
 
 /* tabs */
-.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface); padding: 5px; border-radius: 16px; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface); padding: 5px; border-radius: 16px;
+  position: sticky; top: calc(8px + env(safe-area-inset-top, 0px)); z-index: 6; transition: box-shadow .2s; }
+/* スクロールして浮いているあいだだけ影を付ける（.stuck は JS が付ける） */
+.tabs.stuck { box-shadow: 0 6px 18px rgba(34,48,58,.22), 0 1px 3px rgba(34,48,58,.12); }
 .tab {
   font: inherit; font-weight: 700; font-size: 15px; border: 0; border-radius: 12px; padding: 10px 8px; cursor: pointer;
   background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -226,13 +233,6 @@ span.stamp > svg { display: block; width: 100%; height: 100%; }
 .cslot.just .hole svg { animation: flipIn .6s cubic-bezier(.2,.9,.3,1.3) both; }
 .wallet .empty { color: var(--muted); font-size: 13px; }
 @keyframes flipIn { from { transform: translateY(-60%) rotateY(540deg) scale(1.4); opacity: 0; } to { transform: none; opacity: 1; } }
-.log { display: grid; gap: 6px; }
-.log h3 { margin: 0; font-size: 14px; }
-.log ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.log li { display: flex; justify-content: space-between; gap: 8px; background: var(--bg); border-radius: 12px; padding: 8px 12px; font-size: 14px; }
-.log li span { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.log li.use b { color: var(--gold-deep); }
-.log .empty { color: var(--muted); font-size: 13px; }
 
 /* buttons */
 .btn {
@@ -265,9 +265,10 @@ span.stamp > svg { display: block; width: 100%; height: 100%; }
 }
 .sticky-act .btn.coin:not([disabled]) { box-shadow: 0 4px 0 var(--gold-deep), 0 10px 24px rgba(34,48,58,.18); }
 .sub-act { display: flex; justify-content: center; }
-.hint { text-align: center; font-size: 13px; color: var(--muted); margin: -6px 0 0; }
+.hint { text-align: center; font-size: 13px; color: var(--muted); margin: 0; }
+.hint:empty { display: none; }
 
-.erase { display: grid; justify-items: center; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.erase { display: grid; justify-items: center; gap: 8px; }
 .erase p { margin: 0; font-size: 14px; text-align: center; }
 .erase .row { display: flex; gap: 8px; }
 .demo { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
@@ -295,7 +296,6 @@ span.stamp > svg { display: block; width: 100%; height: 100%; }
 .notes { font-size: 13px; color: var(--muted); display: grid; gap: 6px; }
 .notes h2 { font-size: 14px; margin: 0; color: var(--fg); }
 .notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
-.sound { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 
 /* overlays */
 .overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; overflow: hidden; }
@@ -411,11 +411,11 @@ img { max-width: 100%; }
 .loading { text-align: center; color: var(--muted); padding: 40px 0; }
 .busy { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 40;
   background: var(--fg); color: #fff; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 999px; }
-body.busy .board-col { pointer-events: none; }
+/* body に付けるのは is-busy（.busy にすると上のバッジの見た目が body 全体に効き、画面が黒く細くなる） */
+body.is-busy .board-col { pointer-events: none; }
 .err { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 41;
   width: min(420px, calc(100% - 32px)); background: #FFF0EE; color: var(--danger); border: 2px solid var(--danger);
   font-size: 14px; font-weight: 700; padding: 10px 14px; border-radius: 14px; }
-.sound { justify-content: center; }
 </style>
 </head>
 <body>
@@ -466,6 +466,7 @@ body.busy .board-col { pointer-events: none; }
       </div>
       <div id="board"></div>
       <div class="sticky-act"><button type="button" class="btn" id="stampBtn">今週ジムに行った！</button><span id="useWrapStamp"></span></div>
+      <!-- ここに「最後のスタンプを1つ消す」（#erase）が render で差し込まれる -->
       <p class="hint" id="stampHint"></p>
     </div>
 
@@ -478,11 +479,9 @@ body.busy .board-col { pointer-events: none; }
         <div class="tray" id="tray"></div>
       </div>
       <div class="sticky-act"><button type="button" class="btn coin" id="coinBtn">今週もう1回行った！</button><span id="useWrapCoin"></span></div>
-      <div class="log" id="coinLog"></div>
     </div>
 
     <div class="erase" id="erase"></div>
-    <label class="sound"><input type="checkbox" id="soundOn" checked> 音を鳴らす</label>
   </section>
 </div>
 
@@ -558,7 +557,8 @@ body.busy .board-col { pointer-events: none; }
   var ST = null;
   var V = { tab: START_TAB, just: null, erasing: false, busy: false };
 
-  var INKS = { dumbbell: '--ink-blue', heart: '--ink-pink', star: '--ink-green', sakura: '--ink-red', flame: '--ink-orange', hanamaru: '--ink-purple' };
+  var INKS = { dumbbell: '--ink-blue', heart: '--ink-pink', star: '--ink-green', sakura: '--ink-red', flame: '--ink-orange', hanamaru: '--ink-purple',
+    shoe: '--ink-teal', crown: '--ink-amber', drop: '--ink-sky', clover: '--ink-lime' };
 
   // ---- dates（'yyyy-MM-dd'） ----
   function md(ymd) { var p = ymd.split('-'); return Number(p[1]) + '/' + Number(p[2]); }
@@ -568,7 +568,8 @@ body.busy .board-col { pointer-events: none; }
   // ---- server ----
   function call(fn, args, done) {
     if (V.busy) return;
-    setBusy(true);
+    // 読み直し（webState）は記録ではないので「記録中…」を出さず、裏で静かに差し替える
+    setBusy(true, fn !== 'webState');
     var runner = google.script.run
       .withSuccessHandler(function (res) {
         setBusy(false);
@@ -587,10 +588,10 @@ body.busy .board-col { pointer-events: none; }
     var r = google.script.run.withFailureHandler(function (err) { console.warn(err); });
     r[fn].apply(r, [TOKEN].concat(args || []));
   }
-  function setBusy(on) {
+  function setBusy(on, badge) {
     V.busy = on;
-    document.body.classList.toggle('busy', on);
-    document.getElementById('busy').hidden = !on;
+    document.body.classList.toggle('is-busy', on);
+    document.getElementById('busy').hidden = !(on && badge);
   }
   var errTimer;
   function showError(msg) {
@@ -643,7 +644,25 @@ body.busy .board-col { pointer-events: none; }
         return '<path fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="5" d="' + scallop(50, 50, 41, 10) + '"/>' + label('よく', 46, 18) + label('できました', 66, 14);
       case 'hanamaru':
         return '<path fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="5" d="' + scallop(50, 50, 41, 12) + '"/>' +
-          '<path fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" d="M45 50 a5 5 0 1 1 10 0 a10 10 0 1 1 -20 0 a15 15 0 1 1 30 0 a20 20 0 1 1 -40 0 a25 25 0 1 1 50 0"/>';
+          '<path transform="translate(50 40) scale(.72) translate(-50 -50)" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" d="M45 50 a5 5 0 1 1 10 0 a10 10 0 1 1 -20 0 a15 15 0 1 1 30 0 a20 20 0 1 1 -40 0 a25 25 0 1 1 50 0"/>' +
+          label('さいこう！', 77, 12);
+      case 'shoe':
+        return disc() + '<path fill="currentColor" d="M20 60 L21 36 Q22 31 27 31 L37 31 Q40 41 50 44 L69 48 Q80 50 80 58 L80 60 Z"/>' +
+          '<rect x="19" y="60" width="62" height="6" rx="3" fill="currentColor" fill-opacity=".55"/>' +
+          '<path fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" d="M40 39 L35 45 M46 42 L41 48 M52 45 L47 51"/>' + label('GO!GO!', 80, 13);
+      case 'crown':
+        return disc() + '<path fill="currentColor" d="M24 60 L22 32 L37 45 L50 24 L63 45 L78 32 L76 60 Z"/>' +
+          '<circle cx="22" cy="30" r="4" fill="currentColor"/><circle cx="50" cy="22" r="4" fill="currentColor"/><circle cx="78" cy="30" r="4" fill="currentColor"/>' +
+          '<rect x="24" y="61" width="52" height="6" rx="2" fill="currentColor"/><circle cx="50" cy="51" r="4" fill="#fff"/>' + label('えらすぎ', 81, 12);
+      case 'drop':
+        return disc() + '<path fill="currentColor" d="M50 16 C59 31 67 39 67 50 C67 60 59 66 50 66 C41 66 33 60 33 50 C33 39 41 31 50 16Z"/>' +
+          '<path fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" d="M42 48 Q42 41 47 36"/>' + label('いい汗！', 80, 13);
+      case 'clover':
+        return disc() + '<g fill="currentColor">' + [0, 90, 180, 270].map(function (rot) {
+            return '<path transform="rotate(' + rot + ' 50 44)" d="M50 44 C44 38 38 36 38 30 C38 25 43 23 46 25 C48 26 49 28 50 30 C51 28 52 26 54 25 C57 23 62 25 62 30 C62 36 56 38 50 44Z"/>';
+          }).join('') + '</g>' +
+          '<path fill="none" stroke="#fff" stroke-width="2" d="M50 31 L50 57 M37 44 L63 44"/>' +
+          '<path fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" d="M53 56 Q55 62 60 65"/>' + label('やったね', 80, 13);
       case 'medal':
         return '<path fill="var(--gold)" fill-opacity=".35" stroke="currentColor" stroke-width="4" d="' + scallop(50, 50, 44, 16) + '"/>' +
           '<circle cx="50" cy="50" r="32" fill="var(--gold-soft)" stroke="currentColor" stroke-width="2.5"/>' + label(String(n), 60, 32) + label('回達成', 76, 11);
@@ -936,18 +955,6 @@ body.busy .board-col { pointer-events: none; }
     document.getElementById('cUsed').textContent = ST.used;
     document.getElementById('cNext').innerHTML = ST.canExchange ? '<b>交換できます</b>' : 'あと<b>' + (set - held) + '</b>枚でご褒美';
     document.getElementById('coinBadge').textContent = held;
-
-    var ev = ST.coins.map(function (c) { return { d: c.date, id: c.id, t: 'earn' }; })
-      .concat(ST.squares.filter(function (s) { return s.paid; }).map(function (s) { return { d: s.date, id: s.id, t: 'use', n: s.n }; }))
-      .concat(ST.exchanges.map(function (x) { return { d: x.date, id: x.id, t: 'gift', name: x.name }; }))
-      .sort(function (a, b) { return b.id - a.id; });
-    var g2 = '<h3>コインの記録</h3>';
-    g2 += ev.length ? '<ul>' + ev.map(function (e) {
-      if (e.t === 'earn') return '<li class="earn">もう1回行ってコインゲット<span>' + mdw(e.d) + '</span></li>';
-      if (e.t === 'gift') return '<li class="use"><b>5枚使ってご褒美「' + e.name + '」と交換</b><span>' + mdw(e.d) + '</span></li>';
-      return '<li class="use"><b>コインを使って' + e.n + 'マス目を埋めた</b><span>' + mdw(e.d) + '</span></li>';
-    }).join('') + '</ul>' : '<div class="empty">まだありません</div>';
-    document.getElementById('coinLog').innerHTML = g2;
   }
 
   function renderProgress() {
@@ -972,7 +979,7 @@ body.busy .board-col { pointer-events: none; }
     document.getElementById('useWrapStamp').innerHTML = useBtnHTML();
     document.getElementById('useWrapCoin').innerHTML = useBtnHTML();
     document.getElementById('stampHint').textContent = ST.weekPaid ? '今週はコインで埋めています。行けたらスタンプに変えて、コインは戻ります'
-      : ST.weekDone ? 'もう1回行ったら「コイン」タブでコインがもらえます'
+      : ST.weekDone ? 'もう1回行ったらコインがもらえるよ！'
       : ST.canUse ? '行けない週は「コインを使う」で、行ったことにできます' : '';
     cb.disabled = !ST.canEarn;
     cb.textContent = ST.canEarn ? '今週もう1回行った！' : ST.weekPaid ? '今週はコインで埋めた週です'
@@ -1001,55 +1008,12 @@ body.busy .board-col { pointer-events: none; }
     document.getElementById('panelStamp').hidden = !st;
     var pc = document.getElementById('panelCoin');
     pc.hidden = st; pc.style.display = st ? '' : 'grid';
+    // 「最後の〜を1つ消す」は、開いているタブの大きなボタンのすぐ下に置く
+    document.querySelector((st ? '#panelStamp' : '#panelCoin') + ' .sticky-act').after(document.getElementById('erase'));
     document.getElementById('board').innerHTML = renderBoard();
     renderCoins(); renderProgress(); renderButtons(); renderErase();
     document.getElementById('app').hidden = false;
     document.getElementById('loading').hidden = true;
-  }
-
-  // ---- sound (Web Audio。タップした後にだけ鳴る) ----
-  var ac;
-  function audio() {
-    if (!document.getElementById('soundOn').checked) return null;
-    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); return ac; } catch (e) { return null; }
-  }
-  function noiseBurst(a, t, dur, freq, gain) {
-    var len = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
-    for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
-    var src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
-    src.buffer = buf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = .8; g.gain.value = gain;
-    src.connect(f); f.connect(g); g.connect(a.destination); src.start(t);
-  }
-  function tone(a, t, freq, dur, gain, type, toFreq) {
-    var o = a.createOscillator(), g = a.createGain();
-    o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
-    if (toFreq) o.frequency.exponentialRampToValueAtTime(toFreq, t + dur);
-    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .02);
-  }
-  function soundStamp() {
-    var a = audio(); if (!a) return; var t = a.currentTime + .15;
-    tone(a, t, 180, .18, .5, 'sine', 60); noiseBurst(a, t, .06, 1200, .25);
-    [659, 880].forEach(function (f, i) { tone(a, t + .25 + i * .1, f, .35, .15, 'triangle'); });
-  }
-  function soundCoin() {
-    var a = audio(); if (!a) return; var t = a.currentTime + .1;
-    tone(a, t, 1568, .12, .2, 'square'); tone(a, t + .08, 2093, .45, .18, 'square');
-  }
-  function soundTick() {
-    var a = audio(); if (!a) return;
-    noiseBurst(a, a.currentTime, .05, 700, .35); tone(a, a.currentTime, 260, .05, .12, 'square');
-  }
-  function soundCracker() {
-    var a = audio(); if (!a) return; var t = a.currentTime;
-    noiseBurst(a, t, .25, 2200, 1.4); noiseBurst(a, t + .09, .22, 1600, 1.1);
-    tone(a, t, 900, .12, .2, 'square', 200);
-    [784, 988, 1175, 1568, 1976].forEach(function (f, i) { tone(a, t + .3 + i * .09, f, .55, .18, 'triangle'); });
-  }
-  function soundPetit() {
-    var a = audio(); if (!a) return; var t = a.currentTime;
-    noiseBurst(a, t, .12, 2400, .5);
-    [880, 1175, 1568].forEach(function (f, i) { tone(a, t + .12 + i * .08, f, .4, .15, 'triangle'); });
   }
 
   // ---- confetti ----
@@ -1161,11 +1125,9 @@ body.busy .board-col { pointer-events: none; }
     if (el.classList.contains('open')) { el.hidden = true; return; }
     if (el.classList.contains('shaking')) return;
     if (reduced()) { burstOpen(); return; }
-    // 箱の揺れをだんだん速くして、最後に爆発させる
+    // 箱を揺らして、最後に爆発させる
     el.classList.add('shaking');
     btn.disabled = true; btn.textContent = 'ドキドキ…';
-    var t = 0, gap = 260;
-    while (t < 1700) { shakeTimers.push(setTimeout(soundTick, t)); t += gap; gap = Math.max(45, gap * .8); }
     shakeTimers.push(setTimeout(burstOpen, 1800));
   }
   function burstOpen() {
@@ -1178,8 +1140,7 @@ body.busy .board-col { pointer-events: none; }
     btn.textContent = 'やったー！';
     // 開けたことをサーバーに伝える（ここで初めて LINE に知らせる）
     if (pending.id) tell('webOpened', [pending.id]);
-    if (pending.petit) { soundPetit(); smallBurstOn('party'); return; }
-    soundCracker();
+    if (pending.petit) { smallBurstOn('party'); return; }
     el.querySelectorAll('.popper').forEach(function (p) { p.style.animation = 'none'; p.offsetWidth; p.style.animation = ''; });
     bigBurst();
   }
@@ -1215,8 +1176,7 @@ body.busy .board-col { pointer-events: none; }
     V.just = { type: 'stamp', i: ev.n - 1 };
     render();
     if (ev.type === 'special') { showParty(specialParty(s, ev.id)); return; }
-    if (ev.type === 'use') { soundCoin(); showCheer('coin', ev.n + 'マス目', ev.title, ev.text + '来週また行こう。', coinSVG('coinsvg')); return; }
-    soundStamp();
+    if (ev.type === 'use') { showCheer('coin', ev.n + 'マス目', ev.title, ev.text + '来週また行こう。', coinSVG('coinsvg')); return; }
     showCheer('stamp', ev.n + 'マス目' + (ev.type === 'convert' ? 'をスタンプに' : ''), ev.title,
       ev.type === 'convert' ? 'やっぱり行けたね！コインは1枚戻りました。' : ev.text, '<span class="slot">' + stampSVG(s.kind, s.r, s.n) + '</span>');
   }
@@ -1227,7 +1187,6 @@ body.busy .board-col { pointer-events: none; }
     call('webEarnCoin', [], function (ev) {
       V.just = { type: 'coin', i: ST.coins.length - 1 };
       render();
-      soundCoin();
       if (ev.choice) showChoice();
       else showCheer('coin', ST.canExchange ? '手持ち' + ST.held + '枚' : 'ご褒美まであと' + (ST.coinSet - ST.held) + '枚', 'コインゲット！', ev.text + ' 行けない週にも使えます。', coinSVG('coinsvg'));
     });
@@ -1294,6 +1253,10 @@ body.busy .board-col { pointer-events: none; }
     else if (id === 'eraseYes') eraseLast();
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideCheer(); });
+  // タブが上に貼り付いて浮いているあいだだけ影を付ける
+  var tabsEl = document.querySelector('.tabs');
+  function markStuck() { tabsEl.classList.toggle('stuck', tabsEl.getBoundingClientRect().top <= parseFloat(getComputedStyle(tabsEl).top) + 1 && window.scrollY > 0); }
+  window.addEventListener('scroll', markStuck, { passive: true });
   // 別のアプリから戻ってきたとき（日付が変わっているかもしれない）に読み直す
   document.addEventListener('visibilitychange', function () { if (!document.hidden && ST && !V.busy) call('webState', []); });
 
