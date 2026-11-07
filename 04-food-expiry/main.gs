@@ -302,12 +302,14 @@ function doPost(e) {
 
     // 写真は複数枚まとめて送られることがある。同じ webhook 呼び出しに
     // 含まれる image イベントはまとめて1回のレシピ照合として扱う。
-    // 間を置いて送られた場合（別の webhook 呼び出しになる）はそれぞれ別の照合になる。
+    // まとめて送った写真が別々の webhook 呼び出しで届いた場合も、LINE が付ける
+    // imageSet（同じ送信のまとまり）で全部そろうのを待ち、1回の照合にまとめる（collectImageSets_）。
+    // 間を置いて1枚ずつ送った場合は、それぞれ別の照合になる。
     var imageEvents = events.filter(function (ev) {
       return ev.type === 'message' && ev.message && ev.message.type === 'image' && isAllowedSender_(ev);
     });
     if (imageEvents.length) {
-      handleRecipeImages_(imageEvents);
+      collectImageSets_(imageEvents).forEach(handleRecipeImages_);
     }
 
     events.forEach(function (ev) {
@@ -559,6 +561,124 @@ function handleEvent_(event) {
   handleRecipeImages_([event]);
 }
 
+// ---------------------------------------------------------------- 複数枚の写真をまとめる
+
+var RECIPE_MAX_IMAGES = 5;                 // 1つのレシピとして一度に読む写真の上限
+var IMAGE_SET_PREFIX = 'IMGSET:';          // スクリプトプロパティに、まとまりごとに届いた写真を控える
+var IMAGE_SET_WAIT_MS = 25 * 1000;         // 残りの写真が届くのを、長くてもこれだけ待つ
+var IMAGE_SET_POLL_MS = 700;               // 待つあいだ、届いたかを見に行く間隔
+var IMAGE_SET_KEEP_MS = 10 * 60 * 1000;    // 済んだ控えを残しておく時間（遅れて届いた重複を弾くため）
+
+/**
+ * この webhook に入っていた写真を、照合する単位（イベントの配列）に分けて返す。
+ *
+ * - imageSet の無い写真（1枚だけ送ったもの）は、この呼び出しの分をまとめて1単位にする（従来どおり）
+ * - imageSet のある写真（まとめて送ったもの）は、同じまとまりの写真が全部そろうまで待つ。
+ *   LINE はまとめて送った写真を別々の webhook で届けることがあり、そのままだと
+ *   1枚目だけがリンクに付き、2枚目は別の照合になってしまうため。
+ *   そろえた実行だけがその単位を返し、ほかの実行は何も返さない（返信は1回だけ）。
+ *   待っても届かない写真があれば、届いた分だけで照合する（返信が来ないままにしないため）
+ */
+function collectImageSets_(imageEvents) {
+  var units = [];
+  var loose = [];
+  var sets = {};
+
+  imageEvents.forEach(function (ev) {
+    var s = ev.message.imageSet;
+    if (!s || !s.id || !(Number(s.total) > 1)) { loose.push(ev); return; }
+    (sets[s.id] = sets[s.id] || []).push(ev);
+  });
+
+  if (loose.length) units.push(loose);
+  Object.keys(sets).forEach(function (id) {
+    var all = waitImageSet_(id, sets[id]);
+    if (all) units.push(all);
+  });
+  return units;
+}
+
+/**
+ * まとまり id に、この実行で届いた写真 evs を足し、全部そろうまで待つ。
+ * この実行が照合する役になったら、まとまりの全イベント（並び順どおり）を返す。ほかの実行の役なら null
+ */
+function waitImageSet_(id, evs) {
+  var props = PropertiesService.getScriptProperties();
+  var key = IMAGE_SET_PREFIX + id;
+  var total = Number(evs[0].message.imageSet.total);
+  var mine = evs[evs.length - 1];   // 返信はこの実行の写真の replyToken で行う（いちばん新しいので期限に余裕がある）
+
+  // 足して、そろったか・もう誰かが引き受けたかを見る。読みと書きの間に割り込まれないよう錠の中で行う
+  function step(add, force) {
+    return withLock_(function () {
+      var saved = JSON.parse(props.getProperty(key) || '{"items":[],"done":false}');
+      if (add) {
+        saved.at = saved.at || Date.now();
+        add.forEach(function (ev) {
+          var dup = saved.items.some(function (it) { return it.id === ev.message.id; });
+          if (!dup) saved.items.push(slimImageEvent_(ev));
+        });
+      }
+      if (saved.done) { props.setProperty(key, JSON.stringify(saved)); return { done: true }; }
+      if (saved.items.length >= total || force) {
+        saved.done = true;
+        props.setProperty(key, JSON.stringify(saved));
+        return { take: saved.items };
+      }
+      props.setProperty(key, JSON.stringify(saved));
+      return { wait: true };
+    });
+  }
+
+  cleanupImageSets_(props);
+
+  var r = step(evs, false);
+  var until = Date.now() + IMAGE_SET_WAIT_MS;
+  while (r.wait && Date.now() < until) {
+    Utilities.sleep(IMAGE_SET_POLL_MS);
+    r = step(null, false);
+  }
+  if (r.wait) r = step(null, true);   // 待ちきっても足りない。届いた分だけで照合する
+  if (!r.take) return null;           // ほかの実行が引き受けた
+
+  // 待っていたぶん「読み込み中」の表示が切れていることがあるので、照合の前に出し直す
+  showLoading_(mine.source && mine.source.userId);
+
+  // 写真は送った順（index）に並べる。作り方を写真の順につなげるため
+  var out = r.take.slice().sort(function (a, b) { return a.index - b.index; }).map(function (it) {
+    return { type: 'message', replyToken: it.replyToken, source: it.source,
+      message: { type: 'image', id: it.id, imageSet: { id: id, index: it.index, total: total } } };
+  });
+  // handleRecipeImages_ は最後の要素の replyToken で返信する。いちばん新しい
+  // この実行の分に差し替えておく（先に届いた写真の分は、待っているあいだに期限が近づくため）
+  out[out.length - 1].replyToken = mine.replyToken;
+  return out;
+}
+
+/** 控えに残すのは照合に要る分だけ（プロパティの1件あたりの大きさに上限があるため） */
+function slimImageEvent_(ev) {
+  return {
+    id: ev.message.id,
+    index: Number(ev.message.imageSet.index) || 0,
+    replyToken: ev.replyToken,
+    source: { userId: (ev.source && ev.source.userId) || '' }
+  };
+}
+
+/** 古いまとまりの控えを捨てる。毎回ぜんぶ見ても数は少ない */
+function cleanupImageSets_(props) {
+  var now = Date.now();
+  props.getKeys().forEach(function (k) {
+    if (k.indexOf(IMAGE_SET_PREFIX) !== 0) return;
+    try {
+      var s = JSON.parse(props.getProperty(k) || '{}');
+      if (!s.at || now - s.at > IMAGE_SET_KEEP_MS) props.deleteProperty(k);
+    } catch (err) {
+      props.deleteProperty(k);
+    }
+  });
+}
+
 /**
  * レシピ写真（1枚以上）から材料を読み取り、在庫と突き合わせて返信する。
  * 複数枚渡された場合は全部の材料をまとめてから重複を除き、1回だけ照合する。
@@ -573,30 +693,25 @@ function handleRecipeImages_(events) {
   var replyToken = events[events.length - 1].replyToken;
 
   try {
+    // 複数枚は1回の呼び出しにまとめて渡し、同じレシピの続きとして読ませる。
+    // 材料の写真と作り方の写真に分かれていても1つの料理として読め、
+    // 「(調味料)を加える」のようなまとめ名も写真をまたいで材料に結びつく。呼び出しも1回で済む
+    // 1回の呼び出しに載せる枚数には上限を設ける（Claude への1回の送信量に収めるため）。超えた分は読まない
+    var images = events.slice(0, RECIPE_MAX_IMAGES).map(function (ev) { return fetchLineImage_(ev.message.id); });
+    var result = extractRecipeItems_(images) || {};
+
+    var dish = String(result.dish_name || '').trim();
+    var group = normalizeRecipeGroup_(result.dish_group);
+    var steps = (result.steps || []).map(function (s) { return String(s || '').trim(); })
+      .filter(function (s) { return s; });
     var seen = {};
     var items = [];
-    var steps = [];
-    var dish = '';
-    var group = '';
-    events.forEach(function (ev) {
-      var image = fetchLineImage_(ev.message.id);
-      var result = extractRecipeItems_(image.base64, image.mimeType);
-      // 料理名は最初に読み取れたものを採る（複数枚でも料理は1つという前提）
-      if (!dish && result && result.dish_name) dish = String(result.dish_name).trim();
-      // 分類も同じ考え方で、最初に決まったものを採る
-      if (!group && result) group = normalizeRecipeGroup_(result.dish_group);
-      // 作り方は送られた写真の順につなぐ（材料の写真と手順の写真を分けて送ることがあるため）
-      ((result && result.steps) || []).forEach(function (s) {
-        s = String(s || '').trim();
-        if (s) steps.push(s);
-      });
-      ((result && result.items) || []).forEach(function (it) {
-        if (!it.item_name) return;
-        var key = normalizeName_(it.item_name);
-        if (!key || seen[key]) return; // 複数枚にまたがる重複を除く
-        seen[key] = true;
-        items.push(it);
-      });
+    (result.items || []).forEach(function (it) {
+      if (!it.item_name) return;
+      var key = normalizeName_(it.item_name);
+      if (!key || seen[key]) return; // 写真をまたいで同じ材料が写っていても1つにする
+      seen[key] = true;
+      items.push(it);
     });
 
     if (!items.length) {
@@ -1496,12 +1611,30 @@ function buildRecipePrompt_() {
   ].join('\n');
 }
 
-/** Claude Vision に画像を投げてレシピの材料一覧を JSON で取得する */
-function extractRecipeItems_(base64Image, mimeType) {
-  return callClaude_([
-    { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
-    { type: 'text', text: buildRecipePrompt_() }
-  ], RECIPE_SCHEMA, MODEL_VISION);
+/**
+ * Claude Vision にレシピの写真（1枚以上）を投げて、材料・作り方などを JSON で取得する。
+ * images は fetchLineImage_ の戻り値 { base64, mimeType } の配列。
+ * 複数枚は1回の呼び出しにまとめ、同じ料理の続きとして読ませる
+ */
+function extractRecipeItems_(images) {
+  var content = images.map(function (img) {
+    return { type: 'image', source: { type: 'base64', media_type: img.mimeType, data: img.base64 } };
+  });
+  var prompt = buildRecipePrompt_();
+  if (images.length > 1) {
+    prompt = [
+      'これらの ' + images.length + ' 枚の写真は、1つの料理のレシピを続けて撮ったものです（送られた順に並んでいます）。',
+      '材料の写真と作り方の写真に分かれていることがあります。全部を合わせて1つのレシピとして読み取り、',
+      'items・steps・dish_name・dish_group は1つの料理の分として返してください。',
+      '- 作り方は写真の順につなげてください。',
+      '- 同じ材料が複数の写真に写っていても、1つにしてください。',
+      '- まとめ名（group_label）は、別の写真の作り方で使われている呼び方でも結びつけてください。',
+      '',
+      prompt
+    ].join('\n');
+  }
+  content.push({ type: 'text', text: prompt });
+  return callClaude_(content, RECIPE_SCHEMA, MODEL_VISION);
 }
 
 /** テキスト（音声入力を含む）を解析して期限情報を JSON で取得する */
