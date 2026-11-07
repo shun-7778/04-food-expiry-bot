@@ -217,19 +217,20 @@ body {
 /* 開いているかどうかの印。品名の右に小さく出す */
 .card .fold { flex: 0 0 auto; color: var(--sub); font-size: 11px; transition: transform .15s; }
 .card.open .fold { transform: rotate(180deg); }
-/* 台所で離れて見ることもあるので、材料と作り方は一覧の文字より大きめにする */
-.detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 16px; }
+/* 材料と作り方は、料理名（.card .name）と同じ 15px にそろえる */
+.detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 15px; }
 /* 見出しは本文と同じ濃い色にする（グレーだと読みにくいという声があったため） */
-.detail h4 { margin: 0 0 6px; font-size: 14px; font-weight: 800; color: var(--text); }
+.detail h4 { margin: 0 0 4px; font-size: 14px; font-weight: 800; color: var(--text); }
 .detail h4 + * { margin-top: 0; }
 .detail .blk + .blk { margin-top: 12px; }
-.detail .ing { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+/* 材料は1行ずつ詰めて並べる。行の高さは「＋」（24px）で決まる */
+.detail .ing { display: flex; gap: 8px; padding: 2px 0; line-height: 1.35; border-bottom: 1px dashed var(--line); }
 .detail .ing:last-child { border-bottom: none; }
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 700; }
 .detail ol { margin: 0; padding-left: 1.4em; }
-.detail li { margin: 0 0 8px; line-height: 1.6; overflow-wrap: anywhere; }
+.detail li { margin: 0 0 6px; line-height: 1.55; overflow-wrap: anywhere; }
 .detail li::marker { color: var(--sub); font-weight: 800; }
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
@@ -254,21 +255,21 @@ body {
 }
 /* 「A」「合わせ調味料」などのまとめ名。中身は少し下げて、どこまでがそのまとめか見せる */
 .detail .sub {
-  margin: 8px 0 2px; font-size: 13px; font-weight: 800; color: var(--blue);
+  margin: 5px 0 1px; font-size: 12px; font-weight: 800; color: var(--blue);
 }
 .detail .ing.lab { padding-left: 10px; border-left: 2px solid var(--src-bg); }
 .detail .ing { align-items: center; }
 .detail .st {
   flex: 0 0 auto; min-width: 38px; text-align: center;
-  font-size: 11px; font-weight: 800; padding: 3px 6px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 999px;
   background: var(--line); color: var(--sub);
 }
 .detail .st.have { background: var(--ok-bg); color: var(--ok-fg); }
 .detail .st.none { background: var(--over-bg); color: var(--over-fg); }
 .detail .st.listed { background: var(--src-bg); color: var(--blue); }
 .detail .plus {
-  flex: 0 0 auto; width: 30px; height: 30px; border: none; border-radius: 50%;
-  background: var(--green); color: #fff; font-size: 17px; font-weight: 800; line-height: 1;
+  flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
+  background: var(--green); color: #fff; font-size: 14px; font-weight: 800; line-height: 1;
   font-family: inherit; cursor: pointer;
 }
 .detail .plus:disabled { background: var(--line); color: var(--sub); cursor: default; }
