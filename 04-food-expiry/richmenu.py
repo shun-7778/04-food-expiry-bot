@@ -2,10 +2,7 @@
 """リッチメニュー画像を生成する。
 
 2列×3行。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
-色の役割は次のとおり。
-  ペールブルー／青 … 左列（買い物リスト表示／追加・材料確認）
-  緑               … 右列の在庫まわり（在庫確認・期限登録）
-  グレー           … 取消（在庫にも買い物リストにも属さないので中間色）
+アイコンの色はすべて緑にそろえる（以前は左列が青、取消がグレーだった）。
 
 配色は2通りある。使う人ごとにどちらを貼るかを選べるよう、2枚を別々に作る。
 
@@ -150,6 +147,30 @@ def icon_plus_circle(cx, cy, s, c, lw):
     d.line([(cx, cy - a), (cx, cy + a)], fill=c, width=lw)
 
 
+def icon_pot(cx, cy, s, c, lw):
+    """鍋＝レシピ（画面の「レシピ」タブを開く）。本の絵は小さいと線が潰れて読めなかったため"""
+    w = s * 0.86
+    x0, x1 = cx - w / 2, cx + w / 2
+    top = cy - s * 0.06            # 鍋の縁（ふたとの境）
+    bot = cy + s * 0.40
+    # 鍋の胴。下の角だけ大きく丸める（上の角は縁なので角のまま）
+    d.rounded_rectangle([x0, top, x1, bot], radius=s * 0.18, outline=c, width=lw,
+                        corners=(False, False, True, True))
+    # 左右の取っ手
+    hw = s * 0.15
+    d.line([(x0 - hw, top + s * 0.10), (x0, top + s * 0.10)], fill=c, width=lw)
+    d.line([(x1, top + s * 0.10), (x1 + hw, top + s * 0.10)], fill=c, width=lw)
+    # ふた（縁より少し広い線）とつまみ
+    d.line([(x0 - s * 0.06, top - s * 0.08), (x1 + s * 0.06, top - s * 0.08)], fill=c, width=lw)
+    kr = s * 0.09
+    d.rounded_rectangle([cx - kr, top - s * 0.08 - kr * 1.6, cx + kr, top - s * 0.08],
+                        radius=kr * 0.5, outline=c, width=lw)
+    # 湯気（3本の短い縦線）
+    for fx in (-0.22, 0, 0.22):
+        sx = cx + w * fx
+        d.line([(sx, top - s * 0.42), (sx, top - s * 0.30)], fill=c, width=max(2, int(lw * 0.8)))
+
+
 def icon_undo(cx, cy, s, c, lw):
     """左へ戻る円形の矢印＝取消"""
     r = s * 0.42
@@ -173,13 +194,12 @@ def icon_undo(cx, cy, s, c, lw):
 # (col, row, 見出し, アイコン, 色, 文字色)
 
 CELLS = [
-    (0, 0, "買い物リスト表示", icon_list,          PALE_BLUE, TEXT),
-    (0, 1, "買い物リスト追加", icon_plus_circle,   PALE_BLUE, TEXT),
-    (0, 2, "材料確認",       icon_camera,        PALE_BLUE, TEXT),
-    (1, 0, "在庫確認",       icon_box,           GREEN,     TEXT),
-    (1, 1, "期限登録",       icon_calendar_plus, GREEN,     TEXT),
-    # 取消は在庫にも買い物リストにも属さないので、アイコンだけ中間色にする
-    (1, 2, "取消",           icon_undo,          GRAY,      TEXT),
+    (0, 0, "買い物リスト", icon_list,          GREEN, TEXT),
+    (0, 1, "レシピ",       icon_pot,           GREEN, TEXT),
+    (0, 2, "材料登録",     icon_camera,        GREEN, TEXT),
+    (1, 0, "在庫",         icon_box,           GREEN, TEXT),
+    (1, 1, "期限登録",     icon_calendar_plus, GREEN, TEXT),
+    (1, 2, "取消",         icon_undo,          GREEN, TEXT),
 ]
 
 CELL_W = W // COLS
