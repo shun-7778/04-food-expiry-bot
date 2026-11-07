@@ -299,15 +299,17 @@ body {
 .card .src .t {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 日数の箱は、品名＋補足の2行（40px）より高くならないようにする。
+   超えるとこの箱がカードの高さを決めてしまい、在庫だけ買い物・レシピより一回り高くなる */
 .card .days {
-  flex: 0 0 auto; min-width: 55px; text-align: center; border-radius: 9px; padding: 5px 6px;
+  flex: 0 0 auto; min-width: 55px; text-align: center; border-radius: 9px; padding: 3px 6px;
   background: var(--line); color: var(--sub);
 }
 .card .days.over { background: var(--over-bg); color: var(--over-fg); }
 .card .days.soon { background: var(--soon-bg); color: var(--soon-fg); }
 .card .days.ok { background: var(--ok-bg); color: var(--ok-fg); }
 .card .days .d { font-size: 17px; font-weight: 800; line-height: 1.1; }
-.card .days .u { font-size: 10px; font-weight: 700; }
+.card .days .u { font-size: 10px; font-weight: 700; line-height: 1.25; }
 /* 済みの行。その場に残したまま、地の色を落として一目で区別できるようにする。
    枠を破線にして「まだ確定していない・戻せる」感じを出す */
 .swipe.undo { box-shadow: none; }
