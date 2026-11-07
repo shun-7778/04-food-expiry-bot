@@ -147,11 +147,28 @@ var RECIPE_COL = {
   HIDDEN: 6,   // 画面の「レシピ」タブから消したもの。行は消さない（ID が行番号で決まるため）
   INGREDIENTS: 7,  // 写真から読んだ材料。1行に1品「材料名：分量」（分量が無ければ材料名だけ）
   STEPS: 8,        // 写真から読んだ作り方。1行に1手順。写真に無ければ空
-  PINNED: 9        // 「レシピ」タブで上に固定したもの
+  PINNED: 9,       // 「レシピ」タブで上に固定したもの
+  GROUP: 10        // 料理の分類（RECIPE_GROUPS のどれか）。「レシピ」タブの切り替えに使う
 };
-var RECIPE_COL_COUNT = 9;
+var RECIPE_COL_COUNT = 10;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類'];
+
+// 「レシピ」タブの分類。画面の切り替えボタンはこの順に並ぶ（先頭に「すべて」が付く）。
+// タレ・ドレッシングなどはタブを作るほど無いので、いちばん近いものに入れる
+var RECIPE_GROUPS = ['おかず', 'ご飯・麺', '汁物', 'デザート'];
+var RECIPE_GROUP_GUIDE = [
+  '- おかず: 肉・魚のメイン、野菜の副菜、作り置き、卵料理、サラダ、タレ・ドレッシング',
+  '- ご飯・麺: 丼、炒飯、炊き込みご飯、おにぎり、パスタ、うどん、そば、ラーメン、パン（食事系）、お好み焼き',
+  '- 汁物: 味噌汁、スープ、鍋',
+  '- デザート: お菓子、甘いパン、ドリンク'
+].join('\n');
+
+/** 分類として受け付ける値か。知らない値は空にする */
+function normalizeRecipeGroup_(g) {
+  g = String(g || '').trim();
+  return RECIPE_GROUPS.indexOf(g) >= 0 ? g : '';
+}
 
 // 通知のしきい値（日数）
 var NOTIFY_1M_DAYS = 30;
@@ -499,11 +516,14 @@ function handleRecipeImages_(events) {
     var items = [];
     var steps = [];
     var dish = '';
+    var group = '';
     events.forEach(function (ev) {
       var image = fetchLineImage_(ev.message.id);
       var result = extractRecipeItems_(image.base64, image.mimeType);
       // 料理名は最初に読み取れたものを採る（複数枚でも料理は1つという前提）
       if (!dish && result && result.dish_name) dish = String(result.dish_name).trim();
+      // 分類も同じ考え方で、最初に決まったものを採る
+      if (!group && result) group = normalizeRecipeGroup_(result.dish_group);
       // 作り方は送られた写真の順につなぐ（材料の写真と手順の写真を分けて送ることがあるため）
       ((result && result.steps) || []).forEach(function (s) {
         s = String(s || '').trim();
@@ -523,7 +543,7 @@ function handleRecipeImages_(events) {
       return;
     }
 
-    replyRecipeMatch_(replyToken, items, dish, steps);
+    replyRecipeMatch_(replyToken, items, dish, steps, group);
   } catch (err) {
     console.error('レシピ照合に失敗: ' + err.stack);
     replyText_(replyToken, '読み取りに失敗しました。\n' + err.message);
@@ -571,6 +591,7 @@ var HELP_MESSAGE = [
   '画面の買い物リストで料理名を押すと開けます。',
   'リンク付きのレシピは、画面の「レシピ」タブに材料と',
   '作り方が残り、料理名や材料名で検索できます。',
+  'おかず／ご飯・麺／汁物／デザートに自動で分かれます。',
   '違うレシピに付いたときは、一覧の「外す」を押して',
   'ください。すでに足した品目からも外れます。',
   'レシピの写真を送ると、材料を在庫と突き合わせて',
@@ -1215,9 +1236,15 @@ var RECIPE_SCHEMA = {
       type: 'array',
       description: '作り方の手順。1手順1要素で、写真に書かれた順。写真に作り方が無ければ空の配列',
       items: { type: 'string' }
+    },
+    // 「レシピ」タブの分類。これも同じ呼び出しで決める
+    dish_group: {
+      type: 'string',
+      enum: RECIPE_GROUPS,
+      description: '料理の分類。料理名と材料から判断する'
     }
   },
-  required: ['items', 'steps'],
+  required: ['items', 'steps', 'dish_group'],
   additionalProperties: false
 };
 
@@ -1386,6 +1413,11 @@ function buildRecipePrompt_() {
     '- 言い回しは写真のままにし、分量・火加減・時間は省かないでください。',
     '  ただし改行で切れた文はつなげ、「※」の補足は該当する手順の末尾に添えてください。',
     '- 作り方が写真に無ければ空の配列にしてください（推測で作らない）。',
+    '',
+    '分類（dish_group）:',
+    '- 料理名と材料から、次の ' + RECIPE_GROUPS.length + ' つのどれか1つを選んでください。',
+    RECIPE_GROUP_GUIDE,
+    '- 迷ったら、食卓でどう出すかで決めてください（例: 冷やし中華→ご飯・麺、豚汁→汁物）。',
     '',
     '確信が持てない場合:',
     '- 手書き文字がかすれている、印刷が不鮮明、複数の候補が考えられるなどで自信が持てない場合は',
@@ -2351,7 +2383,7 @@ function matchNamesToStock_(items, all) {
  * どちらの行にも買い物リストへの「追加」ボタンを付ける（家にあっても買い足したい
  * ことがあるため）。期限・登録日は出さない。期限を見たいときは在庫確認を使う。
  */
-function replyRecipeMatch_(replyToken, items, dish, steps) {
+function replyRecipeMatch_(replyToken, items, dish, steps, group) {
   var r = matchNamesToStock_(items);
   var missing = r.missing.map(recipeEntry_);
   var have = r.have.map(recipeEntry_);
@@ -2368,7 +2400,8 @@ function replyRecipeMatch_(replyToken, items, dish, steps) {
   if (waiting) {
     ensureRecipeId_(updateAddSet_(token, { url: waiting }), {
       ingredients: recipeIngredientsText_(items),
-      steps: (steps || []).join('\n')
+      steps: (steps || []).join('\n'),
+      group: group || ''
     });
   }
 
@@ -2974,7 +3007,8 @@ function recipeSheet_() {
 }
 
 /**
- * レシピを1行足して、その ID を返す。detail は { ingredients, steps }（どちらも改行区切りの文字列）。
+ * レシピを1行足して、その ID を返す。
+ * detail は { ingredients, steps, group }（材料・作り方は改行区切りの文字列）。
  *
  * 同じリンクをピン留めしたまま送り直したときは、ピン留めを新しい行に引き継ぐ。
  * 画面は同じリンクの最新の1行だけを出すので、引き継がないと固定が外れたように見えるため
@@ -2988,9 +3022,110 @@ function recipeAdd_(title, url, detail) {
 
   sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
     id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', '',
-    detail.ingredients || '', detail.steps || '', pinned ? RECIPE_PIN_MARK : ''
+    detail.ingredients || '', detail.steps || '', pinned ? RECIPE_PIN_MARK : '',
+    normalizeRecipeGroup_(detail.group)
   ]]);
   return id;
+}
+
+/** レシピ行の分類を書き換える。画面の「分類を変える」から使う。知らない値は書かない */
+function recipeSetGroup_(id, group) {
+  group = normalizeRecipeGroup_(group);
+  if (!group) return;
+  recipeSetCell_(id, RECIPE_COL.GROUP, group);
+}
+
+// 分類の無い行（この機能より前に登録したもの、判定に失敗したもの）を、一度にいくつまで判定するか
+var RECIPE_GROUP_BATCH = 50;
+var RECIPE_GROUP_TRY_KEY = 'RECIPE_GROUP_TRY';      // 最後に分類を試みた時刻
+var RECIPE_GROUP_RETRY_MS = 10 * 60 * 1000;          // 失敗したら、次に試すまでこれだけ空ける
+
+/**
+ * 分類の無いレシピ行に、料理名と材料から分類を付ける。「レシピ」タブを開いたときに呼ぶ。
+ * 足りない行が無ければ何もしない（Claude も呼ばない）ので、普段は読むだけで終わる。
+ *
+ * 1回の呼び出しでまとめて判定する。判定できなかった行は「おかず」にする
+ * （空のままだと、開くたびに判定し直して Claude を呼び続けてしまうため）。
+ * 失敗しても画面は出したいので、エラーはログに残して握りつぶす
+ */
+function fillRecipeGroups_() {
+  var id = prop_('SPREADSHEET_ID', false);
+  if (!id) return;
+  var sh = SpreadsheetApp.openById(id).getSheetByName(RECIPE_SHEET_NAME);
+  if (!sh || sh.getLastRow() < 2) return;
+
+  // 列が足りない古いシートでも、ここで足してから読む
+  sh = recipeSheet_();
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, RECIPE_COL_COUNT).getValues();
+  var todo = [];
+  rows.forEach(function (r, i) {
+    if (!r[RECIPE_COL.URL - 1] || r[RECIPE_COL.HIDDEN - 1]) return;   // 画面に出ないものは後回しでよい
+    if (normalizeRecipeGroup_(r[RECIPE_COL.GROUP - 1])) return;
+    if (todo.length >= RECIPE_GROUP_BATCH) return;
+    todo.push({
+      row: i + 2,
+      key: String(todo.length + 1),
+      title: String(r[RECIPE_COL.TITLE - 1] || ''),
+      ingredients: String(r[RECIPE_COL.INGREDIENTS - 1] || '').split(/\r?\n/).slice(0, 12).join('、')
+    });
+  });
+  if (!todo.length) return;
+
+  // 失敗が続いたときに、画面を操作するたびに Claude を呼び直さないよう間を空ける
+  var props = PropertiesService.getScriptProperties();
+  var last = Number(props.getProperty(RECIPE_GROUP_TRY_KEY) || 0);
+  if (Date.now() - last < RECIPE_GROUP_RETRY_MS) return;
+  props.setProperty(RECIPE_GROUP_TRY_KEY, String(Date.now()));
+
+  var got = {};
+  try {
+    var result = callClaude_([{ type: 'text', text: buildRecipeGroupPrompt_(todo) }],
+      RECIPE_GROUPS_SCHEMA, MODEL_TEXT);
+    ((result && result.items) || []).forEach(function (it) {
+      got[String(it.key)] = normalizeRecipeGroup_(it.group);
+    });
+  } catch (err) {
+    console.error('レシピの分類に失敗: ' + err.message);
+    return;   // 通信の失敗などは、次に開いたときにやり直す
+  }
+
+  todo.forEach(function (t) {
+    sh.getRange(t.row, RECIPE_COL.GROUP).setValue(got[t.key] || RECIPE_GROUPS[0]);
+  });
+}
+
+var RECIPE_GROUPS_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: '入力の番号をそのまま' },
+          group: { type: 'string', enum: RECIPE_GROUPS }
+        },
+        required: ['key', 'group'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['items'],
+  additionalProperties: false
+};
+
+function buildRecipeGroupPrompt_(todo) {
+  return [
+    '料理ごとに、次の ' + RECIPE_GROUPS.length + ' つの分類のどれか1つを選んでください。',
+    RECIPE_GROUP_GUIDE,
+    '- 迷ったら、食卓でどう出すかで決めてください（例: 冷やし中華→ご飯・麺、豚汁→汁物）。',
+    '- 料理名が空のときは材料から判断し、それでも分からなければ「おかず」にしてください。',
+    '- すべての番号について1件ずつ返してください。',
+    '',
+    '--- 料理 ---'
+  ].concat(todo.map(function (t) {
+    return t.key + '. 料理名: ' + (t.title || '（不明）') + (t.ingredients ? ' / 材料: ' + t.ingredients : '');
+  })).join('\n');
 }
 
 var RECIPE_PIN_MARK = '📌';

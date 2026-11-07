@@ -175,6 +175,13 @@ function webSetRecipeHidden(token, id, hidden) {
   return webData(token);
 }
 
+/** 「レシピ」タブの分類を変える。RECIPE_GROUPS に無い値は無視する */
+function webSetRecipeGroup(token, id, group) {
+  webAssert_(token);
+  recipeSetGroup_(id, group);
+  return webData(token);
+}
+
 /** 「レシピ」タブのピン留めを付け外しする。pinned=true で上に固定する */
 function webSetRecipePinned(token, id, pinned) {
   webAssert_(token);
@@ -359,6 +366,17 @@ function webShopData_() {
  * 家族の分もまとめて出す（買い物リストと同じく共有のもの）
  */
 function webRecipeData_() {
+  var data = webRecipeRead_();
+  // 分類の無いもの（この機能より前の分など）があれば、ここでまとめて付けてから読み直す。
+  // 一度付ければ次からは通らないので、Claude を呼ぶのは足りないときだけ
+  if (data.missingGroup) {
+    fillRecipeGroups_();
+    data = webRecipeRead_();
+  }
+  return { items: data.items, groups: RECIPE_GROUPS };
+}
+
+function webRecipeRead_() {
   var id = prop_('SPREADSHEET_ID', false);
   if (!id) return { items: [] };
 
@@ -395,11 +413,13 @@ function webRecipeData_() {
       by: names[String(cell(r, RECIPE_COL.USER) || '')] || '',
       ingredients: recipeLines_(cell(r, RECIPE_COL.INGREDIENTS)).map(splitIngredient_),
       steps: recipeLines_(cell(r, RECIPE_COL.STEPS)),
-      pinned: !!cell(r, RECIPE_COL.PINNED)
+      pinned: !!cell(r, RECIPE_COL.PINNED),
+      group: normalizeRecipeGroup_(cell(r, RECIPE_COL.GROUP))
     });
   }
 
-  return { items: items };
+  var missingGroup = items.some(function (it) { return !it.group; });
+  return { items: items, missingGroup: missingGroup };
 }
 
 /** 改行区切りのセルを、空行を除いた配列にする */

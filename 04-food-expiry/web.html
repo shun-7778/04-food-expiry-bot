@@ -232,6 +232,17 @@ body {
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
 .detail .ing.hit .n { color: var(--green); font-weight: 700; }
+/* 分類の切り替えは5つ並ぶので、文字と余白を少し詰めて1行に収める */
+#recipe-seg { gap: 6px; }
+#recipe-seg button { padding: 9px 2px; font-size: 12.5px; white-space: nowrap; }
+/* 開いた中の「分類を変える」。今の分類だけ緑にする */
+.detail .regroup { display: flex; flex-wrap: wrap; gap: 6px; }
+.detail .regroup button {
+  border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+  background: var(--card); color: var(--text);
+  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.detail .regroup button.on { background: var(--green); border-color: var(--green); color: #fff; }
 /* ピン留めのスワイプは、在庫の「買い物リストへ」の青と区別して締め色で出す */
 .act.left.pin { background: var(--slate); }
 
@@ -353,6 +364,8 @@ body {
       <input id="recipe-q" type="search" placeholder="🔍 料理名・材料で検索" autocomplete="off">
       <button class="clear" id="recipe-clear" hidden>✕</button>
     </div>
+    <!-- 分類の切り替え。ボタンはサーバーから届く分類の一覧で作る（renderRecipeSeg） -->
+    <div class="seg" id="recipe-seg"></div>
   </div>
 
   <div class="head" id="head-stock" hidden>
@@ -429,6 +442,8 @@ var doneShop = [];
 var doneStock = [];
 var doneRecipe = [];    // 「レシピ」タブで消したもの。その場では「削除済み」として残し、戻せるようにする
 var openRecipe = {};    // 「レシピ」タブで開いているカード（ID → true）。描き直しても開いたままにする
+// 「レシピ」タブで選んでいる分類。'' は「すべて」。開くたびに「すべて」から始める（覚えない）
+var recipeGroup = '';
 
 function $(id) { return document.getElementById(id); }
 
@@ -623,15 +638,17 @@ function renderShop() {
 /**
  * 「レシピ」タブ。インスタのリンクから照合したレシピを、ピン留めを上に、あとは新しい順に並べる。
  * 買った品目が消えても、作るときにリールと材料・作り方を見直せるようにするためのもの。
- * 検索欄に文字があれば、料理名か材料名に含むものだけに絞る
+ * 上の切り替えで選んだ分類に絞り、検索欄に文字があれば、その中から料理名か材料名に含むものだけに絞る
  */
 function renderRecipes() {
+  renderRecipeSeg();
   var box = $('list-recipe');
   box.textContent = '';
 
   var q = normalizeForSearch($('recipe-q').value);
   var items = recipeItems().concat(doneRecipe)
     .filter(function (it) {
+      if (recipeGroup && it.group !== recipeGroup) return false;
       it.hits = q ? recipeHits(it, q) : null;
       return !q || it.hits;
     })
@@ -644,7 +661,8 @@ function renderRecipes() {
   if (!items.length) {
     var e = document.createElement('div');
     e.className = 'empty lone';
-    e.textContent = q ? '該当するレシピがありません'
+    e.textContent = q ? (recipeGroup ? '「' + recipeGroup + '」に該当するレシピがありません' : '該当するレシピがありません')
+      : recipeGroup ? '「' + recipeGroup + '」のレシピはありません'
       : 'レシピはありません。インスタのリンクを送ってから、レシピの写真を送ると残ります';
     box.appendChild(e);
     return;
@@ -655,6 +673,29 @@ function renderRecipes() {
   items.forEach(function (it, i) {
     it.level = 'r' + (i % RECIPE_COLORS);
     box.appendChild(recipeCard(it));
+  });
+}
+
+/** 分類の一覧。サーバーが古くて届かないときも、ボタンが消えないよう既定を持っておく */
+function recipeGroups() {
+  return (state.recipes && state.recipes.groups) || ['おかず', 'ご飯・麺', '汁物', 'デザート'];
+}
+
+/** 「すべて／おかず／…」の切り替え。選んでいる分類だけ緑にする */
+function renderRecipeSeg() {
+  var seg = $('recipe-seg');
+  seg.textContent = '';
+  [''].concat(recipeGroups()).forEach(function (g) {
+    var b = document.createElement('button');
+    b.textContent = g || 'すべて';
+    b.className = recipeGroup === g ? 'on' : '';
+    b.addEventListener('click', function () {
+      if (recipeGroup === g) return;
+      recipeGroup = g;
+      renderRecipes();
+      window.scrollTo(0, 0);   // 切り替えたら先頭から見せる（タブの切り替えと同じ）
+    });
+    seg.appendChild(b);
   });
 }
 
@@ -1139,6 +1180,8 @@ function recipeCard(it) {
 
   var open = !!openRecipe[it.id];
   var meta = addedMeta(it);
+  // 「すべて」で見ているときは、どの分類かも添える（分類を選んでいるときは自明なので出さない）
+  if (!recipeGroup && it.group) meta = it.group + (meta ? ' ・ ' + meta : '');
   // 閉じたままでも、どの材料で検索に当たったのかが分かるように添える
   if (it.hits && it.hits.names.length && !open) {
     meta += (meta ? ' ・ ' : '') + '🔍 ' + it.hits.names.join('、');
@@ -1210,6 +1253,19 @@ function recipeDetail(it) {
     none.textContent = '材料・作り方の記録はありません';
     box.appendChild(none);
   }
+
+  // 自動で付けた分類が違っていたときの直し口。押せばその場で移る
+  var b3 = block(box, '分類を変える');
+  var row = document.createElement('div');
+  row.className = 'regroup';
+  recipeGroups().forEach(function (g) {
+    var btn = document.createElement('button');
+    btn.textContent = g;
+    btn.className = it.group === g ? 'on' : '';
+    btn.addEventListener('click', function () { regroupRecipe(it, g); });
+    row.appendChild(btn);
+  });
+  b3.appendChild(row);
   return box;
 }
 
@@ -1368,6 +1424,18 @@ function pinRecipe(it, pinned) {
   waiting[it.id] = true;
   render();
   send('webSetRecipePinned', [it.id, pinned]);
+}
+
+/**
+ * 分類を変える。先に画面で移してから書き込む。
+ * 別の分類を選んで見ているときは、移したカードはその場で一覧から外れる
+ */
+function regroupRecipe(it, group) {
+  if (it.group === group) return;
+  it.group = group;
+  waiting[it.id] = true;
+  render();
+  send('webSetRecipeGroup', [it.id, group]);
 }
 
 /** 押したカードを開く・閉じる。サーバーには何も書かない */
