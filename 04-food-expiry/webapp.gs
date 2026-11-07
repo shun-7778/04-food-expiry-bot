@@ -245,6 +245,22 @@ function recipeRow_(id) {
   };
 }
 
+/**
+ * 買い物リストの品目を取り消す（「レシピ」タブの材料の「－」から）。
+ * 買ったわけではないので購入済にはせず、取消にする。未購入のものだけを対象にする
+ * （相手が先に買った・消した分を巻き戻さないため）
+ */
+function webCancelShop(token, id) {
+  webAssert_(token);
+
+  var sh = shopSheet_();
+  var row = webFindRow_(sh, SHOP_COL_COUNT, SHOP_COL.ID, id);
+  if (row && sh.getRange(row, SHOP_COL.STATUS).getValue() === SHOP_STATUS.TODO) {
+    sh.getRange(row, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.CANCELED, nowStamp_()]]);
+  }
+  return webData(token);
+}
+
 /** 「レシピ」タブのピン留めを付け外しする。pinned=true で上に固定する */
 function webSetRecipePinned(token, id, pinned) {
   webAssert_(token);
