@@ -232,7 +232,7 @@ body {
 .detail .ing:last-child { border-bottom: none; }
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 700; }
+.detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 400; }
 .detail ol { margin: 0; padding-left: 1.4em; }
 .detail li { margin: 0 0 6px; line-height: 1.55; overflow-wrap: anywhere; }
 .detail li::marker { color: var(--sub); font-weight: 800; }
@@ -276,7 +276,7 @@ body {
   background: var(--green); color: #fff; font-size: 14px; font-weight: 800; line-height: 1;
   font-family: inherit; cursor: pointer;
 }
-.detail .plus.minus { background: var(--line); color: var(--sub); }
+.detail .plus.minus, .detail .plus.muted { background: var(--line); color: var(--sub); }
 .detail .plus:disabled { opacity: .5; cursor: default; }
 /* ピン留めのスワイプは、在庫の「買い物リストへ」の青と区別して締め色で出す */
 .act.left.pin { background: var(--slate); }
@@ -1372,7 +1372,9 @@ function ingredientRow(it, g, st, isHit) {
     btn.disabled = !!waiting[listed.id];
     btn.addEventListener('click', function () { removeShopItem(listed); });
   } else {
-    btn.className = 'plus';
+    // 「なし」の「＋」はグレーにする（緑は「あり」の行だけ）
+    var lacking = st && !st.loading && !st.error && !st.have[g.name];
+    btn.className = 'plus' + (lacking ? ' muted' : '');
     btn.textContent = '＋';
     btn.title = '買い物リストに追加';
     btn.addEventListener('click', function () { addRecipeItems(it, [g.name]); });
