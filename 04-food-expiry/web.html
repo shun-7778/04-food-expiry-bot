@@ -36,7 +36,8 @@
   --edge: #b9c2cd;                     /* 選んだ「すべて」の枠 */
   --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
   --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
-  --sub-bg: #edf3fd;   --sub-line: #a9c2ee;   /* 材料の中の「調味料」「A」などのまとめの箱 */
+  --sub-line: #a9c2ee;                         /* 材料の中の「調味料」「A」などのまとめの枠（地は材料と同じ緑） */
+  --ing-dash: #b3bdc9;                         /* 材料の行の区切りの点線 */
   --step-bg: #d9e6fb;  --step-fg: #3b6fc4;    /* 作り方の丸数字。塗りの青は強すぎるので薄い地に青い数字 */
 
   /* 写真1枚（レシピ1つ）から入った品目のまとまりを示す色。
@@ -68,7 +69,8 @@
     --edge: #3d4552;
     --src-bg: #223247;
     --ing-bg: #18261d;   --ing-line: #2f5a3c;
-    --sub-bg: #1c2638;   --sub-line: #3a5a8a;
+    --sub-line: #3a5a8a;
+    --ing-dash: #4a5565;
     --step-bg: #263a5c;  --step-fg: #9dbcf0;
 
     /* 暗い地では沈むので、どれも一段明るくする */
@@ -81,6 +83,9 @@
    一覧が画面より長いときに上端での引き下げがこのページで止まってしまい、
    LINE内蔵ブラウザを下スワイプで閉じられなくなる（在庫タブだけ閉じられない、という形で出る） */
 html, body { background: var(--bg); }
+/* iPhone が段落ごとに文字を勝手に拡大しないようにする。
+   効くと同じ 15px でも材料と作り方で大きさが違って見える */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   margin: 0;
   color: var(--text);
@@ -107,7 +112,7 @@ body {
 /* 下へスクロールした分だけ上のかたまりを押し上げ、一覧を広く見せる。上へ戻すとその分だけ出てくる。
    位置はスクロールに合わせて JS が直接動かす（updateSticky）。指を止めたときだけ、
    半端な位置から出し切る・隠し切るのを短く動かす（snap） */
-.sticky { will-change: transform; }
+.sticky { will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden; }
 .sticky.snap { transition: transform .15s ease-out; }
 
 /* ---- タブ。指が届きやすいよう、下に浮かせて置く ---- */
@@ -240,7 +245,7 @@ body {
 .detail h4 + * { margin-top: 0; }
 .detail .blk + .blk { margin-top: 12px; }
 /* 材料は1行ずつ詰めて並べる。行の高さは「＋」（24px）で決まる */
-.detail .ing { display: flex; gap: 8px; padding: 2px 0; line-height: 1.35; border-bottom: 1px dashed var(--line); }
+.detail .ing { display: flex; gap: 8px; padding: 2px 0; line-height: 1.35; border-bottom: 1px dashed var(--ing-dash); }
 .detail .ing:last-child { border-bottom: none; }
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -296,7 +301,7 @@ body {
 /* 「A」「合わせ調味料」などのまとめは、材料の箱の中にさらに薄い青の箱で入れる。
    作り方の「(調味料)を加える」が何のことか、ここで分かるようにする */
 .detail .subbox {
-  background: var(--sub-bg); border: 1px solid var(--sub-line); border-radius: 10px;
+  background: var(--ing-bg); border: 1px solid var(--sub-line); border-radius: 10px;
   padding: 4px 10px 2px; margin: 6px 0 4px;
 }
 .detail .sub {
@@ -309,8 +314,10 @@ body {
   font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 999px;
   background: var(--line); color: var(--sub);
 }
-.detail .st.have { background: var(--ok-bg); color: var(--ok-fg); }
-.detail .st.none { background: var(--over-bg); color: var(--over-fg); }
+/* あり＝緑、なし＝赤。文字と同じ色の枠を付けて、薄い地の上でも見分けやすくする */
+.detail .st { border: 1px solid transparent; }
+.detail .st.have { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-fg); }
+.detail .st.none { background: var(--over-bg); color: var(--over-fg); border-color: var(--over-fg); }
 .detail .st.listed { background: var(--src-bg); color: var(--blue); }
 .detail .plus {
   flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
@@ -636,6 +643,8 @@ function render() {
   renderList($('list-stock'), stockRows(), stockCard, '該当する在庫がありません');
 
   renderRecipes();
+  // 分類ボタンなど、上の欄の中身は描いてから決まるので、ここで高さを測り直す
+  measureSticky();
 }
 
 /** サーバーから届いたレシピ。古い版のサーバーから返事が来ても止まらないよう空で受ける */
@@ -1863,16 +1872,28 @@ var snapTimer = 0;
 var lastDir = 0;        // 最後に動かした向き（1=下へ、-1=上へ）
 var STICKY_FADE = 16;   // かたまりの下に流しているぼかしの高さ（.sticky::after）
 
+var stickyEl = document.querySelector('.sticky');
+var stickyMax = 0;      // 隠し切るときの量（欄の高さ＋ぼかし）。スクロール中に測り直さないよう控える
+var stickyFrame = 0;
+
+/** 欄の高さを測り直す。タブを切り替えたとき・画面の大きさが変わったときだけ呼ぶ */
+function measureSticky() {
+  stickyMax = stickyEl.offsetHeight + STICKY_FADE;
+}
+
 function setStickyOffset(px, snap) {
-  var bar = document.querySelector('.sticky');
+  if (px === stickyOffset && !snap) return;   // 動かないときは書き換えない（無駄な再描画を避ける）
   stickyOffset = px;
-  bar.classList.toggle('snap', !!snap);
-  bar.style.transform = px ? 'translateY(' + (-px) + 'px)' : '';
+  stickyEl.classList.toggle('snap', !!snap);
+  // translate3d にして描画をGPUに任せる。translateY だと端末によっては毎回描き直しが入り、カクつく
+  stickyEl.style.transform = px ? 'translate3d(0,' + (-px) + 'px,0)' : '';
 }
 
 function updateSticky() {
+  stickyFrame = 0;
   var y = Math.max(0, window.scrollY || window.pageYOffset || 0);
-  var max = document.querySelector('.sticky').offsetHeight + STICKY_FADE;
+  if (!stickyMax) measureSticky();
+  var max = stickyMax;
   var dy = y - lastScrollY;
   lastScrollY = y;
   if (dy) lastDir = dy > 0 ? 1 : -1;
@@ -1890,7 +1911,12 @@ function updateSticky() {
   }, 160);
 }
 
-window.addEventListener('scroll', updateSticky, { passive: true });
+// 位置の書き換えは、画面を描く直前（requestAnimationFrame）に1コマ1回だけ行う。
+// scroll は1コマに何度も来ることがあり、そのたびに書き換えると動きが揃わずカクつく
+window.addEventListener('scroll', function () {
+  if (!stickyFrame) stickyFrame = requestAnimationFrame(updateSticky);
+}, { passive: true });
+window.addEventListener('resize', measureSticky);
 
 fullHeight = viewHeight();
 window.addEventListener('resize', function () { noteFullHeight(); updateTabbar(); });
@@ -1945,6 +1971,10 @@ function switchTab(name) {
   // 切り替えたら必ず先頭から見せる。前のタブで下まで見ていた位置が残っていると、
   // 一覧の途中から始まって迷ううえ、ブラウザを閉じる下スワイプも効かなくなる
   window.scrollTo(0, 0);
+  // タブごとに上の欄の高さが違うので測り直し、隠していた欄は出しておく
+  measureSticky();
+  lastScrollY = 0;
+  setStickyOffset(0, false);
 }
 
 // このURLに入っている呼び名。無ければ、前にこの端末で覚えた分
