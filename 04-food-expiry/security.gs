@@ -102,7 +102,7 @@ function isOwnTrigger_(e) {
 
 /**
  * webhook の URL に付ける秘密。まだ作っていなければ空文字を返す。
- * 空のあいだは検証が素通りになる（LINE の URL を貼り替えるまでの移行期間）。
+ * 勝手には作らない（作ると、LINE 側の URL を貼り替えるまで本物の webhook まで弾くため）。
  */
 function webhookSecret_() {
   return secret_(PROP_WEBHOOK_SECRET, false);
@@ -110,14 +110,17 @@ function webhookSecret_() {
 
 /**
  * この POST が本物の webhook かを判定する。
- * 秘密が未設定のあいだは true（従来どおり動く）。ログに警告だけ出す。
+ * 秘密が未設定なら誰の POST も通さない。以前は移行のために素通りさせていたが、
+ * プロパティが消えたり新しい環境に移したりしたときに、気づかないまま
+ * 「誰でも POST できる」状態になるのを避けるため、閉じる側に倒した。
+ * 未設定のときは Bot が反応しなくなるので、setupWebhookSecret() を実行して LINE 側を貼り替える。
  */
 function webhookRequestOk_(e) {
   var expected = webhookSecret_();
   if (!expected) {
-    console.warn('WEBHOOK_SECRET が未設定です。setupWebhookSecret() を実行し、'
-      + 'LINE の Webhook URL を貼り替えてください（現在は誰でも POST できます）');
-    return true;
+    console.error('WEBHOOK_SECRET が未設定のため、webhook をすべて無視しています。'
+      + 'GAS エディタで setupWebhookSecret() を実行し、LINE の Webhook URL を貼り替えてください。');
+    return false;
   }
   return secretEquals_((e && e.parameter && e.parameter.s) || '', expected);
 }

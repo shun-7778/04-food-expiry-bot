@@ -557,6 +557,7 @@ function loadWho() {
 function fail(err) {
   showLoading(false);
   pending = 0;
+  pendingData = null;
   waiting = {};
   showNotice('通信に失敗しました: ' + (err && err.message ? err.message : err));
   load();   // 画面だけ進んでいる恐れがあるので、シートの中身を取り直す
@@ -565,11 +566,32 @@ function fail(err) {
 /**
  * 書き込みの結果を受け取る。まだ他の書き込みが飛んでいる間は描き直さない
  * （先に投げたぶんの古い結果で、今の画面を巻き戻してしまわないようにする）。
+ *
+ * 書き込みの返事には、触った区分（shop / stock / recipes）だけが入っている。
+ * 重なった書き込みの返事は区分ごとに後着で重ねていき、全部そろってから1回で描く
+ * （最後の返事だけを使うと、それに入っていない区分の結果、たとえば追加した品目の本当の ID を取りこぼすため）
  */
+var pendingData = null;
+
 function opDone(data) {
   pending--;
+  var notice = (data && data.notice) || (pendingData && pendingData.notice) || '';
+  pendingData = Object.assign(pendingData || {}, data || {});
+  pendingData.notice = notice;
   if (pending > 0) return;
-  apply(data);
+
+  var d = pendingData;
+  pendingData = null;
+  apply(d);
+}
+
+/** 書き込みの返事や全体の読み直しで、届いた区分だけを手元の state に差し替える */
+var STATE_KEYS = ['shop', 'stock', 'recipes', 'users', 'order'];
+function mergeState(data) {
+  if (!state) state = {};
+  STATE_KEYS.forEach(function (k) {
+    if (data && data[k] !== undefined) state[k] = data[k];
+  });
 }
 
 function opFail(err) {
@@ -587,10 +609,10 @@ function showNotice(text) {
 function apply(data) {
   showLoading(false);
   waiting = {};      // 待っていた分は、この結果に含まれている
-  state = data;
+  mergeState(data);  // 書き込みの返事は一部の区分だけなので、丸ごと置き換えない
   showNotice(data.notice || '');
   // 呼び名の表から消えた人は、名乗っていない扱いに戻す
-  if (who && data.users && data.users.indexOf(who) < 0) who = '';
+  if (who && state.users && state.users.indexOf(who) < 0) who = '';
   if (data.order) order = data.order;
   render();
   refreshOpenStock();
@@ -1987,6 +2009,16 @@ who = loadWho();
 
 // 開く先のタブ。URL の ?tab=stock / ?tab=recipe で在庫・レシピから始められる（既定は買い物）
 if (START_TAB === 'stock' || START_TAB === 'recipe') switchTab(START_TAB);
+
+// 画面に戻ってきたら全体を読み直す。書き込みの返事は触った区分だけなので、
+// 家族が別の区分（在庫・レシピなど）を変えた分は、ここで拾う。
+// 30秒以上離れていたときだけにして、アプリを行き来するたびに読みに行かないようにする
+var hiddenAt = 0;
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (TOKEN && state && pending === 0 && hiddenAt && Date.now() - hiddenAt > 30000) load();
+  hiddenAt = 0;
+});
 
 // 埋め込みが何かの拍子に空だったときは、開いているURLの ?k= から拾い直す
 if (TOKEN) {

@@ -145,8 +145,8 @@ function showWebUrl() {
 // ---------------------------------------------------------------- 画面が呼ぶAPI
 
 /**
- * 画面の描画に要るものを全部まとめて返す。
- * 1操作ごとに読み直すので、シートの読みは1回にまとめてある。
+ * 画面の描画に要るものを全部まとめて返す。開いたとき・更新ボタン・画面に戻ってきたときに使う。
+ * 書き込みの後は webPart_ で、触った区分だけを返す。
  */
 function webData(token) {
   webAssert_(token);
@@ -158,6 +158,22 @@ function webData(token) {
     users: userNames_(),     // 画面の「あなた」の選択肢
     order: CATEGORY_ORDER    // 買い物リストを並べる順（店を回る順）
   };
+}
+
+/**
+ * 書き込みの後に返すもの。触った区分（shop / stock / recipes）だけを読み直して返す。
+ * 以前は1操作ごとに webData で3シートを全部読み直していて、データが増えるほど
+ * チェック1つの返事が遅くなっていた。画面は先に表示を変えてから投げているので、
+ * 返事は「シートの正しい中身で、その区分を差し替える」ためだけに要る。
+ * ほかの区分の、家族による変更は、画面に戻ってきたときの読み直し（webData）で拾う。
+ * 呼ぶ前に webAssert_ を通しておくこと
+ */
+function webPart_(parts) {
+  var out = {};
+  if (parts.shop) out.shop = webShopData_();
+  if (parts.stock) out.stock = webStockData_();
+  if (parts.recipes) out.recipes = webRecipeData_();
+  return out;
 }
 
 // 買い物リストの見せ方（個別／料理ごと）は覚えない。
@@ -177,14 +193,14 @@ function webSetShop(token, id, done) {
         .setValues([[done ? SHOP_STATUS.DONE : SHOP_STATUS.TODO, nowStamp_()]]);
     }
   });
-  return webData(token);
+  return webPart_({ shop: true });
 }
 
 /** 「レシピ」タブから消す・戻す。hidden=true で消す。レシピ行そのものは残す */
 function webSetRecipeHidden(token, id, hidden) {
   webAssert_(token);
   withLock_(function () { recipeSetHidden_(id, hidden); });
-  return webData(token);
+  return webPart_({ recipes: true });
 }
 
 /**
@@ -227,12 +243,12 @@ function webAddRecipeItems(token, id, names, by) {   // by は互換のため受
   webAssert_(token);
 
   var recipe = recipeRow_(id);
-  if (!recipe) return webData(token);
+  if (!recipe) return webPart_({ shop: true });
 
   var want = {};
   (names || []).slice(0, 100).forEach(function (n) { want[String(n)] = true; });
   var items = recipe.ingredients.filter(function (g) { return want[g.name]; });
-  if (!items.length) return webData(token);
+  if (!items.length) return webPart_({ shop: true });
 
   // 区分の判定は Claude を呼ぶので時間がかかる。錠を握ったまま待たせないよう、先に済ませる
   var cats = categorizeNames_(items.map(function (g) { return g.name; }));
@@ -245,7 +261,7 @@ function webAddRecipeItems(token, id, names, by) {   // by は互換のため受
     return p;
   });
 
-  var data = webData(token);
+  var data = webPart_({ shop: true });
   if (plan.dup.length) data.notice = plan.dup.join('、') + ' はすでにリストにあります。';
   return data;
 }
@@ -277,14 +293,14 @@ function webCancelShop(token, id) {
       sh.getRange(row, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.CANCELED, nowStamp_()]]);
     }
   });
-  return webData(token);
+  return webPart_({ shop: true });
 }
 
 /** 「レシピ」タブのピン留めを付け外しする。pinned=true で上に固定する */
 function webSetRecipePinned(token, id, pinned) {
   webAssert_(token);
   withLock_(function () { recipeSetPinned_(id, pinned); });
-  return webData(token);
+  return webPart_({ recipes: true });
 }
 
 /** 品名を買い物リストに足す。by は互換のため受けるだけ（名前はトークンで決まる） */
@@ -294,7 +310,7 @@ function webAddShop(token, name, by) {
   // 画面から来た文字はそのままシートへ入るので、ここで長さを切る。
   // 品名に100文字も要らず、長大な文字列でシートを膨らませる意味もない
   var clean = String(name || '').trim().substring(0, 100);
-  if (!clean) return webData(token);
+  if (!clean) return webPart_({ shop: true });
 
   // 並べ替えは区分で決まるので、手で足した分もここで区分を決めておく。
   // 画面にはもう出ている（先に描いてから投げている）ので、待たせるのは書き込みだけ。
@@ -306,7 +322,7 @@ function webAddShop(token, name, by) {
     return p;
   });
 
-  var data = webData(token);
+  var data = webPart_({ shop: true });
   if (!plan.add.length) data.notice = clean + ' はすでにリストにあります。';
   return data;
 }
@@ -323,7 +339,7 @@ function webSetStock(token, id, used) {
         .setValues([[used ? STATUS.USED : STATUS.STOCK, nowStamp_()]]);
     }
   });
-  return webData(token);
+  return webPart_({ stock: true });
 }
 
 /**
@@ -351,13 +367,13 @@ function webUseAndAdd(token, id, by) {   // by は互換のため受けるだけ
     if (p.add.length) shopAddCommit_(p);
     return { name: n, plan: p };
   });
-  if (!done) return webData(token);
+  if (!done) return webPart_({ shop: true, stock: true });
 
   var name = done.name;
   var plan = done.plan;
   var addedShopId = plan.add.length ? String(plan.ids[0]) : '';
 
-  var data = webData(token);
+  var data = webPart_({ shop: true, stock: true });
   data.addedShopId = addedShopId;
   if (name && !plan.add.length) data.notice = name + ' はすでに買い物リストにあります。';
   return data;
@@ -389,7 +405,7 @@ function webUndoUseAndAdd(token, id, shopId) {
     }
   });
 
-  return webData(token);
+  return webPart_({ shop: true, stock: true });
 }
 
 // ---------------------------------------------------------------- 読み出し
