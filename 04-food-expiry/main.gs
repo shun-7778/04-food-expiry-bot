@@ -109,6 +109,60 @@ function categorizeName_(name) {
   }
 }
 
+var CATEGORIES_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: '入力の番号をそのまま' },
+          category: { type: 'string', enum: CATEGORIES }
+        },
+        required: ['key', 'category'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['items'],
+  additionalProperties: false
+};
+
+/**
+ * 複数の品名の区分を1回の呼び出しでまとめて決める。戻り値は names と同じ並びの区分の配列。
+ * 画面の「レシピ」タブから材料をまとめて足すときに使う（1品ずつ呼ぶと待ち時間が件数ぶん伸びる）。
+ * 判定できなかったものは空にする（追加そのものは通す）
+ */
+function categorizeNames_(names) {
+  if (!names.length) return [];
+  if (names.length === 1) return [categorizeName_(names[0])];
+
+  try {
+    var r = callClaude_([{
+      type: 'text',
+      text: ['買い物リストに足す品物それぞれについて、区分を1つ選んでください。',
+        '区分: ' + CATEGORIES.join(' / '),
+        '迷ったときの目安: 豆腐・納豆・こんにゃくなどの日配品は「卵・乳製品」、'
+          + '乾物・缶詰・冷凍食品・粉類は「主食・加工食品」。食べ物でなければ「日用品」。',
+        'すべての番号について1件ずつ返してください。',
+        '',
+        '--- 品名 ---'
+      ].concat(names.map(function (n, i) { return (i + 1) + '. ' + n; })).join('\n')
+    }], CATEGORIES_SCHEMA, MODEL_TEXT);
+
+    var got = {};
+    ((r && r.items) || []).forEach(function (it) { got[String(it.key)] = it.category; });
+    return names.map(function (n, i) {
+      var c = got[String(i + 1)];
+      return CATEGORIES.indexOf(c) >= 0 ? c : '';
+    });
+  } catch (err) {
+    console.warn('区分をまとめて判定できませんでした: ' + err.message);
+    return names.map(function () { return ''; });
+  }
+}
+
 // ---------------------------------------------------------------- 買い物リスト定義
 
 var SHOP_SHEET_NAME = '買い物リスト';
@@ -1206,13 +1260,16 @@ var RECIPE_ITEM_SCHEMA = {
     item_name: { type: 'string', description: '材料名。分量や下ごしらえの指示は含めない。書かれたままの表記でよい（変換しない）。読み取れなければ空文字' },
     // 分量は買い物リストにそのまま載せる。単位まで含めて書かれたとおりに取る
     amount: { type: 'string', description: '材料名に添えられた分量。書かれたまま単位ごと。例:「大さじ2」「200g」「1/2個」「少々」。書かれていなければ空文字' },
+    // 「A」「合わせ調味料」のようにまとめて呼ばれる材料の、そのまとめ名。
+    // 作り方に「Aを加える」とだけ書かれていても、何を入れるのか画面で分かるようにするため
+    group_label: { type: 'string', description: 'この材料が属するまとめ名（「A」「合わせ調味料」「タレ」など）。属さなければ空文字' },
     // 材料確認のバブルから買い物リストに入れられるようにしたので、区分もここで判定させる
     // （あとから分類し直すと、ボタンを押してから返信までが遅くなる）
     category: { type: 'string', description: '区分。次のいずれか1つ: ' + CATEGORIES.join(' / ') },
     confidence: { type: 'string', description: '"high" | "medium" | "low"' },
     note: { type: 'string', description: '判断に迷った点があれば日本語で1文。なければ空文字' }
   },
-  required: ['item_name', 'amount', 'category', 'confidence', 'note'],
+  required: ['item_name', 'amount', 'group_label', 'category', 'confidence', 'note'],
   additionalProperties: false
 };
 
@@ -1395,7 +1452,13 @@ function buildRecipePrompt_() {
     '材料名（item_name）の書き方:',
     '- 分量（大さじ1、200g、2個、少々 など）は含めないでください。',
     '- 「みじん切り」「薄切り」「常温に戻す」などの下ごしらえの指示は含めないでください。',
-    '- 「A」「合わせ調味料」のようなグループ見出し自体は無視し、その中身の食材だけを列挙してください。',
+    '- 「A」「合わせ調味料」のようなグループ見出し自体は材料にせず、その中身の食材だけを列挙してください。',
+    '',
+    'まとめ名（group_label）:',
+    '- 材料欄の見出し（「A」「B」「合わせ調味料」「タレ」など）の下にある材料には、その見出しを group_label に入れてください。',
+    '- 材料欄に見出しが無くても、作り方で複数の材料をまとめて呼んでいる場合（例:「調味料を加える」「Aを回し入れる」）は、',
+    '  その呼び方を、該当する材料すべての group_label に入れてください。作り方の流れから、どの材料を指すか判断してください。',
+    '- どのまとめにも属さない材料は空文字にしてください。',
     '- 表記はレシピに書かれたままにしてください（かなを漢字にするなどの変換はしない）。',
     '',
     '分量（amount）の書き方:',
@@ -2424,16 +2487,18 @@ var RECIPE_NO_LINK_MESSAGE = [
 ].join('\n');
 
 /**
- * レシピシートの「材料」列に書く文字列。1行1品で「材料名：分量」（分量が無ければ材料名だけ）。
+ * レシピシートの「材料」列に書く文字列。1行1品で「[まとめ名] 材料名：分量」。
+ * まとめ名（A、合わせ調味料 など）と分量は、無ければ省く。
  * 区切りは全角のコロン。シートで見ても読め、材料名に空白が入っていても分け損ねない
- * （画面側は最後の「：」で材料名と分量に分ける）
+ * （読み出し側の splitIngredient_ が、頭の [..] と最後の「：」で分ける）
  */
 function recipeIngredientsText_(items) {
   return (items || []).map(function (it) {
     var name = String(it.item_name || '').trim();
     var amount = String(it.amount || '').trim();
+    var label = String(it.group_label || '').replace(/[\[\]\n]/g, '').trim();
     if (!name) return '';   // 分量だけ読めた行は、どの材料か分からないので残さない
-    return amount ? name + '：' + amount : name;
+    return (label ? '[' + label + '] ' : '') + (amount ? name + '：' + amount : name);
   }).filter(function (s) { return s; }).join('\n');
 }
 
@@ -3026,13 +3091,6 @@ function recipeAdd_(title, url, detail) {
     normalizeRecipeGroup_(detail.group)
   ]]);
   return id;
-}
-
-/** レシピ行の分類を書き換える。画面の「分類を変える」から使う。知らない値は書かない */
-function recipeSetGroup_(id, group) {
-  group = normalizeRecipeGroup_(group);
-  if (!group) return;
-  recipeSetCell_(id, RECIPE_COL.GROUP, group);
 }
 
 // 分類の無い行（この機能より前に登録したもの、判定に失敗したもの）を、一度にいくつまで判定するか

@@ -175,11 +175,74 @@ function webSetRecipeHidden(token, id, hidden) {
   return webData(token);
 }
 
-/** 「レシピ」タブの分類を変える。RECIPE_GROUPS に無い値は無視する */
-function webSetRecipeGroup(token, id, group) {
+/**
+ * 「レシピ」タブで開いたレシピの材料を、在庫と突き合わせる。
+ * 戻り値は { id, have: [在庫にあった材料名] }。webData は返さない（開くたびに全部を読み直さないため）。
+ *
+ * 突き合わせは LINE の材料確認と同じ matchNamesToStock_（完全一致→Claude の意味照合）。
+ * 同じレシピを開き直すたびに Claude を呼ばないよう、在庫の中身が変わらないあいだは結果を使い回す
+ */
+function webRecipeStock(token, id) {
   webAssert_(token);
-  recipeSetGroup_(id, group);
-  return webData(token);
+
+  var recipe = recipeRow_(id);
+  if (!recipe || !recipe.ingredients.length) return { id: String(id), have: [] };
+
+  var stock = currentStockRows_();
+  var cache = CacheService.getScriptCache();
+  var key = 'rstock:' + id + ':' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.MD5,
+    stock.map(function (s) { return s.id + '|' + s.name; }).join('\n')
+      + '#' + recipe.ingredients.map(function (g) { return g.name; }).join('\n'),
+    Utilities.Charset.UTF_8));
+  var hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+
+  var r = matchNamesToStock_(recipe.ingredients.map(function (g) { return { item_name: g.name }; }));
+  var out = { id: String(id), have: r.have.map(function (h) { return h.item_name; }) };
+  cache.put(key, JSON.stringify(out), RECIPE_STOCK_CACHE_SEC);
+  return out;
+}
+
+var RECIPE_STOCK_CACHE_SEC = 6 * 60 * 60;   // 在庫が変われば鍵ごと変わるので、長めでよい
+
+/**
+ * 「レシピ」タブから材料を買い物リストに足す。names は足す材料名（そのレシピの材料にあるものだけ通す）。
+ * 分量はレシピから写し、レシピIDを付けるので、買い物タブの「料理ごと」でそのレシピにまとまる。
+ * 区分（店を回る順）は材料に残していないので、ここでまとめて1回で判定する
+ */
+function webAddRecipeItems(token, id, names, by) {
+  webAssert_(token);
+
+  var recipe = recipeRow_(id);
+  if (!recipe) return webData(token);
+
+  var want = {};
+  (names || []).slice(0, 100).forEach(function (n) { want[String(n)] = true; });
+  var items = recipe.ingredients.filter(function (g) { return want[g.name]; });
+  if (!items.length) return webData(token);
+
+  var cats = categorizeNames_(items.map(function (g) { return g.name; }));
+  var plan = shopAddPlan_(items.map(function (g, i) {
+    return { name: g.name, amount: g.amount, category: cats[i] || '' };
+  }), String(id), webBy_(by));
+  if (plan.add.length) shopAddCommit_(plan);
+
+  var data = webData(token);
+  if (plan.dup.length) data.notice = plan.dup.join('、') + ' はすでにリストにあります。';
+  return data;
+}
+
+/** レシピ行を ID で1件読む。無ければ null */
+function recipeRow_(id) {
+  var sh = recipeSheet_();
+  var row = webFindRow_(sh, RECIPE_COL_COUNT, RECIPE_COL.ID, id);
+  if (!row) return null;
+  var r = sh.getRange(row, 1, 1, RECIPE_COL_COUNT).getValues()[0];
+  return {
+    id: String(r[RECIPE_COL.ID - 1]),
+    ingredients: recipeLines_(r[RECIPE_COL.INGREDIENTS - 1]).map(splitIngredient_)
+  };
 }
 
 /** 「レシピ」タブのピン留めを付け外しする。pinned=true で上に固定する */
@@ -429,11 +492,20 @@ function recipeLines_(v) {
     .filter(function (s) { return s; });
 }
 
-/** 「材料名：分量」を { name, amount } に分ける。区切りが無ければ分量は空 */
+/**
+ * 「[まとめ名] 材料名：分量」を { name, amount, label } に分ける。
+ * まとめ名・分量の無い行（この形式より前に残した分も含む）は、そこを空にする
+ */
 function splitIngredient_(line) {
+  var label = '';
+  var m = /^\[([^\]]+)\]\s*/.exec(line);
+  if (m) {
+    label = m[1].trim();
+    line = line.substring(m[0].length);
+  }
   var i = line.lastIndexOf('：');
-  if (i <= 0) return { name: line, amount: '' };
-  return { name: line.substring(0, i).trim(), amount: line.substring(i + 1).trim() };
+  if (i <= 0) return { name: line.trim(), amount: '', label: label };
+  return { name: line.substring(0, i).trim(), amount: line.substring(i + 1).trim(), label: label };
 }
 
 /**

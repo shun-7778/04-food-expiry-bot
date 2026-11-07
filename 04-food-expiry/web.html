@@ -217,32 +217,56 @@ body {
 /* 開いているかどうかの印。品名の右に小さく出す */
 .card .fold { flex: 0 0 auto; color: var(--sub); font-size: 11px; transition: transform .15s; }
 .card.open .fold { transform: rotate(180deg); }
-.detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
-.detail h4 { margin: 0 0 6px; font-size: 12px; font-weight: 800; color: var(--sub); }
+/* 台所で離れて見ることもあるので、材料と作り方は一覧の文字より大きめにする */
+.detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 16px; }
+.detail h4 { margin: 0 0 6px; font-size: 13px; font-weight: 800; color: var(--sub); }
 .detail h4 + * { margin-top: 0; }
 .detail .blk + .blk { margin-top: 12px; }
-.detail .ing { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.detail .ing { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
 .detail .ing:last-child { border-bottom: none; }
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 700; }
 .detail ol { margin: 0; padding-left: 1.4em; }
-.detail li { margin: 0 0 6px; line-height: 1.55; overflow-wrap: anywhere; }
+.detail li { margin: 0 0 8px; line-height: 1.6; overflow-wrap: anywhere; }
 .detail li::marker { color: var(--sub); font-weight: 800; }
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
 .detail .ing.hit .n { color: var(--green); font-weight: 700; }
-/* 分類の切り替えは5つ並ぶので、文字と余白を少し詰めて1行に収める */
+/* 分類の切り替えは5つ並ぶので、横の余白を詰めて、そのぶん文字を大きくする */
 #recipe-seg { gap: 6px; }
-#recipe-seg button { padding: 9px 2px; font-size: 12.5px; white-space: nowrap; }
-/* 開いた中の「分類を変える」。今の分類だけ緑にする */
-.detail .regroup { display: flex; flex-wrap: wrap; gap: 6px; }
-.detail .regroup button {
-  border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
-  background: var(--card); color: var(--text);
-  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+#recipe-seg button { padding: 10px 2px; font-size: 14px; white-space: nowrap; }
+
+/* ---- 開いた中の材料。在庫の有無と「＋」を右に並べる ---- */
+.detail .stockbar {
+  display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+  color: var(--sub); font-size: 13px;
 }
-.detail .regroup button.on { background: var(--green); border-color: var(--green); color: #fff; }
+.detail .addall {
+  flex: 1; border: none; border-radius: 10px; padding: 10px 12px;
+  background: var(--green); color: #fff;
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+/* 「A」「合わせ調味料」などのまとめ名。中身は少し下げて、どこまでがそのまとめか見せる */
+.detail .sub {
+  margin: 8px 0 2px; font-size: 13px; font-weight: 800; color: var(--blue);
+}
+.detail .ing.lab { padding-left: 10px; border-left: 2px solid var(--src-bg); }
+.detail .ing { align-items: center; }
+.detail .st {
+  flex: 0 0 auto; min-width: 38px; text-align: center;
+  font-size: 11px; font-weight: 800; padding: 3px 6px; border-radius: 999px;
+  background: var(--line); color: var(--sub);
+}
+.detail .st.have { background: var(--ok-bg); color: var(--ok-fg); }
+.detail .st.none { background: var(--over-bg); color: var(--over-fg); }
+.detail .st.listed { background: var(--src-bg); color: var(--blue); }
+.detail .plus {
+  flex: 0 0 auto; width: 30px; height: 30px; border: none; border-radius: 50%;
+  background: var(--green); color: #fff; font-size: 17px; font-weight: 800; line-height: 1;
+  font-family: inherit; cursor: pointer;
+}
+.detail .plus:disabled { background: var(--line); color: var(--sub); cursor: default; }
 /* ピン留めのスワイプは、在庫の「買い物リストへ」の青と区別して締め色で出す */
 .act.left.pin { background: var(--slate); }
 
@@ -444,6 +468,10 @@ var doneRecipe = [];    // 「レシピ」タブで消したもの。その場�
 var openRecipe = {};    // 「レシピ」タブで開いているカード（ID → true）。描き直しても開いたままにする
 // 「レシピ」タブで選んでいる分類。'' は「すべて」。開くたびに「すべて」から始める（覚えない）
 var recipeGroup = '';
+// 開いたレシピの材料を在庫と突き合わせた結果（ID → { have: {材料名: true} } / { loading } / { error }）
+var stockInfo = {};
+// 分類ごとの左の帯の色。同じ分類は同じ色にそろえる（おかずはすべて緑）
+var GROUP_COLOR = { 'おかず': 'r0', 'ご飯・麺': 'r2', '汁物': 'r4', 'デザート': 'r3' };
 
 function $(id) { return document.getElementById(id); }
 
@@ -501,6 +529,17 @@ function apply(data) {
   if (who && data.users && data.users.indexOf(who) < 0) who = '';
   if (data.order) order = data.order;
   render();
+  refreshOpenStock();
+}
+
+/**
+ * 開いているレシピのうち、在庫との照らし合わせが無いもの（在庫を動かした・更新した直後）を確かめ直す。
+ * サーバーの返事を受けた後（＝書き込みが済んだ後）に呼ぶので、古い在庫で判断しない
+ */
+function refreshOpenStock() {
+  recipeItems().forEach(function (it) {
+    if (openRecipe[it.id] && !stockInfo[it.id] && (it.ingredients || []).length) checkRecipeStock(it);
+  });
 }
 
 /** 読み込み中かどうかの見せ方。更新ボタンを回し、一覧の上にも出す */
@@ -668,10 +707,10 @@ function renderRecipes() {
     return;
   }
 
-  // 料理ごとの見出しと同じ色を、上から順に割り当てる。一覧の先頭には見出しの余白を空ける
+  // 左の帯は分類の色。一覧の先頭には見出しの余白を空ける
   box.appendChild(document.createElement('div')).className = 'gap';
-  items.forEach(function (it, i) {
-    it.level = 'r' + (i % RECIPE_COLORS);
+  items.forEach(function (it) {
+    it.level = GROUP_COLOR[it.group] || '';
     box.appendChild(recipeCard(it));
   });
 }
@@ -1207,7 +1246,10 @@ function recipeCard(it) {
   });
 }
 
-/** 開いたときの中身。材料と作り方のうち、写真に書かれていた分だけを出す */
+/**
+ * 開いたときの中身。材料と作り方のうち、写真に書かれていた分だけを出す。
+ * 材料には在庫と突き合わせた結果（あり／なし／リスト済）と、買い物リストへの「＋」を付ける
+ */
 function recipeDetail(it) {
   var box = document.createElement('div');
   box.className = 'detail';
@@ -1219,20 +1261,46 @@ function recipeDetail(it) {
 
   if (ings.length) {
     var b1 = block(box, '材料');
+    var st = stockInfo[it.id];
+    var checking = !st || st.loading;
+
+    // 「なし」で、まだ買い物リストに無いもの。一括追加の対象
+    var lacking = checking || st.error ? [] : ings.filter(function (g) {
+      return !st.have[g.name] && !inShopList(g.name);
+    });
+
+    var bar = document.createElement('div');
+    bar.className = 'stockbar';
+    if (checking) {
+      bar.innerHTML = '<span class="spin"></span>';
+      bar.appendChild(document.createTextNode('在庫と照らし合わせています…'));
+    } else if (st.error) {
+      bar.textContent = '在庫を確認できませんでした。開き直すともう一度確認します';
+    } else if (lacking.length) {
+      var all = document.createElement('button');
+      all.className = 'addall';
+      all.textContent = 'ないものを買い物リストに追加（' + lacking.length + '）';
+      all.addEventListener('click', function () {
+        addRecipeItems(it, lacking.map(function (g) { return g.name; }));
+      });
+      bar.appendChild(all);
+    } else {
+      bar.textContent = '足りないものはありません';
+    }
+    b1.appendChild(bar);
+
+    var lastLabel = '';
     ings.forEach(function (g) {
-      var row = document.createElement('div');
-      row.className = 'ing' + (hit[g.name] ? ' hit' : '');
-      var n = document.createElement('span');
-      n.className = 'n';
-      n.textContent = g.name;
-      row.appendChild(n);
-      if (g.amount) {
-        var a = document.createElement('span');
-        a.className = 'a';
-        a.textContent = g.amount;
-        row.appendChild(a);
+      // 「A」「合わせ調味料」などのまとめ名が変わるところに小見出しを入れる。
+      // 作り方の「Aを加える」が何のことか、ここで分かるようにする
+      if (g.label && g.label !== lastLabel) {
+        var sub = document.createElement('div');
+        sub.className = 'sub';
+        sub.textContent = g.label;
+        b1.appendChild(sub);
       }
-      b1.appendChild(row);
+      lastLabel = g.label || '';
+      b1.appendChild(ingredientRow(it, g, st, hit[g.name]));
     });
   }
 
@@ -1253,20 +1321,50 @@ function recipeDetail(it) {
     none.textContent = '材料・作り方の記録はありません';
     box.appendChild(none);
   }
-
-  // 自動で付けた分類が違っていたときの直し口。押せばその場で移る
-  var b3 = block(box, '分類を変える');
-  var row = document.createElement('div');
-  row.className = 'regroup';
-  recipeGroups().forEach(function (g) {
-    var btn = document.createElement('button');
-    btn.textContent = g;
-    btn.className = it.group === g ? 'on' : '';
-    btn.addEventListener('click', function () { regroupRecipe(it, g); });
-    row.appendChild(btn);
-  });
-  b3.appendChild(row);
   return box;
+}
+
+/** 材料1行。名前・分量・在庫の有無・「＋」（買い物リストへ） */
+function ingredientRow(it, g, st, isHit) {
+  var row = document.createElement('div');
+  row.className = 'ing' + (isHit ? ' hit' : '') + (g.label ? ' lab' : '');
+
+  var n = document.createElement('span');
+  n.className = 'n';
+  n.textContent = g.name;
+  row.appendChild(n);
+
+  if (g.amount) {
+    var a = document.createElement('span');
+    a.className = 'a';
+    a.textContent = g.amount;
+    row.appendChild(a);
+  }
+
+  var listed = inShopList(g.name);
+  var chip = document.createElement('span');
+  if (listed) { chip.className = 'st listed'; chip.textContent = 'リスト済'; }
+  else if (!st || st.loading) { chip.className = 'st'; chip.textContent = '…'; }
+  else if (st.error) { chip.className = 'st'; chip.textContent = '？'; }
+  else if (st.have[g.name]) { chip.className = 'st have'; chip.textContent = 'あり'; }
+  else { chip.className = 'st none'; chip.textContent = 'なし'; }
+  row.appendChild(chip);
+
+  // 家にあっても買い足したいことがあるので、「あり」にも付ける（LINE の材料確認と同じ）
+  var plus = document.createElement('button');
+  plus.className = 'plus';
+  plus.textContent = '＋';
+  plus.title = '買い物リストに追加';
+  plus.disabled = listed;
+  plus.addEventListener('click', function () { addRecipeItems(it, [g.name]); });
+  row.appendChild(plus);
+  return row;
+}
+
+/** 買い物リスト（未購入）に同じ品名がもう入っているか。表記ゆれ（カナ・全角）はならして比べる */
+function inShopList(name) {
+  var key = normalizeForSearch(name);
+  return state.shop.todo.some(function (s) { return normalizeForSearch(s.name) === key; });
 }
 
 function block(parent, heading) {
@@ -1367,6 +1465,7 @@ function buyShop(it) {
 
 /** toShop を立てると、使用済みにしたうえで買い物リストにも入れる */
 function useStock(it, toShop) {
+  stockInfo = {};   // 在庫が変わるので、レシピの「あり／なし」は開き直したときに確かめ直す
   takeOut(state.stock.items, it.id);
   it.done = true;
   it.toShop = !!toShop;
@@ -1427,25 +1526,61 @@ function pinRecipe(it, pinned) {
 }
 
 /**
- * 分類を変える。先に画面で移してから書き込む。
- * 別の分類を選んで見ているときは、移したカードはその場で一覧から外れる
+ * 押したカードを開く・閉じる。開いたときに、まだならその材料を在庫と突き合わせる。
+ * 突き合わせの結果は stockInfo に控え、閉じて開き直しても聞き直さない
+ * （在庫を動かしたとき・更新ボタンを押したときに捨てる）
  */
-function regroupRecipe(it, group) {
-  if (it.group === group) return;
-  it.group = group;
-  waiting[it.id] = true;
-  render();
-  send('webSetRecipeGroup', [it.id, group]);
-}
-
-/** 押したカードを開く・閉じる。サーバーには何も書かない */
 function toggleRecipe(it) {
   if (openRecipe[it.id]) delete openRecipe[it.id];
-  else openRecipe[it.id] = true;
+  else {
+    openRecipe[it.id] = true;
+    var st = stockInfo[it.id];
+    if ((!st || st.error) && (it.ingredients || []).length) checkRecipeStock(it);
+  }
   renderRecipes();
 }
 
+function checkRecipeStock(it) {
+  var id = it.id;
+  stockInfo[id] = { loading: true };
+  google.script.run
+    .withSuccessHandler(function (r) {
+      var have = {};
+      ((r && r.have) || []).forEach(function (n) { have[n] = true; });
+      stockInfo[id] = { have: have };
+      renderRecipes();
+    })
+    .withFailureHandler(function () {
+      stockInfo[id] = { error: true };
+      renderRecipes();
+    })
+    .webRecipeStock(TOKEN, id);
+}
+
+/**
+ * レシピの材料を買い物リストに足す。先に画面の買い物リストへ仮の行を入れ、
+ * 材料の印を「リスト済」にしてから書き込む（他の操作と同じく、返事を待たせない）
+ */
+function addRecipeItems(it, names) {
+  names = names.filter(function (n) { return !inShopList(n); });
+  if (!names.length) return;
+
+  var byName = {};
+  (it.ingredients || []).forEach(function (g) { byName[g.name] = g; });
+  names.forEach(function (n) {
+    var temp = {
+      id: 'tmp' + (++tempSeq), name: n, amount: (byName[n] && byName[n].amount) || '',
+      added: '', by: who, recipeId: it.id, recipe: { title: it.title, url: it.url }
+    };
+    state.shop.todo.push(temp);
+    waiting[temp.id] = true;
+  });
+  render();
+  send('webAddRecipeItems', [it.id, names, who]);
+}
+
 function undoStock(it) {
+  stockInfo = {};
   dropFrom(doneStock, it);
   var toShop = it.toShop;
   var shopId = it.shopId;
@@ -1658,6 +1793,7 @@ $('reload').addEventListener('click', function () {
   doneShop = [];
   doneStock = [];
   doneRecipe = [];
+  stockInfo = {};   // 在庫が動いているかもしれないので、開いたレシピは照らし合わせ直す
   waiting = {};
   load();
 });
