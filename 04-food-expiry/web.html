@@ -36,7 +36,8 @@
   --edge: #b9c2cd;                     /* 選んだ「すべて」の枠 */
   --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
   --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
-  --sub-line: #a9c2ee;                         /* 材料の中の「調味料」「A」などのまとめの枠（地は材料と同じ緑） */
+  --sub-line: #a9c2ee;                         /* 作り方の丸数字をつなぐ線 */
+  --ing-head: #dcecdf;                         /* 材料の箱の見出しの帯（箱の地より一段濃い緑） */
   --ing-dash: #b3bdc9;                         /* 材料の行の区切りの点線 */
   --step-bg: #d9e6fb;  --step-fg: #3b6fc4;    /* 作り方の丸数字。塗りの青は強すぎるので薄い地に青い数字 */
 
@@ -70,6 +71,7 @@
     --src-bg: #223247;
     --ing-bg: #18261d;   --ing-line: #2f5a3c;
     --sub-line: #3a5a8a;
+    --ing-head: #1f3a28;
     --ing-dash: #4a5565;
     --step-bg: #263a5c;  --step-fg: #9dbcf0;
 
@@ -292,22 +294,25 @@ body {
   background: var(--green); color: #fff; white-space: nowrap;
   font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
 }
-/* 材料は薄い緑の箱に入れる。見出しの下に線を引いて、材料の並びと分ける */
+/* 材料は薄い緑の箱に入れる。見出しは箱の幅いっぱいの濃い緑の帯にし、下に線を引いて材料と分ける */
 .detail .ingbox {
   background: var(--ing-bg); border: 1px solid var(--ing-line); border-radius: 12px;
-  padding: 8px 12px 6px;
+  padding: 0 12px 2px; overflow: hidden;
 }
-.detail .ingbox > h4.hrow { padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1.5px solid var(--ing-line); }
-/* 「A」「合わせ調味料」などのまとめは、材料の箱の中にさらに薄い青の箱で入れる。
+.detail .ingbox > h4.hrow {
+  margin: 0 -12px 0; padding: 7px 12px;
+  background: var(--ing-head); border-bottom: 1px solid var(--ing-line);
+}
+/* 「A」「合わせ調味料」などのまとめは、箱を作らず見出しの行を1行入れ、中身を字下げする。
    作り方の「(調味料)を加える」が何のことか、ここで分かるようにする */
-.detail .subbox {
-  background: var(--ing-bg); border: 1px solid var(--sub-line); border-radius: 10px;
-  padding: 4px 10px 2px; margin: 6px 0 4px;
-}
+.detail .subbox { margin: 0; }
 .detail .sub {
-  padding: 3px 0 5px; margin-bottom: 1px; border-bottom: 1.5px solid var(--sub-line);
-  font-size: 14px; font-weight: 800; color: var(--text);
+  padding: 4px 0; border-bottom: 1px dashed var(--ing-dash);
+  font-size: 15px; font-weight: 800; color: var(--text);
 }
+.detail .subbox .ing { padding-left: 16px; }
+/* まとめの後ろにまだ材料が続くときは、まとめの最後の行にも区切りの点線を残す */
+.detail .subbox:not(:last-child) .ing:last-child { border-bottom: 1px dashed var(--ing-dash); }
 .detail .ing { align-items: center; }
 .detail .st {
   flex: 0 0 auto; min-width: 38px; text-align: center;
