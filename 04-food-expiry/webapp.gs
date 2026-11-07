@@ -3,26 +3,31 @@
  *
  * LINE の webhook と同じデプロイの GET 側を使う。webhook は「全員がアクセス可能」で
  * ないと動かないため、URL の ?k= に秘密トークンを付けた人にだけ中身を見せる。
- * トークンの作り方と検証は security.gs（webToken_ / webTokenOk_）にある。
+ * トークンは人ごと・期限つき。作り方と検証は security.gs（webToken_ / webTokenUser_）にある。
  *
- * ⚠ この画面は「URL を知っていること」だけが鍵になっている。
+ * ⚠ この画面は「URL を知っていること」が鍵になっている。
  * 画面からは在庫の消費・買い物リストの追加削除ができるので、URL は人に渡さないこと。
- * 漏れた疑いがあるときは GAS エディタで rotateWebToken() を実行すれば作り直せる。
+ * 漏れても最長 WEB_TOKEN_MAX_DAYS 日で使えなくなるが、すぐ止めたいときは
+ * GAS エディタで rotateWebToken() を実行する。
  */
+
+var WEB_TOKEN_NG_MESSAGE = 'リンクの期限が切れたか、正しくありません。'
+  + 'LINE のメニューから開き直すか、Bot に「リンク」と送ってください。';
 
 function doGet(e) {
   var token = (e && e.parameter && e.parameter.k) || '';
+  var uid = webTokenUser_(token);
 
-  if (!webTokenOk_(token)) {
+  if (!uid) {
     return HtmlService.createHtmlOutput(
-      '<p style="font-family:sans-serif;padding:24px">リンクが正しくありません。</p>');
+      '<p style="font-family:sans-serif;padding:24px">' + WEB_TOKEN_NG_MESSAGE + '</p>');
   }
 
   var page = HtmlService.createTemplateFromFile('web');
   page.token = token;
   page.tab = webTab_(e && e.parameter && e.parameter.tab);
-  // 開いた人の呼び名。知らない名前は渡さない（画面はこれを端末に覚える）
-  page.who = webBy_(e && e.parameter && e.parameter.p);
+  // 開いた人の呼び名。トークンの持ち主で決まる（URL に書かれた名前は信じない）
+  page.who = userNameMap_()[uid] || '';
   return page.evaluate()
     .setTitle('食材管理')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1')
@@ -105,32 +110,36 @@ var WEB_FRAME_URL = 'https://shun-7778.github.io/04-food-expiry-bot/';
  * ⚠ この URL 自体が鍵なので、チャットやブックマークの共有で人に渡さないこと。
  */
 function webUrl_(tab) {
-  // 誰のために作ったURLかを載せる。画面はこれを見て「あなた」を決め、端末に覚える。
-  // URL そのものが鍵なので、呼び名を足しても渡せる範囲は変わらない
-  var by = userName_();
+  // 誰の URL かはトークンで決まるので、呼び名（以前の &p=）はもう載せない。
   // 枠ページへは # の後ろで渡す。? だと GitHub のサーバーにトークンごと届いて
   // アクセスログに残りうるが、# の後ろは端末の中だけで読まれて送られない
   return WEB_FRAME_URL
     + '#u=' + encodeURIComponent(execUrl_())
     + '&k=' + webToken_()
-    + '&tab=' + webTab_(tab)
-    + (by ? '&p=' + encodeURIComponent(by) : '');
+    + '&tab=' + webTab_(tab);
 }
 
 /** 枠を使わず Apps Script を直接開くURL（注意バーは出る） */
 function webDirectUrl_(tab) {
-  var by = userName_();
-  return execUrl_() + '?k=' + webToken_() + '&tab=' + webTab_(tab)
-    + (by ? '&p=' + encodeURIComponent(by) : '');
+  return execUrl_() + '?k=' + webToken_() + '&tab=' + webTab_(tab);
 }
 
-/** GASエディタから実行するとURLがログに出る */
+/** GASエディタから実行すると、全員分のURLがログに出る */
 function showWebUrl() {
   requireEditor_();
-  console.log('買い物: ' + webUrl_('shop'));
-  console.log('在庫  : ' + webUrl_('stock'));
-  console.log('枠なし: ' + webDirectUrl_('shop'));
-  return webUrl_('shop');
+  var first = '';
+  allowedUserIds_().forEach(function (uid) {
+    withUser_(uid, function () {
+      var who = userName_() || uid;
+      var url = webUrl_('shop');   // 先に作る（無ければここでトークンが発行される）
+      var e = webTokens_()[uid] || {};
+      console.log(who + ' 買い物: ' + url);
+      console.log(who + ' 枠なし: ' + webDirectUrl_('shop'));
+      console.log(who + ' 発行: ' + new Date(Number(e.curAt || 0)) + '（' + WEB_TOKEN_MAX_DAYS + '日で失効）');
+      if (!first) first = url;
+    });
+  });
+  return first;
 }
 
 // ---------------------------------------------------------------- 画面が呼ぶAPI
@@ -141,9 +150,8 @@ function showWebUrl() {
  */
 function webData(token) {
   webAssert_(token);
-  // 今は1人で使う前提なので、トークンが合えば全行を見せている。
-  // LINE と画面を紐付けて複数人で使うようにするときは、ここでトークンから利用者を引き、
-  // その人の行だけを返すように絞ること（webSetShop などの書き込み側も同じ）。
+  // 買い物リストと在庫は家族で共有なので、トークンが合えば全行を見せる。
+  // 誰の操作か（追加した人の名前）は webAssert_ がトークンから決める。
   return {
     shop: webShopData_(), stock: webStockData_(),
     recipes: webRecipeData_(),    // 「レシピ」タブに出す、リンク付きで照合したレシピ
@@ -159,19 +167,23 @@ function webData(token) {
 function webSetShop(token, id, done) {
   webAssert_(token);
 
-  var sh = shopSheet_();
-  var row = webFindRow_(sh, SHOP_COL_COUNT, SHOP_COL.ID, id);
-  if (row) {
-    sh.getRange(row, SHOP_COL.STATUS, 1, 2)
-      .setValues([[done ? SHOP_STATUS.DONE : SHOP_STATUS.TODO, nowStamp_()]]);
-  }
+  // 行を探してから書くまでを囲う。LINE や家族の操作が割り込むと、
+  // 探した行番号がずれて別の品目を書き換えてしまうため（書き込み系はすべて同じ）
+  withLock_(function () {
+    var sh = shopSheet_();
+    var row = webFindRow_(sh, SHOP_COL_COUNT, SHOP_COL.ID, id);
+    if (row) {
+      sh.getRange(row, SHOP_COL.STATUS, 1, 2)
+        .setValues([[done ? SHOP_STATUS.DONE : SHOP_STATUS.TODO, nowStamp_()]]);
+    }
+  });
   return webData(token);
 }
 
 /** 「レシピ」タブから消す・戻す。hidden=true で消す。レシピ行そのものは残す */
 function webSetRecipeHidden(token, id, hidden) {
   webAssert_(token);
-  recipeSetHidden_(id, hidden);
+  withLock_(function () { recipeSetHidden_(id, hidden); });
   return webData(token);
 }
 
@@ -211,7 +223,7 @@ var RECIPE_STOCK_CACHE_SEC = 6 * 60 * 60;   // 在庫が変われば鍵ごと変
  * 分量はレシピから写し、レシピIDを付けるので、買い物タブの「料理ごと」でそのレシピにまとまる。
  * 区分（店を回る順）は材料に残していないので、ここでまとめて1回で判定する
  */
-function webAddRecipeItems(token, id, names, by) {
+function webAddRecipeItems(token, id, names, by) {   // by は互換のため受けるだけ（名前はトークンで決まる）
   webAssert_(token);
 
   var recipe = recipeRow_(id);
@@ -222,11 +234,16 @@ function webAddRecipeItems(token, id, names, by) {
   var items = recipe.ingredients.filter(function (g) { return want[g.name]; });
   if (!items.length) return webData(token);
 
+  // 区分の判定は Claude を呼ぶので時間がかかる。錠を握ったまま待たせないよう、先に済ませる
   var cats = categorizeNames_(items.map(function (g) { return g.name; }));
-  var plan = shopAddPlan_(items.map(function (g, i) {
-    return { name: g.name, amount: g.amount, category: cats[i] || '' };
-  }), String(id), webBy_(by));
-  if (plan.add.length) shopAddCommit_(plan);
+  // 重複の確認から書き込みまでを囲う。間に別の追加が入ると、同じ品目が2行入るため
+  var plan = withLock_(function () {
+    var p = shopAddPlan_(items.map(function (g, i) {
+      return { name: g.name, amount: g.amount, category: cats[i] || '' };
+    }), String(id), userName_());
+    if (p.add.length) shopAddCommit_(p);
+    return p;
+  });
 
   var data = webData(token);
   if (plan.dup.length) data.notice = plan.dup.join('、') + ' はすでにリストにあります。';
@@ -253,32 +270,24 @@ function recipeRow_(id) {
 function webCancelShop(token, id) {
   webAssert_(token);
 
-  var sh = shopSheet_();
-  var row = webFindRow_(sh, SHOP_COL_COUNT, SHOP_COL.ID, id);
-  if (row && sh.getRange(row, SHOP_COL.STATUS).getValue() === SHOP_STATUS.TODO) {
-    sh.getRange(row, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.CANCELED, nowStamp_()]]);
-  }
+  withLock_(function () {
+    var sh = shopSheet_();
+    var row = webFindRow_(sh, SHOP_COL_COUNT, SHOP_COL.ID, id);
+    if (row && sh.getRange(row, SHOP_COL.STATUS).getValue() === SHOP_STATUS.TODO) {
+      sh.getRange(row, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.CANCELED, nowStamp_()]]);
+    }
+  });
   return webData(token);
 }
 
 /** 「レシピ」タブのピン留めを付け外しする。pinned=true で上に固定する */
 function webSetRecipePinned(token, id, pinned) {
   webAssert_(token);
-  recipeSetPinned_(id, pinned);
+  withLock_(function () { recipeSetPinned_(id, pinned); });
   return webData(token);
 }
 
-/**
- * 画面から送られてきた「あなた」。誰の操作かはトークンでは分からないので、
- * 名乗ってもらった分を受け取る。ただし何でも書けてしまわないよう、
- * USER_NAMES に載っている呼び名だけを通す
- */
-function webBy_(by) {
-  var name = String(by || '').trim();
-  return userNames_().indexOf(name) >= 0 ? name : '';
-}
-
-/** 品名を買い物リストに足す。区分は空欄のまま（LINE と違い Claude は呼ばない） */
+/** 品名を買い物リストに足す。by は互換のため受けるだけ（名前はトークンで決まる） */
 function webAddShop(token, name, by) {
   webAssert_(token);
 
@@ -288,9 +297,14 @@ function webAddShop(token, name, by) {
   if (!clean) return webData(token);
 
   // 並べ替えは区分で決まるので、手で足した分もここで区分を決めておく。
-  // 画面にはもう出ている（先に描いてから投げている）ので、待たせるのは書き込みだけ
-  var plan = shopAddPlan_([{ name: clean, category: categorizeName_(clean) }], '', webBy_(by));
-  if (plan.add.length) shopAddCommit_(plan);
+  // 画面にはもう出ている（先に描いてから投げている）ので、待たせるのは書き込みだけ。
+  // 区分の判定（Claude）は錠の外で済ませ、重複の確認から書き込みまでだけを囲う
+  var category = categorizeName_(clean);
+  var plan = withLock_(function () {
+    var p = shopAddPlan_([{ name: clean, category: category }], '', userName_());
+    if (p.add.length) shopAddCommit_(p);
+    return p;
+  });
 
   var data = webData(token);
   if (!plan.add.length) data.notice = clean + ' はすでにリストにあります。';
@@ -301,12 +315,14 @@ function webAddShop(token, name, by) {
 function webSetStock(token, id, used) {
   webAssert_(token);
 
-  var sh = sheet_();
-  var row = webFindRow_(sh, COL_COUNT, COL.ID, id);
-  if (row) {
-    sh.getRange(row, COL.STATUS, 1, 2)
-      .setValues([[used ? STATUS.USED : STATUS.STOCK, nowStamp_()]]);
-  }
+  withLock_(function () {
+    var sh = sheet_();
+    var row = webFindRow_(sh, COL_COUNT, COL.ID, id);
+    if (row) {
+      sh.getRange(row, COL.STATUS, 1, 2)
+        .setValues([[used ? STATUS.USED : STATUS.STOCK, nowStamp_()]]);
+    }
+  });
   return webData(token);
 }
 
@@ -317,25 +333,29 @@ function webSetStock(token, id, used) {
  * 足した買い物リストの ID を addedShopId として返す。取り消すときに
  * 「この操作で足した1件」だけを狙って消すために使う（もともと入っていたものは触らない）。
  */
-function webUseAndAdd(token, id, by) {
+function webUseAndAdd(token, id, by) {   // by は互換のため受けるだけ（名前はトークンで決まる）
   webAssert_(token);
 
-  var sh = sheet_();
-  var row = webFindRow_(sh, COL_COUNT, COL.ID, id);
-  if (!row) return webData(token);
+  var done = withLock_(function () {
+    var sh = sheet_();
+    var row = webFindRow_(sh, COL_COUNT, COL.ID, id);
+    if (!row) return null;
 
-  var name = String(sh.getRange(row, COL.NAME).getValue() || '').trim();
-  var category = String(sh.getRange(row, COL.CATEGORY).getValue() || '');
-  sh.getRange(row, COL.STATUS, 1, 2).setValues([[STATUS.USED, nowStamp_()]]);
+    var n = String(sh.getRange(row, COL.NAME).getValue() || '').trim();
+    var category = String(sh.getRange(row, COL.CATEGORY).getValue() || '');
+    sh.getRange(row, COL.STATUS, 1, 2).setValues([[STATUS.USED, nowStamp_()]]);
 
-  var plan = name
-    ? shopAddPlan_([{ name: name, category: category }], '', webBy_(by))
-    : { add: [] };
-  var addedShopId = '';
-  if (plan.add.length) {
-    shopAddCommit_(plan);
-    addedShopId = String(plan.ids[0]);
-  }
+    var p = n
+      ? shopAddPlan_([{ name: n, category: category }], '', userName_())
+      : { add: [] };
+    if (p.add.length) shopAddCommit_(p);
+    return { name: n, plan: p };
+  });
+  if (!done) return webData(token);
+
+  var name = done.name;
+  var plan = done.plan;
+  var addedShopId = plan.add.length ? String(plan.ids[0]) : '';
 
   var data = webData(token);
   data.addedShopId = addedShopId;
@@ -352,28 +372,38 @@ function webUseAndAdd(token, id, by) {
 function webUndoUseAndAdd(token, id, shopId) {
   webAssert_(token);
 
-  var sh = sheet_();
-  var row = webFindRow_(sh, COL_COUNT, COL.ID, id);
-  if (row) {
-    sh.getRange(row, COL.STATUS, 1, 2).setValues([[STATUS.STOCK, nowStamp_()]]);
-  }
-
-  if (shopId) {
-    var shop = shopSheet_();
-    var srow = webFindRow_(shop, SHOP_COL_COUNT, SHOP_COL.ID, shopId);
-    // すでに購入済みにされていたら触らない（相手が先に片付けた分を戻さないため）
-    if (srow && shop.getRange(srow, SHOP_COL.STATUS).getValue() === SHOP_STATUS.TODO) {
-      shop.getRange(srow, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.CANCELED, nowStamp_()]]);
+  withLock_(function () {
+    var sh = sheet_();
+    var row = webFindRow_(sh, COL_COUNT, COL.ID, id);
+    if (row) {
+      sh.getRange(row, COL.STATUS, 1, 2).setValues([[STATUS.STOCK, nowStamp_()]]);
     }
-  }
+
+    if (shopId) {
+      var shop = shopSheet_();
+      var srow = webFindRow_(shop, SHOP_COL_COUNT, SHOP_COL.ID, shopId);
+      // すでに購入済みにされていたら触らない（相手が先に片付けた分を戻さないため）
+      if (srow && shop.getRange(srow, SHOP_COL.STATUS).getValue() === SHOP_STATUS.TODO) {
+        shop.getRange(srow, SHOP_COL.STATUS, 1, 2).setValues([[SHOP_STATUS.CANCELED, nowStamp_()]]);
+      }
+    }
+  });
 
   return webData(token);
 }
 
 // ---------------------------------------------------------------- 読み出し
 
+/**
+ * 画面からの呼び出しの入口。トークンの持ち主を、この実行の「相手」（CURRENT_USER_）にする。
+ * これで userName_()（追加した人の名前）が、画面から名乗った名前ではなくトークンで決まる
+ */
 function webAssert_(token) {
-  if (!webTokenOk_(token)) throw new Error('リンクが正しくありません。');
+  var uid = webTokenUser_(token);
+  if (!uid) throw new Error(WEB_TOKEN_NG_MESSAGE);
+  CURRENT_USER_ = uid;
+  THEME_CACHE_ = null;
+  return uid;
 }
 
 /** ID から行番号を探す。行の並びは編集でズレるので、必ず ID で引く */

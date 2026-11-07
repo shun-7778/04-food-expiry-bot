@@ -316,6 +316,10 @@ function doPost(e) {
       if (imageEvents.indexOf(ev) >= 0) return; // 上でまとめて処理済み
       handleEvent_(ev);
     });
+
+    // 画面トークンの期限が来ていれば入れ替え、メニューも作り直す。
+    // 返信を済ませた後に行うので、その分だけ返事が遅れることはない
+    refreshWebAccessAfterReply_(events);
   } catch (err) {
     console.error('doPost failed: ' + err.stack);
   }
@@ -1057,7 +1061,8 @@ function handleText_(event, text) {
   // Claude を呼ばずに済む固定コマンドは先に処理する
   if (text === 'リンク' || text === 'link') {
     replyText_(event.replyToken, '買い物リストと在庫の画面:\n' + webUrl_()
-      + '\n\n開けないときはこちら:\n' + webDirectUrl_());
+      + '\n\n開けないときはこちら:\n' + webDirectUrl_()
+      + '\n\n※ このリンクはあなた専用です。人に渡さないでください（最長' + WEB_TOKEN_MAX_DAYS + '日で自動的に切り替わります）。');
     return;
   }
   if (!text || text === 'ヘルプ' || text === 'help' || text === '使い方') {
@@ -5156,36 +5161,10 @@ function setupRichMenu() {
   });
 
   // メニューは人ごとに作る。押したときの動きも画像も同じだが、焼き込む画面のURLに
-  // その人の呼び名が入るので、画面が「あなた」を名乗らせずに済む。
-  // 配色は後から変えられるので、1人につき黒・白の2枚を先に作っておく
-  var themes = [
-    { theme: 'dark',  image: RICHMENU_IMAGE_BASE64, name: 'richmenu.png' },
-    { theme: 'light', image: richMenuLightImage_(), name: 'richmenu-light.png' }
-  ];
-
+  // その人だけのトークンが入る（security.gs の webToken_）。
   var byUser = {};
   users.forEach(function (uid) {
-    withUser_(uid, function () {
-      byUser[uid] = {};
-      themes.forEach(function (m) {
-        if (!m.image) {
-          console.log('※ ' + m.theme + ' の画像が無いので作りません（RichMenuImageLight.gs 未反映）');
-          return;
-        }
-        var created = JSON.parse(lineApi_('post', 'https://api.line.me/v2/bot/richmenu', {
-          contentType: 'application/json',
-          payload: JSON.stringify(buildRichMenu_(m.theme))
-        }).getContentText());
-        byUser[uid][m.theme] = created.richMenuId;
-
-        var png = Utilities.newBlob(Utilities.base64Decode(m.image), 'image/png', m.name);
-        lineApi_('post', 'https://api-data.line.me/v2/bot/richmenu/' + created.richMenuId + '/content', {
-          contentType: 'image/png',
-          payload: png.getBytes()
-        });
-        console.log('作成(' + (userName_() || uid) + ' / ' + m.theme + '): ' + created.richMenuId);
-      });
-    });
+    byUser[uid] = withUser_(uid, function () { return createUserRichMenus_(uid); });
   });
 
   PropertiesService.getScriptProperties().setProperty('RICHMENU_IDS', JSON.stringify(byUser));
@@ -5204,6 +5183,71 @@ function setupRichMenu() {
   });
   console.log(users.length + '人に設定しました。トークを開き直すと出ます。');
   console.log('※ 使う人を増やしたら、ALLOWED_USER_IDS に追記したうえで、この関数をもう一度実行すること。');
+}
+
+/**
+ * その人のリッチメニューを黒・白の2枚作り、{ dark: id, light: id } を返す。withUser_ の中で呼ぶ。
+ * 配色は後から変えられるので、両方を先に作っておく。
+ * 焼き込んだ画面トークンを控えておき、トークンを入れ替えたときに作り直しの要否を判断する
+ */
+function createUserRichMenus_(uid) {
+  var themes = [
+    { theme: 'dark',  image: RICHMENU_IMAGE_BASE64, name: 'richmenu.png' },
+    { theme: 'light', image: richMenuLightImage_(), name: 'richmenu-light.png' }
+  ];
+  var token = webToken_();   // buildRichMenu_ の webUrl_ もこれと同じ値を使う
+  var out = {};
+
+  themes.forEach(function (m) {
+    if (!m.image) {
+      console.log('※ ' + m.theme + ' の画像が無いので作りません（RichMenuImageLight.gs 未反映）');
+      return;
+    }
+    var created = JSON.parse(lineApi_('post', 'https://api.line.me/v2/bot/richmenu', {
+      contentType: 'application/json',
+      payload: JSON.stringify(buildRichMenu_(m.theme))
+    }).getContentText());
+    out[m.theme] = created.richMenuId;
+
+    var png = Utilities.newBlob(Utilities.base64Decode(m.image), 'image/png', m.name);
+    lineApi_('post', 'https://api-data.line.me/v2/bot/richmenu/' + created.richMenuId + '/content', {
+      contentType: 'image/png',
+      payload: png.getBytes()
+    });
+    console.log('作成(' + (userName_() || uid) + ' / ' + m.theme + '): ' + created.richMenuId);
+  });
+
+  markMenuWebToken_(uid, token);
+  return out;
+}
+
+/**
+ * その人のリッチメニューだけを作り直して貼り替え、古い2枚を片付ける。
+ * 画面トークンを入れ替えたとき（security.gs の refreshWebAccess_）に使う。
+ * ほかの人のメニューには触らない
+ */
+function replaceUserRichMenus_(uid) {
+  return withUser_(uid, function () {
+    var old = richMenuIds_()[uid] || {};
+    var created = createUserRichMenus_(uid);
+
+    var all = richMenuIds_();
+    all[uid] = created;
+    PropertiesService.getScriptProperties().setProperty('RICHMENU_IDS', JSON.stringify(all));
+    linkRichMenuForUser_(uid);
+
+    // 古いメニューは古いトークンを抱えているので、貼り替えた後に LINE 側から消す
+    Object.keys(old).forEach(function (theme) {
+      var id = old[theme];
+      if (!id || id === created[theme]) return;
+      try {
+        lineApiIgnore404_('delete', 'https://api.line.me/v2/bot/richmenu/' + id);
+      } catch (err) {
+        console.warn('古いリッチメニューを消せませんでした: ' + id + ' ' + err.message);
+      }
+    });
+    return created;
+  });
 }
 
 /** 人ごとのリッチメニューID。{ userId: { dark: id, light: id } } */
