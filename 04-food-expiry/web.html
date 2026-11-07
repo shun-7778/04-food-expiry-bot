@@ -1372,9 +1372,9 @@ function ingredientRow(it, g, st, isHit) {
     btn.disabled = !!waiting[listed.id];
     btn.addEventListener('click', function () { removeShopItem(listed); });
   } else {
-    // 「なし」の「＋」はグレーにする（緑は「あり」の行だけ）
-    var lacking = st && !st.loading && !st.error && !st.have[g.name];
-    btn.className = 'plus' + (lacking ? ' muted' : '');
+    // 足りない（「なし」）の「＋」だけ緑にして目立たせる。「あり」の「＋」は買い足し用なのでグレー
+    var have = st && !st.loading && !st.error && st.have[g.name];
+    btn.className = 'plus' + (have ? ' muted' : '');
     btn.textContent = '＋';
     btn.title = '買い物リストに追加';
     btn.addEventListener('click', function () { addRecipeItems(it, [g.name]); });
