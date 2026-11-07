@@ -144,11 +144,14 @@ var RECIPE_COL = {
   TITLE: 3,    // 料理名（写真から読み取ったもの。読めなければ空）
   URL: 4,      // リールなどのリンク。本人が送ってきたもの
   USER: 5,     // 登録した人の userId
-  HIDDEN: 6    // 画面の「履歴」から消したもの。行は消さない（ID が行番号で決まるため）
+  HIDDEN: 6,   // 画面の「レシピ」タブから消したもの。行は消さない（ID が行番号で決まるため）
+  INGREDIENTS: 7,  // 写真から読んだ材料。1行に1品「材料名：分量」（分量が無ければ材料名だけ）
+  STEPS: 8,        // 写真から読んだ作り方。1行に1手順。写真に無ければ空
+  PINNED: 9        // 「レシピ」タブで上に固定したもの
 };
-var RECIPE_COL_COUNT = 6;
+var RECIPE_COL_COUNT = 9;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め'];
 
 // 通知のしきい値（日数）
 var NOTIFY_1M_DAYS = 30;
@@ -494,12 +497,18 @@ function handleRecipeImages_(events) {
   try {
     var seen = {};
     var items = [];
+    var steps = [];
     var dish = '';
     events.forEach(function (ev) {
       var image = fetchLineImage_(ev.message.id);
       var result = extractRecipeItems_(image.base64, image.mimeType);
       // 料理名は最初に読み取れたものを採る（複数枚でも料理は1つという前提）
       if (!dish && result && result.dish_name) dish = String(result.dish_name).trim();
+      // 作り方は送られた写真の順につなぐ（材料の写真と手順の写真を分けて送ることがあるため）
+      ((result && result.steps) || []).forEach(function (s) {
+        s = String(s || '').trim();
+        if (s) steps.push(s);
+      });
       ((result && result.items) || []).forEach(function (it) {
         if (!it.item_name) return;
         var key = normalizeName_(it.item_name);
@@ -514,7 +523,7 @@ function handleRecipeImages_(events) {
       return;
     }
 
-    replyRecipeMatch_(replyToken, items, dish);
+    replyRecipeMatch_(replyToken, items, dish, steps);
   } catch (err) {
     console.error('レシピ照合に失敗: ' + err.stack);
     replyText_(replyToken, '読み取りに失敗しました。\n' + err.message);
@@ -560,6 +569,8 @@ var HELP_MESSAGE = [
   'レシピの写真を送ると、そこから足した品目にリンクが',
   '付きます。付くのは次に送った写真1回だけです。',
   '画面の買い物リストで料理名を押すと開けます。',
+  'リンク付きのレシピは、画面の「レシピ」タブに材料と',
+  '作り方が残り、料理名や材料名で検索できます。',
   '違うレシピに付いたときは、一覧の「外す」を押して',
   'ください。すでに足した品目からも外れます。',
   'レシピの写真を送ると、材料を在庫と突き合わせて',
@@ -770,7 +781,7 @@ function detachRecipeLink_(token) {
   if (!set.url && !set.recipeId) return 'この一覧にリンクは付いていません。';
 
   var cleared = shopSetRecipe_(set.shopIds || [], '');
-  // 取り違えたリンクなので、画面の「履歴」にも残さない
+  // 取り違えたリンクなので、画面の「レシピ」タブにも残さない
   if (set.recipeId) recipeSetHidden_(set.recipeId, true);
   updateAddSet_(token, { url: '', recipeId: '' });
 
@@ -1197,9 +1208,16 @@ var RECIPE_SCHEMA = {
       type: 'array',
       description: '材料欄に書かれている食材・調味料ごとに1要素',
       items: RECIPE_ITEM_SCHEMA
+    },
+    // 作り方。画面の「レシピ」タブに材料と並べて出す。
+    // これも同じ1回の呼び出しで取るので、API の往復は増えない
+    steps: {
+      type: 'array',
+      description: '作り方の手順。1手順1要素で、写真に書かれた順。写真に作り方が無ければ空の配列',
+      items: { type: 'string' }
     }
   },
-  required: ['items'],
+  required: ['items', 'steps'],
   additionalProperties: false
 };
 
@@ -1338,8 +1356,8 @@ function buildRecipePrompt_() {
   return [
     '料理レシピの写真から、材料欄に書かれている食材・調味料をすべて読み取ってください。',
     '',
-    '対象外にするもの:',
-    '- 作り方の手順、コラム、広告など材料欄以外の文章',
+    '材料（items）の対象外にするもの:',
+    '- 作り方の手順、コラム、広告など材料欄以外の文章（作り方は下の steps に入れる）',
     '- ページ全体のタイトルや料理名（材料そのものではないため）',
     '',
     '料理名（dish_name）:',
@@ -1361,6 +1379,13 @@ function buildRecipePrompt_() {
     '- 分量が書かれていなければ空文字にしてください（推測で補わない）。',
     '',
     '区分（category）は ' + CATEGORIES.join(' / ') + ' から1つ選んでください。',
+    '',
+    '作り方（steps）:',
+    '- 写真に作り方・手順が書かれていれば、1手順を1要素にして書かれた順に steps に入れてください。',
+    '- 番号（「1.」「①」など）は付けないでください。表示する側で振ります。',
+    '- 言い回しは写真のままにし、分量・火加減・時間は省かないでください。',
+    '  ただし改行で切れた文はつなげ、「※」の補足は該当する手順の末尾に添えてください。',
+    '- 作り方が写真に無ければ空の配列にしてください（推測で作らない）。',
     '',
     '確信が持てない場合:',
     '- 手書き文字がかすれている、印刷が不鮮明、複数の候補が考えられるなどで自信が持てない場合は',
@@ -2326,7 +2351,7 @@ function matchNamesToStock_(items, all) {
  * どちらの行にも買い物リストへの「追加」ボタンを付ける（家にあっても買い足したい
  * ことがあるため）。期限・登録日は出さない。期限を見たいときは在庫確認を使う。
  */
-function replyRecipeMatch_(replyToken, items, dish) {
+function replyRecipeMatch_(replyToken, items, dish, steps) {
   var r = matchNamesToStock_(items);
   var missing = r.missing.map(recipeEntry_);
   var have = r.have.map(recipeEntry_);
@@ -2338,14 +2363,45 @@ function replyRecipeMatch_(replyToken, items, dish) {
   // リンクを写真より先に送っていた場合は、ここで結びつける
   var waiting = takeWaitingLink_();
   // リンク付きの照合は、材料を1品も足さなくてもレシピ行を作る。
-  // 画面の「履歴」は、家にあるものだけで作れた料理のリンクも出すため
-  if (waiting) ensureRecipeId_(updateAddSet_(token, { url: waiting }));
+  // 画面の「レシピ」タブは、家にあるものだけで作れた料理も出すため。
+  // 材料と作り方もここで書く（写真は残さないので、あとからは読み直せない）
+  if (waiting) {
+    ensureRecipeId_(updateAddSet_(token, { url: waiting }), {
+      ingredients: recipeIngredientsText_(items),
+      steps: (steps || []).join('\n')
+    });
+  }
 
   // 紐づけ中の表示。料理名が読めていればそれを、読めていなければ帯だけ出す
   var linkNote = waiting ? (dish || true) : '';
 
-  replyFlexMessage_(replyToken, '材料確認 買うべきもの' + missing.length + '件',
-    buildRecipeBubble_(missing, have, token, linkNote));
+  var messages = [{
+    type: 'flex',
+    altText: ('材料確認 買うべきもの' + missing.length + '件').substring(0, 400),
+    contents: buildRecipeBubble_(missing, have, token, linkNote)
+  }];
+  // リンクが無いと「レシピ」タブには残らない。照合だけは済ませたうえで、残し方を伝える
+  if (!waiting) messages.push({ type: 'text', text: RECIPE_NO_LINK_MESSAGE });
+  replyMessages_(replyToken, messages);
+}
+
+var RECIPE_NO_LINK_MESSAGE = [
+  '📌 このレシピは「レシピ」タブには残していません。',
+  '残すときは、インスタのリールのリンクを送ってから、続けてこの写真をもう一度送ってください。'
+].join('\n');
+
+/**
+ * レシピシートの「材料」列に書く文字列。1行1品で「材料名：分量」（分量が無ければ材料名だけ）。
+ * 区切りは全角のコロン。シートで見ても読め、材料名に空白が入っていても分け損ねない
+ * （画面側は最後の「：」で材料名と分量に分ける）
+ */
+function recipeIngredientsText_(items) {
+  return (items || []).map(function (it) {
+    var name = String(it.item_name || '').trim();
+    var amount = String(it.amount || '').trim();
+    if (!name) return '';   // 分量だけ読めた行は、どの材料か分からないので残さない
+    return amount ? name + '：' + amount : name;
+  }).filter(function (s) { return s; }).join('\n');
 }
 
 /** バブルとその控えで使う1件ぶん。表示に要るのは名前と分量、追加には区分も要る */
@@ -2904,9 +2960,12 @@ function recipeSheet_() {
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, RECIPE_COL_COUNT).setValues([RECIPE_HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
-  } else if (sh.getMaxColumns() < RECIPE_COL_COUNT) {
-    // 列を足す前に作ったシート。移行処理を手で回さなくて済むよう、ここで足す
-    sh.insertColumnsAfter(sh.getMaxColumns(), RECIPE_COL_COUNT - sh.getMaxColumns());
+  } else if (sh.getLastColumn() < RECIPE_COL_COUNT) {
+    // 列を足す前に作ったシート。移行処理を手で回さなくて済むよう、ここで足す。
+    // 新しいシートは最初から26列あるので、列の数ではなく見出しの数で見る
+    if (sh.getMaxColumns() < RECIPE_COL_COUNT) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), RECIPE_COL_COUNT - sh.getMaxColumns());
+    }
     sh.getRange(1, 1, 1, RECIPE_COL_COUNT).setValues([RECIPE_HEADERS]).setFontWeight('bold');
   }
 
@@ -2914,20 +2973,52 @@ function recipeSheet_() {
   return sh;
 }
 
-/** レシピを1行足して、その ID を返す */
-function recipeAdd_(title, url) {
+/**
+ * レシピを1行足して、その ID を返す。detail は { ingredients, steps }（どちらも改行区切りの文字列）。
+ *
+ * 同じリンクをピン留めしたまま送り直したときは、ピン留めを新しい行に引き継ぐ。
+ * 画面は同じリンクの最新の1行だけを出すので、引き継がないと固定が外れたように見えるため
+ */
+function recipeAdd_(title, url, detail) {
   var sh = recipeSheet_();
   var last = sh.getLastRow();
   var id = String(last);   // 見出し行があるので、行数がそのまま次の連番になる
+  var pinned = url ? recipeLinkPinned_(sh, url) : false;
+  detail = detail || {};
 
   sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
-    id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', ''
+    id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', '',
+    detail.ingredients || '', detail.steps || '', pinned ? RECIPE_PIN_MARK : ''
   ]]);
   return id;
 }
 
-/** レシピ行の「非表示」を付け外しする。画面の「履歴」から消す・戻すときに使う */
+var RECIPE_PIN_MARK = '📌';
+
+/** そのリンクの最新の行がピン留めされているか */
+function recipeLinkPinned_(sh, url) {
+  var last = sh.getLastRow();
+  if (last < 2) return false;
+
+  var rows = sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][RECIPE_COL.URL - 1] || '') !== url) continue;
+    return !!rows[i][RECIPE_COL.PINNED - 1];
+  }
+  return false;
+}
+
+/** レシピ行の「非表示」を付け外しする。画面の「レシピ」タブから消す・戻すときに使う */
 function recipeSetHidden_(id, hidden) {
+  recipeSetCell_(id, RECIPE_COL.HIDDEN, hidden ? '非表示' : '');
+}
+
+/** レシピ行のピン留めを付け外しする。画面の「レシピ」タブで左にスワイプしたときに使う */
+function recipeSetPinned_(id, pinned) {
+  recipeSetCell_(id, RECIPE_COL.PINNED, pinned ? RECIPE_PIN_MARK : '');
+}
+
+function recipeSetCell_(id, col, value) {
   var sh = recipeSheet_();
   var last = sh.getLastRow();
   if (last < 2) return;
@@ -2935,7 +3026,7 @@ function recipeSetHidden_(id, hidden) {
   var ids = sh.getRange(2, RECIPE_COL.ID, last - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
     if (String(ids[i][0]) !== String(id)) continue;
-    sh.getRange(i + 2, RECIPE_COL.HIDDEN).setValue(hidden ? '非表示' : '');
+    sh.getRange(i + 2, col).setValue(value);
     return;
   }
 }
@@ -3912,12 +4003,12 @@ function updateAddSet_(token, patch) {
  * その控えに対応するレシピ行の ID。まだ無ければ作る。
  * 料理名もリンクも無いうちは行を作らない（中身の無い行が増えるだけのため）
  */
-function ensureRecipeId_(set) {
+function ensureRecipeId_(set, detail) {
   if (!set) return '';
   if (set.recipeId) return set.recipeId;
   if (!set.dish && !set.url) return '';
 
-  var id = recipeAdd_(set.dish, set.url);
+  var id = recipeAdd_(set.dish, set.url, detail);
   updateAddSet_(set.token, { recipeId: id });
   set.recipeId = id;
   return id;

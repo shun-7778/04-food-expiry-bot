@@ -86,7 +86,8 @@ function assertExecUrl_() {
  * ここを通さずに生の値を埋め込まないこと。
  */
 function webTab_(tab) {
-  return String(tab || '') === 'stock' ? 'stock' : 'shop';
+  tab = String(tab || '');
+  return tab === 'stock' || tab === 'recipe' ? tab : 'shop';
 }
 
 /**
@@ -145,7 +146,7 @@ function webData(token) {
   // その人の行だけを返すように絞ること（webSetShop などの書き込み側も同じ）。
   return {
     shop: webShopData_(), stock: webStockData_(),
-    history: webHistoryData_(),   // 買い物リストの「履歴」に出すレシピのリンク
+    recipes: webRecipeData_(),    // 「レシピ」タブに出す、リンク付きで照合したレシピ
     users: userNames_(),     // 画面の「あなた」の選択肢
     order: CATEGORY_ORDER    // 買い物リストを並べる順（店を回る順）
   };
@@ -167,10 +168,17 @@ function webSetShop(token, id, done) {
   return webData(token);
 }
 
-/** 「履歴」のリンクを消す・戻す。hidden=true で消す。レシピ行そのものは残す */
-function webSetHistory(token, id, hidden) {
+/** 「レシピ」タブから消す・戻す。hidden=true で消す。レシピ行そのものは残す */
+function webSetRecipeHidden(token, id, hidden) {
   webAssert_(token);
   recipeSetHidden_(id, hidden);
+  return webData(token);
+}
+
+/** 「レシピ」タブのピン留めを付け外しする。pinned=true で上に固定する */
+function webSetRecipePinned(token, id, pinned) {
+  webAssert_(token);
+  recipeSetPinned_(id, pinned);
   return webData(token);
 }
 
@@ -341,17 +349,16 @@ function webShopData_() {
   return { todo: todo };
 }
 
-var HISTORY_DAYS = 7;    // 「履歴」に出すのは登録からこの日数以内
-var HISTORY_LIMIT = 5;   // 「履歴」に出す最大件数
-
 /**
- * 「履歴」に出すレシピのリンク。新しい順に HISTORY_LIMIT 件まで。
+ * 「レシピ」タブに出すもの。リンク付きで照合したレシピを、日数・件数の区切りなしに全部返す。
+ * 並べ替え（ピン留めを上、あとは新しい順）は画面側でやる。
  *
  * 同じリンクを何度か送っていたら、いちばん新しい行だけで判断する。
  * その行が消されていれば、古い同じリンクが代わりに出てくることもない。
+ * リンクの無い行（写真だけで照合したもの）は出さない。
  * 家族の分もまとめて出す（買い物リストと同じく共有のもの）
  */
-function webHistoryData_() {
+function webRecipeData_() {
   var id = prop_('SPREADSHEET_ID', false);
   if (!id) return { items: [] };
 
@@ -361,35 +368,52 @@ function webHistoryData_() {
   var last = sh.getLastRow();
   if (last < 2) return { items: [] };
 
-  // 「非表示」列が無い古いシートでは、ある列までだけ読む（どれも消されていない扱い）
+  // 列を足す前の古いシートでは、ある列までだけ読む（足りない列は空として扱う）
   var cols = Math.min(sh.getMaxColumns(), RECIPE_COL_COUNT);
   var rows = sh.getRange(2, 1, last - 1, cols).getValues();
   var names = userNameMap_();
-  var since = Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000;
   var seen = {};
   var items = [];
 
+  function cell(r, col) { return col <= cols ? r[col - 1] : ''; }
+
   // 下ほど新しい（ID は行の順に振っている）ので、下から見る
-  for (var i = rows.length - 1; i >= 0 && items.length < HISTORY_LIMIT; i--) {
+  for (var i = rows.length - 1; i >= 0; i--) {
     var r = rows[i];
-    var url = String(r[RECIPE_COL.URL - 1] || '');
+    var url = String(cell(r, RECIPE_COL.URL) || '');
     if (!url || seen[url]) continue;
     seen[url] = true;
 
-    if (r[RECIPE_COL.HIDDEN - 1]) continue;
-    var at = recipeTime_(r[RECIPE_COL.ADDED - 1]);
-    if (!at || at < since) continue;
+    if (cell(r, RECIPE_COL.HIDDEN)) continue;
+    var at = recipeTime_(cell(r, RECIPE_COL.ADDED));
 
     items.push({
-      id: String(r[RECIPE_COL.ID - 1]),
-      title: String(r[RECIPE_COL.TITLE - 1] || ''),
+      id: String(cell(r, RECIPE_COL.ID)),
+      title: String(cell(r, RECIPE_COL.TITLE) || ''),
       url: url,
-      added: Utilities.formatDate(new Date(at), 'Asia/Tokyo', 'yyyy-MM-dd'),
-      by: names[String(r[RECIPE_COL.USER - 1] || '')] || ''
+      added: at ? Utilities.formatDate(new Date(at), 'Asia/Tokyo', 'yyyy-MM-dd') : '',
+      by: names[String(cell(r, RECIPE_COL.USER) || '')] || '',
+      ingredients: recipeLines_(cell(r, RECIPE_COL.INGREDIENTS)).map(splitIngredient_),
+      steps: recipeLines_(cell(r, RECIPE_COL.STEPS)),
+      pinned: !!cell(r, RECIPE_COL.PINNED)
     });
   }
 
   return { items: items };
+}
+
+/** 改行区切りのセルを、空行を除いた配列にする */
+function recipeLines_(v) {
+  return String(v || '').split(/\r?\n/)
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s; });
+}
+
+/** 「材料名：分量」を { name, amount } に分ける。区切りが無ければ分量は空 */
+function splitIngredient_(line) {
+  var i = line.lastIndexOf('：');
+  if (i <= 0) return { name: line, amount: '' };
+  return { name: line.substring(0, i).trim(), amount: line.substring(i + 1).trim() };
 }
 
 /**

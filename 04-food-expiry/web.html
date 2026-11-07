@@ -203,8 +203,37 @@ body {
 /* 料理ごとで品目が無いときの案内。見出しが無いぶん切り替えボタンに密着して
    ボタンの影が被るので、見出しと同じだけ離す */
 .empty.lone { margin-top: 14px; }
-/* 「履歴」の一覧の頭。見出しを出さないぶん、料理ごとの見出しと同じだけ空ける */
+/* 「レシピ」タブの一覧の頭。見出しを出さないぶん、料理ごとの見出しと同じだけ空ける */
 .gap { height: 14px; }
+
+/* ---- 「レシピ」タブ。カードを押すと、その下に材料と作り方が開く ---- */
+.card.tap { cursor: pointer; }
+/* 開いた中身は「開く」の錠剤の下まで横いっぱいに使う。1段目（料理名の行）はそのまま、
+   中身だけを折り返して2段目に置き、頭を料理名に揃える（帯4px＋間11px） */
+.card.open { flex-wrap: wrap; row-gap: 0; }
+.card.open .name { white-space: normal; overflow-wrap: anywhere; }
+.card > .detail { flex: 0 0 100%; padding-left: 15px; }
+.card .pin { flex: 0 0 auto; font-size: 13px; line-height: 1; margin-right: -4px; }
+/* 開いているかどうかの印。品名の右に小さく出す */
+.card .fold { flex: 0 0 auto; color: var(--sub); font-size: 11px; transition: transform .15s; }
+.card.open .fold { transform: rotate(180deg); }
+.detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
+.detail h4 { margin: 0 0 6px; font-size: 12px; font-weight: 800; color: var(--sub); }
+.detail h4 + * { margin-top: 0; }
+.detail .blk + .blk { margin-top: 12px; }
+.detail .ing { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.detail .ing:last-child { border-bottom: none; }
+/* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
+.detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 700; }
+.detail ol { margin: 0; padding-left: 1.4em; }
+.detail li { margin: 0 0 6px; line-height: 1.55; overflow-wrap: anywhere; }
+.detail li::marker { color: var(--sub); font-weight: 800; }
+.detail .none { color: var(--sub); font-size: 13px; }
+/* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
+.detail .ing.hit .n { color: var(--green); font-weight: 700; }
+/* ピン留めのスワイプは、在庫の「買い物リストへ」の青と区別して締め色で出す */
+.act.left.pin { background: var(--slate); }
 
 /* 「個別／料理ごと」の切り替え。選んでいる側は「追加」ボタンと同じ緑地・白文字にする。
    選んでいない側も品目と同じ白地＋影にして、押せるボタンだと分かるようにする */
@@ -314,7 +343,13 @@ body {
     <div class="seg">
       <button id="seg-list" class="on">個別</button>
       <button id="seg-recipe">料理ごと</button>
-      <button id="seg-history">履歴</button>
+    </div>
+  </div>
+
+  <div class="head" id="head-recipe" hidden>
+    <div class="search">
+      <input id="recipe-q" type="search" placeholder="🔍 料理名・材料で検索" autocomplete="off">
+      <button class="clear" id="recipe-clear" hidden>✕</button>
     </div>
   </div>
 
@@ -345,12 +380,17 @@ body {
     <div class="sec">期限が近い順</div>
     <div id="list-stock"></div>
   </section>
+
+  <section id="panel-recipe" hidden>
+    <div id="list-recipe"></div>
+  </section>
 </div>
 
 <div class="tabbar" id="tabbar">
   <div class="tabs">
     <button class="tab on" id="tab-shop">買い物<span class="n" id="n-shop"></span></button>
     <button class="tab" id="tab-stock">在庫<span class="n" id="n-stock"></span></button>
+    <button class="tab" id="tab-recipe">レシピ<span class="n" id="n-recipe"></span></button>
     <button class="reload" id="reload" title="更新">↻</button>
   </div>
 </div>
@@ -373,7 +413,7 @@ var pending = 0;      // 書き込み待ちの件数。0 になるまでサー�
 var waiting = {};     // 書き込み待ちの品目。その行に「読み込み中」を出す
 var tempSeq = 0;      // 追加した直後の、まだ ID が無い品目に振る仮の番号
 var filter = '';   // '' / 'over' / 'soon' / 'ok'
-// 買い物リストの見せ方。'list'（個別）/ 'recipe'（料理ごと）/ 'history'（レシピのリンクの履歴）。
+// 買い物リストの見せ方。'list'（個別）/ 'recipe'（料理ごと）。
 // 開くたびに個別から始める（覚えない）。料理ごとはその場で切り替えて使う
 var shopView = 'list';
 var who = '';            // この端末を使っている人の呼び名。足したものに残す（起動時に控えから読む）
@@ -385,7 +425,8 @@ var SOON_DAYS = 7;   // 「期限が近い」とみなす残り日数。絞り�
 // 「購入済み」「使用済み」にはその場で操作した分しか並ばない
 var doneShop = [];
 var doneStock = [];
-var doneHistory = [];   // 「履歴」で消したリンク。その場では「削除済み」として残し、戻せるようにする
+var doneRecipe = [];    // 「レシピ」タブで消したもの。その場では「削除済み」として残し、戻せるようにする
+var openRecipe = {};    // 「レシピ」タブで開いているカード（ID → true）。描き直しても開いたままにする
 
 function $(id) { return document.getElementById(id); }
 
@@ -479,11 +520,19 @@ function render() {
 
   $('n-shop').textContent = state.shop.todo.length;
   $('n-stock').textContent = state.stock.items.length;
+  $('n-recipe').textContent = recipeItems().length;
 
   renderShop();
 
   renderStats();
   renderList($('list-stock'), stockRows(), stockCard, '該当する在庫がありません');
+
+  renderRecipes();
+}
+
+/** サーバーから届いたレシピ。古い版のサーバーから返事が来ても止まらないよう空で受ける */
+function recipeItems() {
+  return (state.recipes && state.recipes.items) || [];
 }
 
 function renderStats() {
@@ -540,12 +589,6 @@ function renderShop() {
   var rows = shopRows();
   $('seg-list').className = shopView === 'list' ? 'on' : '';
   $('seg-recipe').className = shopView === 'recipe' ? 'on' : '';
-  $('seg-history').className = shopView === 'history' ? 'on' : '';
-
-  if (shopView === 'history') {
-    renderHistory();
-    return;
-  }
 
   // 個別でも帯の色は使うので、色を決める束ね直しは先にやっておく
   var groups = groupByRecipe(rows);
@@ -576,23 +619,31 @@ function renderShop() {
 }
 
 /**
- * 「履歴」。インスタのリンクから照合したレシピを、新しい順に並べる。
- * 買った品目が消えても、作るときにリールを開き直せるようにするためのもの。
- * 何日分・何件までを出すかはサーバー側（HISTORY_DAYS / HISTORY_LIMIT）で決めている
+ * 「レシピ」タブ。インスタのリンクから照合したレシピを、ピン留めを上に、あとは新しい順に並べる。
+ * 買った品目が消えても、作るときにリールと材料・作り方を見直せるようにするためのもの。
+ * 検索欄に文字があれば、料理名か材料名に含むものだけに絞る
  */
-function renderHistory() {
-  // 見出しが無いのは料理ごとと同じ。案内は lone で切り替えボタンから離す
-  $('shop-sec').hidden = true;
-  var box = $('list-todo');
+function renderRecipes() {
+  var box = $('list-recipe');
   box.textContent = '';
 
-  var items = ((state.history && state.history.items) || []).concat(doneHistory)
-    .sort(function (a, b) { return Number(b.id) - Number(a.id); });
+  var q = normalizeForSearch($('recipe-q').value);
+  var items = recipeItems().concat(doneRecipe)
+    .filter(function (it) {
+      it.hits = q ? recipeHits(it, q) : null;
+      return !q || it.hits;
+    })
+    .sort(function (a, b) {
+      // 消した行は消したその場に残すので、ピン留めの並びにも元のまま入れておく
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      return Number(b.id) - Number(a.id);
+    });
 
   if (!items.length) {
     var e = document.createElement('div');
     e.className = 'empty lone';
-    e.textContent = '履歴はありません';
+    e.textContent = q ? '該当するレシピがありません'
+      : 'レシピはありません。インスタのリンクを送ってから、レシピの写真を送ると残ります';
     box.appendChild(e);
     return;
   }
@@ -601,8 +652,22 @@ function renderHistory() {
   box.appendChild(document.createElement('div')).className = 'gap';
   items.forEach(function (it, i) {
     it.level = 'r' + (i % RECIPE_COLORS);
-    box.appendChild(historyCard(it));
+    box.appendChild(recipeCard(it));
   });
+}
+
+/**
+ * 検索語に当たるか。当たらなければ null、当たれば { title, names } を返す。
+ * names は当たった材料名で、開いたときに色を付けるのと、閉じたままでも
+ * どの材料で当たったかを添えるのに使う。言い換え（にんにく／大蒜 など）は在庫の検索と同じ
+ */
+function recipeHits(it, q) {
+  var title = aliasKey(it.title || '').indexOf(q) >= 0;
+  var names = [];
+  (it.ingredients || []).forEach(function (g) {
+    if (aliasKey(g.name).indexOf(q) >= 0) names.push(g.name);
+  });
+  return title || names.length ? { title: title, names: names } : null;
 }
 
 /**
@@ -768,7 +833,12 @@ var NAME_ALIASES = [
 
 /** 品名と分類から、探しやすい形の文字列を作る */
 function searchKey(it) {
-  var key = normalizeForSearch(it.name + ' ' + (it.category || ''));
+  return aliasKey(it.name + ' ' + (it.category || ''));
+}
+
+/** 文字をならし、言い換えの表に載っている言葉なら別の書き方も後ろに足す */
+function aliasKey(text) {
+  var key = normalizeForSearch(text);
   for (var i = 0; i < NAME_ALIASES.length; i++) {
     var group = NAME_ALIASES[i];
     var hit = false;
@@ -809,7 +879,10 @@ function renderList(box, items, build, emptyText) {
  *   days  … { d: '94', u: '日超過' } 右端の表示。無ければ出さない
  *   waiting … 書き込み待ちなら、右端に「読み込み中」を出す
  *   done  … 済みの見た目にするか（品名を薄く、帯をグレーに）
- *   right / left … スワイプしたときの { label, run }
+ *   right / left … スワイプしたときの { label, run, cls }
+ *   tap   … カードを押したときに呼ぶ関数（レシピの開閉）。開閉の印も出す
+ *   open / detail … 開いているか、開いたときに品名の下に出す要素
+ *   pin   … ピン留めの印を品名の前に出すか
  */
 function card(opt) {
   var wrap = document.createElement('div');
@@ -821,7 +894,8 @@ function card(opt) {
   if (left) wrap.appendChild(left);
 
   var el = document.createElement('div');
-  el.className = 'card' + (opt.done ? ' done' : '');
+  el.className = 'card' + (opt.done ? ' done' : '')
+    + (opt.tap ? ' tap' : '') + (opt.open ? ' open' : '');
 
   if (opt.done) {
     // 済みの行は期限の色帯を出さない。代わりにチェックを置く
@@ -841,6 +915,13 @@ function card(opt) {
   var line = document.createElement('div');
   line.className = 'line';
 
+  if (opt.pin) {
+    var pin = document.createElement('span');
+    pin.className = 'pin';
+    pin.textContent = '📌';
+    line.appendChild(pin);
+  }
+
   var name = document.createElement('div');
   name.className = 'name';
   name.textContent = opt.name;
@@ -852,6 +933,13 @@ function card(opt) {
     amt.textContent = opt.amount;
     line.appendChild(amt);
   }
+
+  if (opt.tap) {
+    var fold = document.createElement('span');
+    fold.className = 'fold';
+    fold.textContent = '▼';
+    line.appendChild(fold);
+  }
   body.appendChild(line);
 
   if (opt.meta) {
@@ -859,6 +947,15 @@ function card(opt) {
     meta.className = 'meta';
     meta.textContent = opt.meta;
     body.appendChild(meta);
+  }
+
+  if (opt.tap) {
+    el.addEventListener('click', function (e) {
+      // 横にずらしている最中のタップや、開いた中身（作り方を読みながら触る）では開閉しない
+      if (el.dataset.swiped) return;
+      if (e.target.closest && e.target.closest('.detail')) return;
+      opt.tap();
+    });
   }
 
   if (opt.src && opt.src.url) {
@@ -915,6 +1012,9 @@ function card(opt) {
     el.appendChild(days);
   }
 
+  // 開いた中身はカードの最後に置き、折り返して横いっぱいに出す（.card > .detail）
+  if (opt.open && opt.detail) el.appendChild(opt.detail);
+
   wrap.appendChild(el);
   attachSwipe(el, right, left, opt.right, opt.left);
   return wrap;
@@ -923,7 +1023,7 @@ function card(opt) {
 function actionLayer(side, action) {
   if (!action) return null;
   var el = document.createElement('div');
-  el.className = 'act ' + side;
+  el.className = 'act ' + side + (action.cls ? ' ' + action.cls : '');
   el.textContent = action.label;
   return el;
 }
@@ -945,6 +1045,7 @@ function attachSwipe(el, rightEl, leftEl, rightAction, leftAction) {
     dx = 0;
     dragging = true;
     decided = false;
+    delete el.dataset.swiped;
     el.classList.remove('slide');
   }, { passive: true });
 
@@ -958,6 +1059,8 @@ function attachSwipe(el, rightEl, leftEl, rightAction, leftAction) {
       if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
       decided = true;
       if (Math.abs(my) > Math.abs(mx)) { dragging = false; return; }
+      // 横に動かし始めたら、指を離したあとのタップ（レシピの開閉）とは見なさない
+      el.dataset.swiped = '1';
     }
 
     if (mx > 0 && !rightAction) mx = 0;
@@ -1016,7 +1119,11 @@ function shopCard(it) {
   });
 }
 
-function historyCard(it) {
+/**
+ * 「レシピ」タブの1件。押すと材料と作り方が開く。
+ * 右へなぞると消す、左へなぞるとピン留め（LINE のトークの固定と同じ向き）
+ */
+function recipeCard(it) {
   var title = it.title || 'レシピ';
   if (it.done) {
     return card({
@@ -1024,19 +1131,94 @@ function historyCard(it) {
       name: title,
       meta: '削除済み',
       waiting: !!waiting[it.id],
-      right: { label: '取消', run: function () { undoHistory(it); } }
+      right: { label: '取消', run: function () { undoRecipe(it); } }
     });
+  }
+
+  var open = !!openRecipe[it.id];
+  var meta = addedMeta(it);
+  // 閉じたままでも、どの材料で検索に当たったのかが分かるように添える
+  if (it.hits && it.hits.names.length && !open) {
+    meta += (meta ? ' ・ ' : '') + '🔍 ' + it.hits.names.join('、');
   }
 
   return card({
     level: it.level,
     name: title,
-    meta: addedMeta(it),
+    meta: meta,
+    pin: !!it.pinned,
     waiting: !!waiting[it.id],
+    tap: function () { toggleRecipe(it); },
+    open: open,
+    detail: open ? recipeDetail(it) : null,
     // 品名の位置にもう料理名が出ているので、錠剤は「開く」だけにする
-    src: { url: it.url, title: 'レシピを開く' },
-    right: { label: '削除', run: function () { hideHistory(it); } }
+    src: { url: it.url, title: '開く' },
+    right: { label: '削除', run: function () { hideRecipe(it); } },
+    left: {
+      label: it.pinned ? 'ピン留め\n解除' : 'ピン留め',
+      cls: 'pin',
+      run: function () { pinRecipe(it, !it.pinned); }
+    }
   });
+}
+
+/** 開いたときの中身。材料と作り方のうち、写真に書かれていた分だけを出す */
+function recipeDetail(it) {
+  var box = document.createElement('div');
+  box.className = 'detail';
+
+  var ings = it.ingredients || [];
+  var steps = it.steps || [];
+  var hit = {};
+  ((it.hits && it.hits.names) || []).forEach(function (n) { hit[n] = true; });
+
+  if (ings.length) {
+    var b1 = block(box, '材料');
+    ings.forEach(function (g) {
+      var row = document.createElement('div');
+      row.className = 'ing' + (hit[g.name] ? ' hit' : '');
+      var n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = g.name;
+      row.appendChild(n);
+      if (g.amount) {
+        var a = document.createElement('span');
+        a.className = 'a';
+        a.textContent = g.amount;
+        row.appendChild(a);
+      }
+      b1.appendChild(row);
+    });
+  }
+
+  if (steps.length) {
+    var b2 = block(box, '作り方');
+    var ol = document.createElement('ol');
+    steps.forEach(function (s) {
+      var li = document.createElement('li');
+      li.textContent = s;
+      ol.appendChild(li);
+    });
+    b2.appendChild(ol);
+  }
+
+  if (!ings.length && !steps.length) {
+    var none = document.createElement('div');
+    none.className = 'none';
+    none.textContent = '材料・作り方の記録はありません';
+    box.appendChild(none);
+  }
+  return box;
+}
+
+function block(parent, heading) {
+  var b = document.createElement('div');
+  b.className = 'blk';
+  var h = document.createElement('h4');
+  h.textContent = heading;
+  b.appendChild(h);
+  parent.appendChild(b);
+  return b;
 }
 
 function stockCard(it) {
@@ -1159,23 +1341,38 @@ function undoShop(it) {
   send('webSetShop', [it.id, false]);
 }
 
-/** 「履歴」から消す。シートの行は残し、非表示の印を付けるだけ */
-function hideHistory(it) {
-  takeOut(state.history.items, it.id);
+/** 「レシピ」タブから消す。シートの行は残し、非表示の印を付けるだけ */
+function hideRecipe(it) {
+  takeOut(recipeItems(), it.id);
   it.done = true;
-  doneHistory.push(it);
+  doneRecipe.push(it);
   waiting[it.id] = true;
   render();
-  send('webSetHistory', [it.id, true]);
+  send('webSetRecipeHidden', [it.id, true]);
 }
 
-function undoHistory(it) {
-  dropFrom(doneHistory, it);
+function undoRecipe(it) {
+  dropFrom(doneRecipe, it);
   delete it.done;
-  state.history.items.push(it);
+  recipeItems().push(it);
   waiting[it.id] = true;
   render();
-  send('webSetHistory', [it.id, false]);
+  send('webSetRecipeHidden', [it.id, false]);
+}
+
+/** ピン留めの付け外し。先に画面で上へ動かしてから書き込む */
+function pinRecipe(it, pinned) {
+  it.pinned = pinned;
+  waiting[it.id] = true;
+  render();
+  send('webSetRecipePinned', [it.id, pinned]);
+}
+
+/** 押したカードを開く・閉じる。サーバーには何も書かない */
+function toggleRecipe(it) {
+  if (openRecipe[it.id]) delete openRecipe[it.id];
+  else openRecipe[it.id] = true;
+  renderRecipes();
 }
 
 function undoStock(it) {
@@ -1222,7 +1419,6 @@ function setShopView(mode) {
 
 $('seg-list').addEventListener('click', function () { setShopView('list'); });
 $('seg-recipe').addEventListener('click', function () { setShopView('recipe'); });
-$('seg-history').addEventListener('click', function () { setShopView('history'); });
 
 $('add-btn').addEventListener('click', add);
 $('add-name').addEventListener('keydown', function (e) {
@@ -1248,6 +1444,32 @@ $('stock-clear').addEventListener('click', function () {
   render();
 });
 
+// レシピの検索。在庫の検索と同じ動き（打つたびに絞る・Enter でキーボードを閉じる）
+$('recipe-q').addEventListener('input', function () {
+  $('recipe-clear').hidden = !$('recipe-q').value;
+  updateTabbar();
+  render();
+});
+$('recipe-q').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') $('recipe-q').blur();
+});
+$('recipe-q').addEventListener('focus', noteFocus);
+$('recipe-q').addEventListener('blur', updateTabbar);
+$('recipe-clear').addEventListener('click', function () {
+  $('recipe-q').value = '';
+  $('recipe-clear').hidden = true;
+  $('recipe-q').blur();
+  updateTabbar();
+  render();
+});
+
+/** 今のタブで文字を打つ入力欄 */
+function activeInput() {
+  if (!$('panel-stock').hidden) return $('stock-q');
+  if (!$('panel-recipe').hidden) return $('recipe-q');
+  return $('add-name');
+}
+
 /**
  * キーボードが出ているあいだだけ下のタブを引っ込める。
  * 一覧の一番下が隠れるのと、キーボードに押し上げられるのを避けるため。
@@ -1265,8 +1487,7 @@ var focusHeight = 0;       // 入力欄に入った瞬間の高さ。キーボ�
 var KEYBOARD_WAIT = 1200;  // 入力欄に入ってからキーボードが出るのを待つ長さ
 
 function updateTabbar() {
-  var onStock = !$('panel-stock').hidden;
-  var typing = document.activeElement === (onStock ? $('stock-q') : $('add-name'));
+  var typing = document.activeElement === activeInput();
   // 入力欄に入った直後はまだ画面が縮んでいない。ここで一度タブを出すと
   // すぐに引っ込むことになるので、猶予のあいだは出ている扱いにする
   var opening = typing && Date.now() - focusAt < KEYBOARD_WAIT;
@@ -1330,7 +1551,7 @@ function keyboardOpen() {
 /** 文字を打っていないあいだの高さを、キーボードが無いときの高さとして覚える */
 function noteFullHeight() {
   var el = document.activeElement;
-  if (el === $('add-name') || el === $('stock-q')) return;
+  if (el === $('add-name') || el === $('stock-q') || el === $('recipe-q')) return;
   // 以前は最大値を溜めていたが、一度でも高い状態を見ると以後ずっと
   // 「キーボードが出ている」と誤られるので、そのときの高さをそのまま持つ
   fullHeight = viewHeight();
@@ -1366,22 +1587,23 @@ $('reload').addEventListener('click', function () {
   // 枠の中で location.reload() すると白い画面になるので、中身だけ取り直す
   doneShop = [];
   doneStock = [];
-  doneHistory = [];
+  doneRecipe = [];
   waiting = {};
   load();
 });
 
-$('tab-shop').addEventListener('click', function () { switchTab('shop'); });
-$('tab-stock').addEventListener('click', function () { switchTab('stock'); });
+var TABS = ['shop', 'stock', 'recipe'];
+TABS.forEach(function (name) {
+  $('tab-' + name).addEventListener('click', function () { switchTab(name); });
+});
 
 function switchTab(name) {
-  var shop = name === 'shop';
-  $('tab-shop').className = 'tab' + (shop ? ' on' : '');
-  $('tab-stock').className = 'tab' + (shop ? '' : ' on');
-  $('head-shop').hidden = !shop;
-  $('head-stock').hidden = shop;
-  $('panel-shop').hidden = !shop;
-  $('panel-stock').hidden = shop;
+  TABS.forEach(function (t) {
+    var on = t === name;
+    $('tab-' + t).className = 'tab' + (on ? ' on' : '');
+    $('head-' + t).hidden = !on;
+    $('panel-' + t).hidden = !on;
+  });
   showNotice('');
   updateTabbar();
 
@@ -1393,8 +1615,8 @@ function switchTab(name) {
 // このURLに入っている呼び名。無ければ、前にこの端末で覚えた分
 who = loadWho();
 
-// 開く先のタブ。URL の ?tab=stock で在庫から始められる（既定は買い物）
-if (START_TAB === 'stock') switchTab('stock');
+// 開く先のタブ。URL の ?tab=stock / ?tab=recipe で在庫・レシピから始められる（既定は買い物）
+if (START_TAB === 'stock' || START_TAB === 'recipe') switchTab(START_TAB);
 
 // 埋め込みが何かの拍子に空だったときは、開いているURLの ?k= から拾い直す
 if (TOKEN) {
