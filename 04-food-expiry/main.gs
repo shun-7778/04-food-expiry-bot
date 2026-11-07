@@ -5067,10 +5067,10 @@ var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * (RICHMENU_ROWS
  * （文字で「買い物リスト削除 牛乳」「使用済 牛乳」と送る経路は残してある）。
  */
 var RICHMENU_CELLS = [
-  { col: 0, row: 0, webTab: 'shop', label: '買い物リスト' },
+  { col: 0, row: 0, webTab: 'stock', label: '在庫' },
   { col: 0, row: 1, cameraRoll: true, label: '材料登録' },   // 写真の選択画面が開く
   { col: 0, row: 2, send: '取消' },
-  { col: 1, row: 0, webTab: 'stock', label: '在庫' },
+  { col: 1, row: 0, webTab: 'shop', label: '買い物リスト' },
   { col: 1, row: 1, fill: '期限登録\n' },
   // 「買い物リスト追加」はメニューから外し、画面の「レシピ」タブを開くボタンにした。
   // 追加は画面の入力欄で済み、文字で「買い物リスト追加 牛乳」と送る経路も残してある
