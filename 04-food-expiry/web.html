@@ -254,7 +254,7 @@ body {
 .detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 400; }
 /* 作り方は青の丸数字を縦の線でつなぎ、手順の流れが見えるようにする。
    緑は「＋」「ないものを追加」のボタンの色なので、押せないものには使わない */
-.detail ol { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.detail ol { margin: 10px 0 0; padding: 0; list-style: none; counter-reset: step; }   /* 「作り方」の見出しとの間を少し空ける */
 .detail li {
   counter-increment: step; position: relative;
   padding-left: 36px; margin: 0 0 12px; min-height: 24px;
@@ -308,7 +308,7 @@ body {
 .detail .subbox { margin: 0; }
 .detail .sub {
   padding: 6px 0 5px; border-bottom: 1px dashed var(--ing-dash);
-  font-size: 16px; font-weight: 800; color: var(--text);
+  font-size: 16px; font-weight: 400; color: var(--text);
 }
 .detail .subbox .ing { padding-left: 16px; }
 /* まとめの後ろにまだ材料が続くときは、まとめの最後の行にも区切りの点線を残す */
@@ -1299,7 +1299,7 @@ function recipeCard(it) {
     open: open,
     detail: open ? recipeDetail(it) : null,
     // 品名の位置にもう料理名が出ているので、錠剤は「開く」だけにする
-    src: { url: it.url, title: '開く', big: true },
+    src: { url: it.url, title: 'SNS', big: true },
     right: { label: '削除', run: function () { hideRecipe(it); } },
     left: {
       label: it.pinned ? 'ピン留め\n解除' : 'ピン留め',
