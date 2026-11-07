@@ -104,6 +104,9 @@ body {
   pointer-events: none;
 }
 .sticky > * { max-width: 640px; margin: 0 auto; }
+/* 下へスクロールしている間は上のかたまりごと引っ込め、一覧を広く見せる。上へ戻すと出てくる */
+.sticky { transition: transform .2s ease-out; }
+.sticky.away { transform: translateY(calc(-100% - 16px)); }
 
 /* ---- タブ。指が届きやすいよう、下に浮かせて置く ---- */
 .tabbar {
@@ -222,7 +225,8 @@ body {
    中身だけを折り返して2段目に置き、頭を料理名に揃える（帯4px＋間11px） */
 .card.open { flex-wrap: wrap; row-gap: 0; }
 .card.open .name { white-space: normal; overflow-wrap: anywhere; }
-.card > .detail { flex: 0 0 100%; padding-left: 15px; }
+/* 左右の余白はカードの内側の余白（13px）だけにして、左右をそろえる */
+.card > .detail { flex: 0 0 100%; }
 .card .pin { flex: 0 0 auto; font-size: 13px; line-height: 1; margin-right: -4px; }
 /* 開いているかどうかの印。品名の右に小さく出す */
 .card .fold { flex: 0 0 auto; color: var(--sub); font-size: 11px; transition: transform .15s; }
@@ -250,13 +254,15 @@ body {
 .detail li:last-child { margin-bottom: 0; }
 .detail li::before {
   content: counter(step);
-  position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+  position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; z-index: 1;
   display: flex; align-items: center; justify-content: center;
   background: var(--step-bg); color: var(--step-fg); font-size: 13px; font-weight: 800; line-height: 1;
 }
+/* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
+   丸の縁で止めると、端末の丸め方しだいで丸との間にすき間が出て途切れて見えるため */
 .detail li:not(:last-child)::after {
-  content: ''; position: absolute; left: 11px; top: 26px; bottom: -12px; width: 2px;
-  background: var(--sub-line);
+  content: ''; position: absolute; left: 11px; top: 12px; bottom: -24px; width: 2px;
+  background: var(--sub-line); z-index: 0;
 }
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
@@ -1840,6 +1846,38 @@ function noteFullHeight() {
   fullHeight = viewHeight();
   focusHeight = 0;
 }
+
+/**
+ * 上のかたまり（検索・追加欄と切り替えボタン）を、下へスクロールしたら隠し、上へ戻したら出す。
+ * 少しの揺れで出たり消えたりしないよう、一定以上動いたときだけ切り替える。
+ * 先頭付近と、文字を打っている間は常に出しておく
+ */
+var lastScrollY = 0;
+var scrollTick = false;
+var STICKY_MOVE = 8;   // これ以上動いたら向きを判断する（px）
+
+function updateSticky() {
+  scrollTick = false;
+  var y = window.scrollY || window.pageYOffset || 0;
+  var bar = document.querySelector('.sticky');
+  var typing = document.activeElement === activeInput();
+  if (y < bar.offsetHeight || typing) {
+    bar.classList.remove('away');
+  } else if (y - lastScrollY > STICKY_MOVE) {
+    bar.classList.add('away');
+  } else if (lastScrollY - y > STICKY_MOVE) {
+    bar.classList.remove('away');
+  } else {
+    return;   // 動きが小さいときは、比べる基準を動かさない（ゆっくりでも積み重なれば切り替わる）
+  }
+  lastScrollY = y;
+}
+
+window.addEventListener('scroll', function () {
+  if (scrollTick) return;
+  scrollTick = true;
+  requestAnimationFrame(updateSticky);
+}, { passive: true });
 
 fullHeight = viewHeight();
 window.addEventListener('resize', function () { noteFullHeight(); updateTabbar(); });
