@@ -1846,11 +1846,25 @@ function formatItem_(it, prefix) {
 /**
  * openById は1回あたり数百ミリ秒かかる。同じ実行の中で何度も開くと
  * そのぶん返信が遅れるので、開いたシートは使い回す。
+ * シートごとではなくファイル（スプレッドシート）も1回だけ開く（ss_）。
+ * 以前は在庫・買い物・レシピを開くたびに openById していて、画面の読み込み1回で4回開いていた。
  * GAS のグローバル変数は実行ごとに作り直されるため、古い参照は残らない。
  */
+var SS_CACHE_ = null;
 var SHEET_CACHE_ = null;
 var SHOP_SHEET_CACHE_ = null;
 var RECIPE_SHEET_CACHE_ = null;
+
+/** 記録用スプレッドシート。この実行の中では1回だけ開く。未設定なら手順を添えて落とす */
+function ss_() {
+  if (SS_CACHE_) return SS_CACHE_;
+  var id = prop_('SPREADSHEET_ID', false);
+  if (!id) {
+    throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
+  }
+  SS_CACHE_ = SpreadsheetApp.openById(id);
+  return SS_CACHE_;
+}
 
 /** 在庫シートを返す。未設定なら手順を添えて落とす */
 function sheet_() {
@@ -1860,7 +1874,7 @@ function sheet_() {
   if (!id) {
     throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
   }
-  var sh = SpreadsheetApp.openById(id).getSheetByName(SHEET_NAME);
+  var sh = ss_().getSheetByName(SHEET_NAME);
   if (!sh) throw new Error('シート「' + SHEET_NAME + '」が見つかりません');
 
   SHEET_CACHE_ = sh;
@@ -3222,7 +3236,7 @@ function recipeSheet_() {
     throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
   }
 
-  var ss = SpreadsheetApp.openById(id);
+  var ss = ss_();
   var sh = ss.getSheetByName(RECIPE_SHEET_NAME) || ss.insertSheet(RECIPE_SHEET_NAME);
 
   if (sh.getLastRow() === 0) {
@@ -3279,7 +3293,7 @@ var RECIPE_GROUP_RETRY_MS = 10 * 60 * 1000;          // 失敗したら、次に
 function fillRecipeGroups_() {
   var id = prop_('SPREADSHEET_ID', false);
   if (!id) return;
-  var sh = SpreadsheetApp.openById(id).getSheetByName(RECIPE_SHEET_NAME);
+  var sh = ss_().getSheetByName(RECIPE_SHEET_NAME);
   if (!sh || sh.getLastRow() < 2) return;
 
   // 列が足りない古いシートでも、ここで足してから読む
@@ -3489,7 +3503,7 @@ function recipeMap_() {
   var id = prop_('SPREADSHEET_ID', false);
   if (!id) return {};
 
-  var ss = SpreadsheetApp.openById(id);
+  var ss = ss_();
   var sh = ss.getSheetByName(RECIPE_SHEET_NAME);
   if (!sh) return {};   // まだ1件も登録していない
 
@@ -3517,7 +3531,7 @@ function shopSheet_() {
     throw new Error('記録先が未設定です。GASエディタで setupSpreadsheet を1回実行してください。');
   }
 
-  var ss = SpreadsheetApp.openById(id);
+  var ss = ss_();
   var sh = ss.getSheetByName(SHOP_SHEET_NAME) || ss.insertSheet(SHOP_SHEET_NAME);
 
   if (sh.getLastRow() === 0) {

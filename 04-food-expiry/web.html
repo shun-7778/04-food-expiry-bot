@@ -508,6 +508,11 @@ body {
      メニューから開けばここに名前が入る。空なら端末に覚えた分を使う -->
 <span id="p" hidden><?= who ?></span>
 
+<!-- 最初に描くデータ（webData の JSON）。開いてからもう一度取りに行く往復を省くため、
+     画面と一緒に埋め込んである。トークンと同じく、テキストとして置いて読み出す
+     （テンプレートの出力タグが HTML として無害にするので、品名に記号が入っていても崩れない）。空なら従来どおり取りに行く -->
+<span id="init" hidden><?= initial ?></span>
+
 <script>
 var TOKEN = document.getElementById('k').textContent.trim();
 var START_TAB = document.getElementById('t').textContent.trim();
@@ -2020,8 +2025,20 @@ document.addEventListener('visibilitychange', function () {
   hiddenAt = 0;
 });
 
+// 画面と一緒に届いた最初のデータ。読めなければ null（そのときは取りに行く）
+function initialData() {
+  var el = $('init');
+  var raw = el ? el.textContent.trim() : '';
+  if (el) el.textContent = '';   // もう要らないので手放す
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
 // 埋め込みが何かの拍子に空だったときは、開いているURLの ?k= から拾い直す
-if (TOKEN) {
+var INITIAL = initialData();
+if (TOKEN && INITIAL) {
+  apply(INITIAL);   // 通信せずにすぐ描く
+} else if (TOKEN) {
   load();
 } else if (google.script.url) {
   google.script.url.getLocation(function (loc) {

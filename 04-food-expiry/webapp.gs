@@ -28,6 +28,14 @@ function doGet(e) {
   page.tab = webTab_(e && e.parameter && e.parameter.tab);
   // 開いた人の呼び名。トークンの持ち主で決まる（URL に書かれた名前は信じない）
   page.who = userNameMap_()[uid] || '';
+  // 最初に描くデータも一緒に埋め込む。以前は画面を返した後、画面からもう一度 webData を
+  // 呼んでいて、GAS の起動待ちを2回払っていた。失敗したら空にし、画面側が従来どおり取りに行く
+  page.initial = '';
+  try {
+    page.initial = JSON.stringify(webData(token));
+  } catch (err) {
+    console.error('最初のデータの埋め込みに失敗（画面から取り直す）: ' + err.stack);
+  }
   return page.evaluate()
     .setTitle('食材管理')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1')
@@ -152,9 +160,11 @@ function webData(token) {
   webAssert_(token);
   // 買い物リストと在庫は家族で共有なので、トークンが合えば全行を見せる。
   // 誰の操作か（追加した人の名前）は webAssert_ がトークンから決める。
+  // レシピシートは買い物リストの料理名と「レシピ」タブの両方で使うので、1回だけ読んで分け合う
+  var recipeRows = webRecipeRows_();
   return {
-    shop: webShopData_(), stock: webStockData_(),
-    recipes: webRecipeData_(),    // 「レシピ」タブに出す、リンク付きで照合したレシピ
+    shop: webShopData_(recipeRows), stock: webStockData_(),
+    recipes: webRecipeData_(recipeRows),    // 「レシピ」タブに出す、リンク付きで照合したレシピ
     users: userNames_(),     // 画面の「あなた」の選択肢
     order: CATEGORY_ORDER    // 買い物リストを並べる順（店を回る順）
   };
@@ -438,7 +448,7 @@ function webFindRow_(sh, colCount, idCol, id) {
  * 未購入だけを返す。購入済は画面に出さない（その場でチェックした分だけ、
  * 画面側が控えて「購入済み」に並べ、チェックを外せば戻せる）。
  */
-function webShopData_() {
+function webShopData_(recipeRows) {   // recipeRows は webData が先に読んだレシピ行（無ければここで読む）
   var sh = shopSheet_();
   var last = sh.getLastRow();
   if (last < 2) return { todo: [] };
@@ -468,7 +478,7 @@ function webShopData_() {
       // 料理ごとの並べ替えと色分けに使う。リンクや料理名が無くても、
       // 同じ写真から入った品目であることは ID だけで分かる
       item.recipeId = recipeId;
-      if (!recipes) recipes = recipeMap_();
+      if (!recipes) recipes = recipeRows !== undefined ? recipeMapFromRows_(recipeRows) : recipeMap_();
       var recipe = recipes[recipeId];
       if (recipe && (recipe.url || recipe.title)) {
         item.recipe = { title: recipe.title, url: recipe.url };
@@ -490,14 +500,16 @@ function webShopData_() {
  * リンクの無い行（写真だけで照合したもの）は出さない。
  * 家族の分もまとめて出す（買い物リストと同じく共有のもの）
  */
-function webRecipeData_() {
+function webRecipeData_(pre) {   // pre は webData が先に読んだレシピ行（無ければここで読む）
   // 前の書き方（「〜します」）で残した作り方があれば、少しずつ言い切りに書き直す。
-  // 全部済めば印を立てて、以後は何もしない。失敗しても画面は出す
+  // 全部済めば印を立てて、以後は何もしない。失敗しても画面は出す。
+  // 書き直すとシートが変わるので、先に読んだ行は使わずに読み直す
   if (!PropertiesService.getScriptProperties().getProperty(RECIPE_STEPS_FINISHED_KEY)) {
     try { rewriteOldRecipeSteps_(); } catch (err) { console.error('作り方の書き直しで失敗: ' + err.message); }
+    pre = undefined;
   }
 
-  var data = webRecipeRead_();
+  var data = webRecipeRead_(pre);
   // 分類の無いもの（この機能より前の分など）があれば、ここでまとめて付けてから読み直す。
   // 一度付ければ次からは通らないので、Claude を呼ぶのは足りないときだけ
   if (data.missingGroup) {
@@ -507,19 +519,45 @@ function webRecipeData_() {
   return { items: data.items, groups: RECIPE_GROUPS };
 }
 
-function webRecipeRead_() {
+/**
+ * レシピシートの全行を1回で読む。{ rows, cols }。シートが無い・空なら null。
+ * 列を足す前の古いシートでは、ある列までだけ読む（足りない列は空として扱う）
+ */
+function webRecipeRows_() {
   var id = prop_('SPREADSHEET_ID', false);
-  if (!id) return { items: [] };
+  if (!id) return null;
 
-  var sh = SpreadsheetApp.openById(id).getSheetByName(RECIPE_SHEET_NAME);
-  if (!sh) return { items: [] };   // まだ1件も登録していない
+  var sh = ss_().getSheetByName(RECIPE_SHEET_NAME);
+  if (!sh) return null;   // まだ1件も登録していない
 
   var last = sh.getLastRow();
-  if (last < 2) return { items: [] };
+  if (last < 2) return null;
 
-  // 列を足す前の古いシートでは、ある列までだけ読む（足りない列は空として扱う）
   var cols = Math.min(sh.getMaxColumns(), RECIPE_COL_COUNT);
-  var rows = sh.getRange(2, 1, last - 1, cols).getValues();
+  return { rows: sh.getRange(2, 1, last - 1, cols).getValues(), cols: cols };
+}
+
+/** webRecipeRows_ の結果から、レシピID → { title, url } を作る（recipeMap_ と同じ中身） */
+function recipeMapFromRows_(pre) {
+  var map = {};
+  if (!pre) return map;
+  pre.rows.forEach(function (r) {
+    var key = String(r[RECIPE_COL.ID - 1] || '');
+    if (!key) return;
+    map[key] = {
+      title: String(r[RECIPE_COL.TITLE - 1] || ''),
+      url: RECIPE_COL.URL <= pre.cols ? String(r[RECIPE_COL.URL - 1] || '') : ''
+    };
+  });
+  return map;
+}
+
+function webRecipeRead_(pre) {
+  if (pre === undefined) pre = webRecipeRows_();
+  if (!pre) return { items: [] };
+
+  var cols = pre.cols;
+  var rows = pre.rows;
   var names = userNameMap_();
   var seen = {};
   var items = [];
