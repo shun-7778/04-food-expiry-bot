@@ -630,7 +630,7 @@ var HELP_MESSAGE = [
   '',
   '買い物リストの全件削除はメニューから外しました。',
   '「買い物リスト表示」のバブル最下段にある「全て削除」',
-  'を使ってください。行は消さないので「取消」で戻せます。',
+  'を使ってください。行は消さないので、30分以内なら「取消」で戻せます。',
   '',
   '■ 登録',
   '・「豆乳は2027年2月21日 ヨーグルトは9月17日」と送る',
@@ -690,7 +690,7 @@ var HELP_MESSAGE = [
   '「買い物リストを全部削除」… 空にする',
   '',
   '■ コマンド',
-  '取消 … 直前の登録・消費を取り消す',
+  '取消 … 直前の登録・消費を取り消す（30分以内の操作だけ）',
   'id … あなたの userId を表示'
 ].join('\n');
 
@@ -2001,14 +2001,28 @@ function rowToItem_(row) {
 
 // ---------------------------------------------------------------- 登録・消費・取消
 
-/** 直前の操作を記録しておき、「取消」で戻せるようにする */
+// 「取消」で戻せるのは、この時間内の操作だけ。
+// 古い操作まで戻せると、いつの何が戻ったのか分からないまま記録が書き換わるため
+var UNDO_WINDOW_MIN = 30;
+
+/** 直前の操作を記録しておき、「取消」で戻せるようにする。いつの操作かも残す */
 function setLastOp_(op) {
+  op.at = Date.now();
   PropertiesService.getScriptProperties().setProperty(userKey_('LAST_OP'), JSON.stringify(op));
 }
 
 function getLastOp_() {
   var s = prop_(userKey_('LAST_OP'), false);
   return s ? JSON.parse(s) : null;
+}
+
+/**
+ * 直前の操作の記録を消す（取り消した後、その行を別の手段で取り消した後）。
+ * 記録は人ごとの名前（userKey_）で持っているので、消すときも同じ名前で消すこと。
+ * 以前は共通の 'LAST_OP' を消していたため記録が残り、古い操作がいつまでも取り消せた
+ */
+function clearLastOp_() {
+  PropertiesService.getScriptProperties().deleteProperty(userKey_('LAST_OP'));
 }
 
 /** 種別は「消費期限」と明示されたときだけ消費期限。それ以外はすべて賞味期限に寄せる */
@@ -2807,19 +2821,29 @@ function cancelPending_() {
   return '中止しました。記録は変更していません。';
 }
 
-/** 直前の登録・消費を元に戻す。行は消さず状態列だけ書き換える */
+var UNDO_NONE_MESSAGE = '過去' + UNDO_WINDOW_MIN + '分以内に取り消せる操作はありません。';
+
+/** 直前（30分以内）の登録・消費・買い物リストの操作を元に戻す。行は消さず状態列だけ書き換える */
 function undoLast_() {
   var op = getLastOp_();
   if (!op || !op.rows || !op.rows.length) {
-    return '取り消せる操作がありません。';
+    return UNDO_NONE_MESSAGE;
   }
+
+  // 30分より前の操作は戻さない。時刻の無い記録（この仕組みより前に残ったもの）も古いものとして扱う
+  var ageMin = op.at ? (Date.now() - op.at) / 60000 : Infinity;
+  if (!(ageMin <= UNDO_WINDOW_MIN)) {
+    clearLastOp_();
+    return UNDO_NONE_MESSAGE;
+  }
+
   if (op.sheet === 'shopping') return undoShopping_(op);
 
   var sh = sheet_();
   var last = sh.getLastRow();
   if (last < 2) {
-    PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
-    return '取り消せる操作がありません。';
+    clearLastOp_();
+    return UNDO_NONE_MESSAGE;
   }
 
   // 1行ずつ getValue / setValue すると件数ぶん往復して遅い。
@@ -2841,9 +2865,9 @@ function undoLast_() {
     sh.getRange(2, COL.STATUS, cells.length, 2).setValues(cells);
   }
 
-  PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
+  clearLastOp_();
 
-  if (!names.length) return '取り消せる操作がありません。';
+  if (!names.length) return UNDO_NONE_MESSAGE;
 
   // 品名は並べず、件数だけを返す
   return op.type === 'register'
@@ -2856,8 +2880,8 @@ function undoShopping_(op) {
   var sh = shopSheet_();
   var last = sh.getLastRow();
   if (last < 2) {
-    PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
-    return '取り消せる操作がありません。';
+    clearLastOp_();
+    return UNDO_NONE_MESSAGE;
   }
 
   // 在庫側の取り消しと同じく、読み1回・書き1回にまとめる
@@ -2878,8 +2902,8 @@ function undoShopping_(op) {
     sh.getRange(2, SHOP_COL.STATUS, cells.length, 2).setValues(cells);
   }
 
-  PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
-  if (!names.length) return '取り消せる操作がありません。';
+  clearLastOp_();
+  if (!names.length) return UNDO_NONE_MESSAGE;
 
   if (op.type === 'shop_clear') {
     // 全件削除の取り消しは件数だけ返す（品名は並べない）
@@ -3702,7 +3726,7 @@ function shopClear_() {
 
   // ボタン版の全件削除と揃えて、品名は並べず件数だけを返す
   return '買い物リストを全て削除しました（' + todo.length + '件）'
-    + '\n\n戻す場合は「取消」と送ってください。';
+    + '\n\n戻す場合は、30分以内に「取消」と送ってください。';
 }
 
 /**
@@ -4586,7 +4610,7 @@ function stockUnregisterPlan_(id) {
 /** stockUnregisterPlan_ が決めた1件を取消にする。行は消さない */
 function stockUnregisterCommit_(plan) {
   plan.sheet.getRange(plan.row, COL.STATUS, 1, 2).setValues([[STATUS.CANCELED, nowStamp_()]]);
-  PropertiesService.getScriptProperties().deleteProperty('LAST_OP');
+  clearLastOp_();
 }
 
 /**
