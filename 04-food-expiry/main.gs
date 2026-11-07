@@ -218,6 +218,13 @@ var RECIPE_GROUP_GUIDE = [
   '- デザート: お菓子、甘いパン、ドリンク'
 ].join('\n');
 
+// 作り方の書き方。写真から読むときと、前の書き方で残した分を書き直すときの両方で使う
+var RECIPE_STEP_STYLE = [
+  '- 文末は「〜します」「〜ましょう」ではなく、常体の言い切りにしてください（例:「アボカドを一口大に切る。」）。',
+  '- できるだけ端的にし、前置き・感想・「ポイント」のような飾りは省いてください。',
+  '- ただし分量・火加減・時間・温度、「(調味料)」「A」のようなまとめ名は省かないでください。'
+].join('\n');
+
 /** 分類として受け付ける値か。知らない値は空にする */
 function normalizeRecipeGroup_(g) {
   g = String(g || '').trim();
@@ -1473,8 +1480,8 @@ function buildRecipePrompt_() {
     '作り方（steps）:',
     '- 写真に作り方・手順が書かれていれば、1手順を1要素にして書かれた順に steps に入れてください。',
     '- 番号（「1.」「①」など）は付けないでください。表示する側で振ります。',
-    '- 言い回しは写真のままにし、分量・火加減・時間は省かないでください。',
-    '  ただし改行で切れた文はつなげ、「※」の補足は該当する手順の末尾に添えてください。',
+    RECIPE_STEP_STYLE,
+    '- 改行で切れた文はつなげ、「※」の補足は該当する手順の末尾に短く添えてください。',
     '- 作り方が写真に無ければ空の配列にしてください（推測で作らない）。',
     '',
     '分類（dish_group）:',
@@ -3151,6 +3158,96 @@ function fillRecipeGroups_() {
     sh.getRange(t.row, RECIPE_COL.GROUP).setValue(got[t.key] || RECIPE_GROUPS[0]);
   });
 }
+
+// 作り方を「言い切り・端的」にする前に残した行。これより前に登録した分だけを書き直す
+// （以降に登録した分は、写真を読むときにもう新しい書き方になっている）
+var RECIPE_STEPS_V2_SINCE = '2026-11-07 14:40';
+var RECIPE_STEPS_DONE_KEY = 'RECIPE_STEPS_V2_DONE';   // 書き直し済みの行の ID（カンマ区切り）
+var RECIPE_STEPS_BATCH = 8;                             // 1回の呼び出しで書き直す行数
+
+var RECIPE_STEPS_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: '入力の番号をそのまま' },
+          steps: { type: 'array', items: { type: 'string' }, description: '書き直した手順。入力と同じ数・同じ順' }
+        },
+        required: ['key', 'steps'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['items'],
+  additionalProperties: false
+};
+
+/**
+ * 前の書き方（写真のままの「〜します」）で残した作り方を、言い切り・端的に書き直す。
+ * 「レシピ」タブを開いたときに少しずつ（RECIPE_STEPS_BATCH 行ずつ）進め、終わった行は控えて二度と触らない。
+ * 失敗したときは分類と同じく間を空けてやり直す。手順の数が変わった答えは採らない（取り違えを防ぐ）
+ */
+function rewriteOldRecipeSteps_() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(RECIPE_STEPS_FINISHED_KEY)) return;   // もう全部済んでいる
+  var done = {};
+  String(props.getProperty(RECIPE_STEPS_DONE_KEY) || '').split(',').forEach(function (k) { if (k) done[k] = true; });
+
+  var sh = recipeSheet_();
+  if (sh.getLastRow() < 2) return;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, RECIPE_COL_COUNT).getValues();
+  var todo = [];
+  rows.forEach(function (r, i) {
+    var id = String(r[RECIPE_COL.ID - 1] || '');
+    if (!id || done[id] || todo.length >= RECIPE_STEPS_BATCH) return;
+    var added = r[RECIPE_COL.ADDED - 1];
+    var at = added instanceof Date ? Utilities.formatDate(added, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') : String(added || '');
+    var steps = String(r[RECIPE_COL.STEPS - 1] || '').split(/\r?\n/).filter(function (s) { return s.trim(); });
+    if (!steps.length || at >= RECIPE_STEPS_V2_SINCE) { done[id] = true; return; }
+    todo.push({ row: i + 2, id: id, key: String(todo.length + 1), steps: steps });
+  });
+
+  if (todo.length) {
+    var last = Number(props.getProperty(RECIPE_STEPS_TRY_KEY) || 0);
+    if (Date.now() - last < RECIPE_GROUP_RETRY_MS) return;
+    props.setProperty(RECIPE_STEPS_TRY_KEY, String(Date.now()));
+
+    var got = {};
+    try {
+      var result = callClaude_([{ type: 'text', text: [
+        'レシピの作り方の手順を書き直してください。',
+        RECIPE_STEP_STYLE,
+        '- 手順の数と順番は変えないでください（1手順を1手順に書き直す）。',
+        '- 書かれていない内容を足さないでください。',
+        '',
+        '--- レシピ ---'
+      ].concat(todo.map(function (t) {
+        return t.key + '.\n' + t.steps.map(function (s, j) { return '  (' + (j + 1) + ') ' + s; }).join('\n');
+      })).join('\n') }], RECIPE_STEPS_SCHEMA, MODEL_TEXT);
+      ((result && result.items) || []).forEach(function (it) { got[String(it.key)] = it.steps || []; });
+    } catch (err) {
+      console.error('作り方の書き直しに失敗: ' + err.message);
+      return;
+    }
+
+    todo.forEach(function (t) {
+      var s = (got[t.key] || []).map(function (x) { return String(x || '').trim(); }).filter(function (x) { return x; });
+      if (s.length === t.steps.length) sh.getRange(t.row, RECIPE_COL.STEPS).setValue(s.join('\n'));
+      done[t.id] = true;   // 数が合わなかったものは元のまま残し、やり直さない
+    });
+  }
+
+  props.setProperty(RECIPE_STEPS_DONE_KEY, Object.keys(done).join(','));
+  // 前の書き方の行が残っていなければ、以後はシートを読みにも来ない
+  var left = rows.some(function (r) { return !done[String(r[RECIPE_COL.ID - 1] || '')] && r[RECIPE_COL.ID - 1]; });
+  if (!left) props.setProperty(RECIPE_STEPS_FINISHED_KEY, '1');
+}
+
+var RECIPE_STEPS_TRY_KEY = 'RECIPE_STEPS_TRY';
+var RECIPE_STEPS_FINISHED_KEY = 'RECIPE_STEPS_V2_FINISHED';
 
 var RECIPE_GROUPS_SCHEMA = {
   type: 'object',

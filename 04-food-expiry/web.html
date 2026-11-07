@@ -35,6 +35,8 @@
   --bg-fade: rgba(238, 241, 245, 0);   /* 固定部分の下に流すぼかし。--bg の透明版 */
   --edge: #b9c2cd;                     /* 選んだ「すべて」の枠 */
   --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
+  --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
+  --sub-bg: #edf3fd;   --sub-line: #a9c2ee;   /* 材料の中の「調味料」「A」などのまとめの箱 */
 
   /* 写真1枚（レシピ1つ）から入った品目のまとまりを示す色。
      レシピIDの順に使い回すので、色数より多い料理があれば一巡して同じ色に戻る */
@@ -64,6 +66,8 @@
     --bg-fade: rgba(21, 24, 29, 0);
     --edge: #3d4552;
     --src-bg: #223247;
+    --ing-bg: #18261d;   --ing-line: #2f5a3c;
+    --sub-bg: #1c2638;   --sub-line: #3a5a8a;
 
     /* 暗い地では沈むので、どれも一段明るくする */
     --r0: #3ec27d;   --r1: #a78bfa;   --r2: #ff9f45;   --r3: #ff6f9c;   --r4: #35bccb;
@@ -233,9 +237,24 @@ body {
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 400; }
-.detail ol { margin: 0; padding-left: 1.4em; }
-.detail li { margin: 0 0 6px; line-height: 1.55; overflow-wrap: anywhere; }
-.detail li::marker { color: var(--sub); font-weight: 800; }
+/* 作り方は緑の丸数字を縦の線でつなぎ、手順の流れが見えるようにする */
+.detail ol { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.detail li {
+  counter-increment: step; position: relative;
+  padding-left: 36px; margin: 0 0 12px; min-height: 24px;
+  line-height: 1.6; overflow-wrap: anywhere;
+}
+.detail li:last-child { margin-bottom: 0; }
+.detail li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--green); color: #fff; font-size: 13px; font-weight: 800; line-height: 1;
+}
+.detail li:not(:last-child)::after {
+  content: ''; position: absolute; left: 11px; top: 26px; bottom: -12px; width: 2px;
+  background: var(--ing-line);
+}
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
 .detail .ing.hit .n { color: var(--green); font-weight: 700; }
@@ -257,11 +276,22 @@ body {
   background: var(--green); color: #fff; white-space: nowrap;
   font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
 }
-/* 「A」「合わせ調味料」などのまとめ名。中身は少し下げて、どこまでがそのまとめか見せる */
-.detail .sub {
-  margin: 5px 0 1px; font-size: 12px; font-weight: 800; color: var(--blue);
+/* 材料は薄い緑の箱に入れる。見出しの下に線を引いて、材料の並びと分ける */
+.detail .ingbox {
+  background: var(--ing-bg); border: 1px solid var(--ing-line); border-radius: 12px;
+  padding: 8px 12px 6px;
 }
-.detail .ing.lab { padding-left: 10px; border-left: 2px solid var(--src-bg); }
+.detail .ingbox > h4.hrow { padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1.5px solid var(--ing-line); }
+/* 「A」「合わせ調味料」などのまとめは、材料の箱の中にさらに薄い青の箱で入れる。
+   作り方の「(調味料)を加える」が何のことか、ここで分かるようにする */
+.detail .subbox {
+  background: var(--sub-bg); border: 1px solid var(--sub-line); border-radius: 10px;
+  padding: 4px 10px 2px; margin: 6px 0 4px;
+}
+.detail .sub {
+  padding: 3px 0 5px; margin-bottom: 1px; border-bottom: 1.5px solid var(--sub-line);
+  font-size: 14px; font-weight: 800; color: var(--text);
+}
 .detail .ing { align-items: center; }
 .detail .st {
   flex: 0 0 auto; min-width: 38px; text-align: center;
@@ -1300,18 +1330,25 @@ function recipeDetail(it) {
     }
     head.appendChild(bar);
 
+    // 材料は箱に入れ、「A」「合わせ調味料」などのまとめは、その中にもう一段の箱で入れる。
+    // 作り方の「Aを加える」が何のことか、ここで分かるようにする
+    b1.className = 'blk ingbox';
     var lastLabel = '';
+    var target = b1;
     ings.forEach(function (g) {
-      // 「A」「合わせ調味料」などのまとめ名が変わるところに小見出しを入れる。
-      // 作り方の「Aを加える」が何のことか、ここで分かるようにする
       if (g.label && g.label !== lastLabel) {
+        target = document.createElement('div');
+        target.className = 'subbox';
         var sub = document.createElement('div');
         sub.className = 'sub';
         sub.textContent = g.label;
-        b1.appendChild(sub);
+        target.appendChild(sub);
+        b1.appendChild(target);
+      } else if (!g.label) {
+        target = b1;
       }
       lastLabel = g.label || '';
-      b1.appendChild(ingredientRow(it, g, st, hit[g.name]));
+      target.appendChild(ingredientRow(it, g, st, hit[g.name]));
     });
   }
 

@@ -445,6 +445,12 @@ function webShopData_() {
  * 家族の分もまとめて出す（買い物リストと同じく共有のもの）
  */
 function webRecipeData_() {
+  // 前の書き方（「〜します」）で残した作り方があれば、少しずつ言い切りに書き直す。
+  // 全部済めば印を立てて、以後は何もしない。失敗しても画面は出す
+  if (!PropertiesService.getScriptProperties().getProperty(RECIPE_STEPS_FINISHED_KEY)) {
+    try { rewriteOldRecipeSteps_(); } catch (err) { console.error('作り方の書き直しで失敗: ' + err.message); }
+  }
+
   var data = webRecipeRead_();
   // 分類の無いもの（この機能より前の分など）があれば、ここでまとめて付けてから読み直す。
   // 一度付ければ次からは通らないので、Claude を呼ぶのは足りないときだけ
