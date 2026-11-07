@@ -5068,13 +5068,13 @@ var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * (RICHMENU_ROWS
  */
 var RICHMENU_CELLS = [
   { col: 0, row: 0, webTab: 'shop', label: '買い物リスト' },
-  // 「買い物リスト追加」はメニューから外し、画面の「レシピ」タブを開くボタンにした。
-  // 追加は画面の入力欄で済み、文字で「買い物リスト追加 牛乳」と送る経路も残してある
-  { col: 0, row: 1, webTab: 'recipe', label: 'レシピ' },
-  { col: 0, row: 2, cameraRoll: true, label: '材料登録' },   // 写真の選択画面が開く
+  { col: 0, row: 1, cameraRoll: true, label: '材料登録' },   // 写真の選択画面が開く
+  { col: 0, row: 2, send: '取消' },
   { col: 1, row: 0, webTab: 'stock', label: '在庫' },
   { col: 1, row: 1, fill: '期限登録\n' },
-  { col: 1, row: 2, send: '取消' }
+  // 「買い物リスト追加」はメニューから外し、画面の「レシピ」タブを開くボタンにした。
+  // 追加は画面の入力欄で済み、文字で「買い物リスト追加 牛乳」と送る経路も残してある
+  { col: 1, row: 2, webTab: 'recipe', label: 'レシピ' }
 ];
 
 function buildRichMenu_(theme) {

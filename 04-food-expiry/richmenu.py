@@ -195,11 +195,11 @@ def icon_undo(cx, cy, s, c, lw):
 
 CELLS = [
     (0, 0, "買い物リスト", icon_list,          GREEN, TEXT),
-    (0, 1, "レシピ",       icon_pot,           GREEN, TEXT),
-    (0, 2, "材料登録",     icon_camera,        GREEN, TEXT),
+    (0, 1, "材料登録",     icon_camera,        GREEN, TEXT),
+    (0, 2, "取消",         icon_undo,          GREEN, TEXT),
     (1, 0, "在庫",         icon_box,           GREEN, TEXT),
     (1, 1, "期限登録",     icon_calendar_plus, GREEN, TEXT),
-    (1, 2, "取消",         icon_undo,          GREEN, TEXT),
+    (1, 2, "レシピ",       icon_pot,           GREEN, TEXT),
 ]
 
 CELL_W = W // COLS
