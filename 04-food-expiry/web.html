@@ -237,7 +237,8 @@ body {
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 400; }
-/* 作り方は緑の丸数字を縦の線でつなぎ、手順の流れが見えるようにする */
+/* 作り方は青の丸数字を縦の線でつなぎ、手順の流れが見えるようにする。
+   緑は「＋」「ないものを追加」のボタンの色なので、押せないものには使わない */
 .detail ol { margin: 0; padding: 0; list-style: none; counter-reset: step; }
 .detail li {
   counter-increment: step; position: relative;
@@ -249,11 +250,11 @@ body {
   content: counter(step);
   position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: var(--green); color: #fff; font-size: 13px; font-weight: 800; line-height: 1;
+  background: var(--blue); color: #fff; font-size: 13px; font-weight: 800; line-height: 1;
 }
 .detail li:not(:last-child)::after {
   content: ''; position: absolute; left: 11px; top: 26px; bottom: -12px; width: 2px;
-  background: var(--ing-line);
+  background: var(--sub-line);
 }
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
