@@ -37,6 +37,7 @@
   --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
   --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
   --sub-bg: #edf3fd;   --sub-line: #a9c2ee;   /* 材料の中の「調味料」「A」などのまとめの箱 */
+  --step-bg: #d9e6fb;  --step-fg: #3b6fc4;    /* 作り方の丸数字。塗りの青は強すぎるので薄い地に青い数字 */
 
   /* 写真1枚（レシピ1つ）から入った品目のまとまりを示す色。
      レシピIDの順に使い回すので、色数より多い料理があれば一巡して同じ色に戻る */
@@ -68,6 +69,7 @@
     --src-bg: #223247;
     --ing-bg: #18261d;   --ing-line: #2f5a3c;
     --sub-bg: #1c2638;   --sub-line: #3a5a8a;
+    --step-bg: #263a5c;  --step-fg: #9dbcf0;
 
     /* 暗い地では沈むので、どれも一段明るくする */
     --r0: #3ec27d;   --r1: #a78bfa;   --r2: #ff9f45;   --r3: #ff6f9c;   --r4: #35bccb;
@@ -250,7 +252,7 @@ body {
   content: counter(step);
   position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: var(--blue); color: #fff; font-size: 13px; font-weight: 800; line-height: 1;
+  background: var(--step-bg); color: var(--step-fg); font-size: 13px; font-weight: 800; line-height: 1;
 }
 .detail li:not(:last-child)::after {
   content: ''; position: absolute; left: 11px; top: 26px; bottom: -12px; width: 2px;
