@@ -202,11 +202,12 @@ var RECIPE_COL = {
   INGREDIENTS: 7,  // 写真から読んだ材料。1行に1品「材料名：分量」（分量が無ければ材料名だけ）
   STEPS: 8,        // 写真から読んだ作り方。1行に1手順。写真に無ければ空
   PINNED: 9,       // 「レシピ」タブで上に固定したもの
-  GROUP: 10        // 料理の分類（RECIPE_GROUPS のどれか）。「レシピ」タブの切り替えに使う
+  GROUP: 10,       // 料理の分類（RECIPE_GROUPS のどれか）。「レシピ」タブの切り替えに使う
+  SERVINGS: 11     // 写真に書かれた何人分か（「2人前」など書かれたまま）。無ければ空
 };
-var RECIPE_COL_COUNT = 10;
+var RECIPE_COL_COUNT = 11;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数'];
 
 // 「レシピ」タブの分類。画面の切り替えボタンはこの順に並ぶ（先頭に「すべて」が付く）。
 // タレ・ドレッシングなどはタブを作るほど無いので、いちばん近いものに入れる
@@ -706,6 +707,7 @@ function handleRecipeImages_(events) {
 
     var dish = String(result.dish_name || '').trim();
     var group = normalizeRecipeGroup_(result.dish_group);
+    var servings = String(result.servings || '').trim().substring(0, 30);
     var steps = (result.steps || []).map(function (s) { return String(s || '').trim(); })
       .filter(function (s) { return s; });
     var seen = {};
@@ -723,7 +725,7 @@ function handleRecipeImages_(events) {
       return;
     }
 
-    replyRecipeMatch_(replyToken, items, dish, steps, group);
+    replyRecipeMatch_(replyToken, items, dish, steps, group, servings);
   } catch (err) {
     console.error('レシピ照合に失敗: ' + err.stack);
     replyText_(replyToken, '読み取りに失敗しました。\n' + err.message);
@@ -1410,6 +1412,11 @@ var RECIPE_SCHEMA = {
       type: 'string',
       description: '料理名。写真に見当たらなければ空文字'
     },
+    // 何人分か。画面の「材料」の見出しに「材料（2人前）」のように添える
+    servings: {
+      type: 'string',
+      description: '材料が何人分か。書かれたまま。例:「2人前」「2〜3人分」「4個分」。書かれていなければ空文字'
+    },
     items: {
       type: 'array',
       description: '材料欄に書かれている食材・調味料ごとに1要素',
@@ -1429,7 +1436,7 @@ var RECIPE_SCHEMA = {
       description: '料理の分類。料理名と材料から判断する'
     }
   },
-  required: ['items', 'steps', 'dish_group'],
+  required: ['servings', 'items', 'steps', 'dish_group'],
   additionalProperties: false
 };
 
@@ -1576,6 +1583,11 @@ function buildRecipePrompt_() {
     '- 材料の一覧とは別に、その料理の名前を dish_name に入れてください。',
     '- 「〇〇の作り方」「簡単！」のような飾りは落とし、料理名だけにしてください。',
     '- 写真に料理名が見当たらなければ空文字にしてください（推測で作らない）。',
+    '',
+    '何人分（servings）:',
+    '- 材料欄の見出しなどに「材料（2人前）」「2〜3人分」「4個分」のように分量の基準が書かれていれば、',
+    '  その部分（例「2人前」「2〜3人分」）を書かれたとおりに servings に入れてください。',
+    '- 書かれていなければ空文字にしてください（推測で補わない）。',
     '',
     '材料名（item_name）の書き方:',
     '- 分量（大さじ1、200g、2個、少々 など）は含めないでください。',
@@ -2620,7 +2632,7 @@ function matchNamesToStock_(items, all) {
  * どちらの行にも買い物リストへの「追加」ボタンを付ける（家にあっても買い足したい
  * ことがあるため）。期限・登録日は出さない。期限を見たいときは在庫確認を使う。
  */
-function replyRecipeMatch_(replyToken, items, dish, steps, group) {
+function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
   var r = matchNamesToStock_(items);
   var missing = r.missing.map(recipeEntry_);
   var have = r.have.map(recipeEntry_);
@@ -2638,7 +2650,8 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group) {
     ensureRecipeId_(updateAddSet_(token, { url: waiting }), {
       ingredients: recipeIngredientsText_(items),
       steps: (steps || []).join('\n'),
-      group: group || ''
+      group: group || '',
+      servings: servings || ''
     });
   }
 
@@ -3257,7 +3270,7 @@ function recipeSheet_() {
 
 /**
  * レシピを1行足して、その ID を返す。
- * detail は { ingredients, steps, group }（材料・作り方は改行区切りの文字列）。
+ * detail は { ingredients, steps, group, servings }（材料・作り方は改行区切りの文字列）。
  *
  * 同じリンクをピン留めしたまま送り直したときは、ピン留めを新しい行に引き継ぐ。
  * 画面は同じリンクの最新の1行だけを出すので、引き継がないと固定が外れたように見えるため
@@ -3272,7 +3285,7 @@ function recipeAdd_(title, url, detail) {
   sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
     id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', '',
     detail.ingredients || '', detail.steps || '', pinned ? RECIPE_PIN_MARK : '',
-    normalizeRecipeGroup_(detail.group)
+    normalizeRecipeGroup_(detail.group), detail.servings || ''
   ]]);
   return id;
 }
@@ -3483,6 +3496,16 @@ function recipeSetHidden_(id, hidden) {
 /** レシピ行のピン留めを付け外しする。画面の「レシピ」タブで左にスワイプしたときに使う */
 function recipeSetPinned_(id, pinned) {
   recipeSetCell_(id, RECIPE_COL.PINNED, pinned ? RECIPE_PIN_MARK : '');
+}
+
+/**
+ * 料理名を変える。画面の「レシピ」タブで長押ししたときに使う。
+ * 「=」などで始まるとシートが数式として扱うので、文字として入れる
+ */
+function recipeSetTitle_(id, title) {
+  var v = String(title || '');
+  if (/^[=+\-@]/.test(v)) v = "'" + v;
+  recipeSetCell_(id, RECIPE_COL.TITLE, v);
 }
 
 function recipeSetCell_(id, col, value) {

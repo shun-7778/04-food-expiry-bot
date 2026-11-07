@@ -228,6 +228,36 @@ body {
 .card.tap { cursor: pointer; }
 /* レシピのカードは補足の行を出さないが、高さは他のタブ（60px）とそろえたままにする */
 .card.tap { min-height: 60px; }
+/* 長押しで料理名を変えるカード。長押しで文字の選択やリンクのメニューが出ないようにする
+   （開いた中身の作り方は、選んで写せるよう元に戻す） */
+.card.hold { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.card.hold .detail { -webkit-user-select: text; user-select: text; }
+
+/* ---- 1行だけ書き換える小窓（料理名の変更） ---- */
+.modal {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, .4);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 18vh 16px 0;
+}
+.mbox {
+  width: 100%; max-width: 420px;
+  background: var(--card); color: var(--text);
+  border-radius: 16px; padding: 16px; box-shadow: var(--shadow-lift);
+}
+.mbox .mh { font-weight: 700; margin-bottom: 10px; }
+.mbox input {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg); color: var(--text); font-family: inherit;
+  font-size: 16px;   /* 16px 未満だと iOS が入力時に拡大する */
+}
+.mbox .mbtn { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.mbox button {
+  padding: 10px 18px; border: none; border-radius: 12px; cursor: pointer;
+  font-family: inherit; font-size: 15px; font-weight: 700;
+}
+.mbox .cancel { background: var(--pill); color: var(--sub); }
+.mbox .ok { background: var(--green); color: #fff; }
 /* レシピの「開く」は押しやすいよう一回り大きくする（買い物リストの料理名の錠剤はそのまま） */
 .card .src.big { padding: 8px 15px; font-size: 14px; }
 /* 開いた中身は「開く」の錠剤の下まで横いっぱいに使う。1段目（料理名の行）はそのまま、
@@ -1129,9 +1159,13 @@ function card(opt) {
       // 横にずらしている最中のタップや、開いた中身（作り方を読みながら触る）では開閉しない
       if (el.dataset.swiped) return;
       if (e.target.closest && e.target.closest('.detail')) return;
+      // 長押しで指を離したときのタップは、開閉に数えない
+      if (Date.now() - Number(el.dataset.held || 0) < 800) return;
       opt.tap();
     });
   }
+
+  if (opt.hold) attachHold(el, opt.hold);
 
   if (opt.src && opt.src.url) {
     var src = document.createElement('a');
@@ -1193,6 +1227,105 @@ function card(opt) {
   wrap.appendChild(el);
   attachSwipe(el, right, left, opt.right, opt.left);
   return wrap;
+}
+
+/**
+ * 長押し（HOLD_MS）で fn を呼ぶ。指が動いたら（スワイプ・スクロール）取りやめる。
+ * 開いた中身・リンク・ボタンの上では効かせない（作り方を読む、「＋」を押すのと紛れないため）。
+ * パソコンの右クリックと、Android の長押しで出る contextmenu でも呼ぶ（タイマーで呼んだ直後なら重ねない）
+ */
+var HOLD_MS = 500;
+function attachHold(el, fn) {
+  el.classList.add('hold');
+  var timer = 0, hx = 0, hy = 0;
+  var skip = function (t) { return t.closest && t.closest('.detail, a, button'); };
+  var stop = function () { clearTimeout(timer); timer = 0; };
+  var fire = function () {
+    timer = 0;
+    el.dataset.held = String(Date.now());
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) { /* 震えなくてもよい */ }
+    fn();
+  };
+
+  el.addEventListener('touchstart', function (e) {
+    stop();
+    if (e.touches.length !== 1 || skip(e.target)) return;
+    hx = e.touches[0].clientX;
+    hy = e.touches[0].clientY;
+    timer = setTimeout(fire, HOLD_MS);
+  }, { passive: true });
+  el.addEventListener('touchmove', function (e) {
+    if (!timer) return;
+    if (Math.abs(e.touches[0].clientX - hx) > 8 || Math.abs(e.touches[0].clientY - hy) > 8) stop();
+  }, { passive: true });
+  el.addEventListener('touchend', stop);
+  el.addEventListener('touchcancel', stop);
+  el.addEventListener('contextmenu', function (e) {
+    if (skip(e.target)) return;
+    e.preventDefault();
+    if (Date.now() - Number(el.dataset.held || 0) < 1000) return;
+    stop();
+    fire();
+  });
+}
+
+/**
+ * 1行だけ書き換える小窓。done(新しい値) は「保存」を押したときだけ呼ぶ。
+ * 画面の prompt() は LINE の中の枠では出ないことがあるので、自前で出す
+ */
+function openEditor(heading, value, done) {
+  var back = document.createElement('div');
+  back.className = 'modal';
+  var box = document.createElement('form');
+  box.className = 'mbox';
+
+  var h = document.createElement('div');
+  h.className = 'mh';
+  h.textContent = heading;
+
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.value = value;
+  input.maxLength = 60;
+  input.autocomplete = 'off';
+  input.enterKeyHint = 'done';
+
+  var row = document.createElement('div');
+  row.className = 'mbtn';
+  var cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'cancel';
+  cancel.textContent = 'キャンセル';
+  var ok = document.createElement('button');
+  ok.type = 'submit';
+  ok.className = 'ok';
+  ok.textContent = '保存';
+  row.appendChild(cancel);
+  row.appendChild(ok);
+
+  box.appendChild(h);
+  box.appendChild(input);
+  box.appendChild(row);
+  back.appendChild(box);
+
+  var close = function () {
+    document.removeEventListener('keydown', onKey);
+    if (back.parentNode) back.parentNode.removeChild(back);
+  };
+  var onKey = function (e) { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('click', function (e) { if (e.target === back) close(); });
+  cancel.addEventListener('click', close);
+  box.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = input.value;
+    close();
+    done(v);
+  });
+
+  document.body.appendChild(back);
+  input.focus();
+  try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* 選べなくてもよい */ }
 }
 
 function actionLayer(side, action) {
@@ -1323,6 +1456,7 @@ function recipeCard(it) {
     pin: !!it.pinned,
     waiting: !!waiting[it.id],
     tap: function () { toggleRecipe(it); },
+    hold: function () { renameRecipe(it); },   // 長押しで料理名を変える
     open: open,
     detail: open ? recipeDetail(it) : null,
     // 品名の位置にもう料理名が出ているので、錠剤は「開く」だけにする
@@ -1350,7 +1484,9 @@ function recipeDetail(it) {
   ((it.hits && it.hits.names) || []).forEach(function (n) { hit[n] = true; });
 
   if (ings.length) {
-    var b1 = block(box, '材料');
+    // 写真に「2人前」などがあれば見出しに添える。括弧ごと読めていても二重にしない
+    var serv = String(it.servings || '').trim().replace(/^[（(]\s*/, '').replace(/\s*[）)]$/, '');
+    var b1 = block(box, serv ? '材料（' + serv + '）' : '材料');
     var st = stockInfo[it.id];
     var checking = !st || st.loading;
 
@@ -1642,6 +1778,18 @@ function undoRecipe(it) {
   waiting[it.id] = true;
   render();
   send('webSetRecipeHidden', [it.id, false]);
+}
+
+/** 料理名を変える（カードの長押し）。先に画面の名前を変えてから書き込む */
+function renameRecipe(it) {
+  openEditor('料理名を変更', it.title || '', function (v) {
+    v = String(v || '').replace(/\s+/g, ' ').trim().substring(0, 60);
+    if (!v || v === it.title) return;   // 空にはしない・変わっていなければ送らない
+    it.title = v;
+    waiting[it.id] = true;
+    render();
+    send('webRenameRecipe', [it.id, v]);
+  });
 }
 
 /** ピン留めの付け外し。先に画面で上へ動かしてから書き込む */

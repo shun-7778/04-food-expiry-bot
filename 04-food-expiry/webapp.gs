@@ -313,6 +313,18 @@ function webSetRecipePinned(token, id, pinned) {
   return webPart_({ recipes: true });
 }
 
+/**
+ * 「レシピ」タブの料理名を変える（カードの長押しから）。
+ * 料理名は買い物リストの「料理ごと」の見出しにも出るので、買い物リストも返す。
+ * 空にはしない（空だと「レシピ」としか出ず、どれか分からなくなるため）
+ */
+function webRenameRecipe(token, id, title) {
+  webAssert_(token);
+  var clean = String(title || '').replace(/[\r\n\t]+/g, ' ').trim().substring(0, 60);
+  if (clean) withLock_(function () { recipeSetTitle_(id, clean); });
+  return webPart_({ shop: true, recipes: true });
+}
+
 /** 品名を買い物リストに足す。by は互換のため受けるだけ（名前はトークンで決まる） */
 function webAddShop(token, name, by) {
   webAssert_(token);
@@ -582,6 +594,7 @@ function webRecipeRead_(pre) {
       by: names[String(cell(r, RECIPE_COL.USER) || '')] || '',
       ingredients: recipeLines_(cell(r, RECIPE_COL.INGREDIENTS)).map(splitIngredient_),
       steps: recipeLines_(cell(r, RECIPE_COL.STEPS)),
+      servings: String(cell(r, RECIPE_COL.SERVINGS) || ''),
       pinned: !!cell(r, RECIPE_COL.PINNED),
       group: normalizeRecipeGroup_(cell(r, RECIPE_COL.GROUP))
     });
