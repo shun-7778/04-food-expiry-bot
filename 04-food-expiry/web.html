@@ -219,7 +219,8 @@ body {
 .card.open .fold { transform: rotate(180deg); }
 /* 台所で離れて見ることもあるので、材料と作り方は一覧の文字より大きめにする */
 .detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 16px; }
-.detail h4 { margin: 0 0 6px; font-size: 13px; font-weight: 800; color: var(--sub); }
+/* 見出しは本文と同じ濃い色にする（グレーだと読みにくいという声があったため） */
+.detail h4 { margin: 0 0 6px; font-size: 14px; font-weight: 800; color: var(--text); }
 .detail h4 + * { margin-top: 0; }
 .detail .blk + .blk { margin-top: 12px; }
 .detail .ing { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
@@ -238,14 +239,18 @@ body {
 #recipe-seg button { padding: 10px 2px; font-size: 14px; white-space: nowrap; }
 
 /* ---- 開いた中の材料。在庫の有無と「＋」を右に並べる ---- */
+/* 「材料」の見出しの行。右端に照合の状態か「ないものを追加」を置く */
+.detail h4.hrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px;
+}
 .detail .stockbar {
-  display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
-  color: var(--sub); font-size: 13px;
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--sub); font-size: 12px; font-weight: 600;
 }
 .detail .addall {
-  flex: 1; border: none; border-radius: 10px; padding: 10px 12px;
-  background: var(--green); color: #fff;
-  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  border: none; border-radius: 999px; padding: 6px 12px;
+  background: var(--green); color: #fff; white-space: nowrap;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
 }
 /* 「A」「合わせ調味料」などのまとめ名。中身は少し下げて、どこまでがそのまとめか見せる */
 .detail .sub {
@@ -1269,17 +1274,20 @@ function recipeDetail(it) {
       return !st.have[g.name] && !inShopList(g.name);
     });
 
-    var bar = document.createElement('div');
+    // 照合の状態と一括追加は、縦幅を取らないよう「材料」の見出しの右に置く
+    var head = b1.firstChild;
+    head.className = 'hrow';
+    var bar = document.createElement('span');
     bar.className = 'stockbar';
     if (checking) {
       bar.innerHTML = '<span class="spin"></span>';
-      bar.appendChild(document.createTextNode('在庫と照らし合わせています…'));
+      bar.appendChild(document.createTextNode('在庫を確認中…'));
     } else if (st.error) {
-      bar.textContent = '在庫を確認できませんでした。開き直すともう一度確認します';
+      bar.textContent = '在庫を確認できませんでした（開き直すと再確認）';
     } else if (lacking.length) {
       var all = document.createElement('button');
       all.className = 'addall';
-      all.textContent = 'ないものを買い物リストに追加（' + lacking.length + '）';
+      all.textContent = 'ないものを追加（' + lacking.length + '）';
       all.addEventListener('click', function () {
         addRecipeItems(it, lacking.map(function (g) { return g.name; }));
       });
@@ -1287,7 +1295,7 @@ function recipeDetail(it) {
     } else {
       bar.textContent = '足りないものはありません';
     }
-    b1.appendChild(bar);
+    head.appendChild(bar);
 
     var lastLabel = '';
     ings.forEach(function (g) {
