@@ -247,7 +247,7 @@ body {
 .detail h4 + * { margin-top: 0; }
 .detail .blk + .blk { margin-top: 12px; }
 /* 材料は1行ずつ詰めて並べる。行の高さは「＋」（24px）で決まる */
-.detail .ing { display: flex; gap: 8px; padding: 2px 0; line-height: 1.35; border-bottom: 1px dashed var(--ing-dash); }
+.detail .ing { display: flex; gap: 8px; padding: 4px 0; line-height: 1.35; font-size: 16px; border-bottom: 1px dashed var(--ing-dash); }
 .detail .ing:last-child { border-bottom: none; }
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -258,7 +258,7 @@ body {
 .detail li {
   counter-increment: step; position: relative;
   padding-left: 36px; margin: 0 0 12px; min-height: 24px;
-  line-height: 1.6; overflow-wrap: anywhere;
+  font-size: 16px; line-height: 1.6; overflow-wrap: anywhere;
 }
 .detail li:last-child { margin-bottom: 0; }
 .detail li::before {
@@ -307,8 +307,8 @@ body {
    作り方の「(調味料)を加える」が何のことか、ここで分かるようにする */
 .detail .subbox { margin: 0; }
 .detail .sub {
-  padding: 4px 0; border-bottom: 1px dashed var(--ing-dash);
-  font-size: 15px; font-weight: 800; color: var(--text);
+  padding: 6px 0 5px; border-bottom: 1px dashed var(--ing-dash);
+  font-size: 16px; font-weight: 800; color: var(--text);
 }
 .detail .subbox .ing { padding-left: 16px; }
 /* まとめの後ろにまだ材料が続くときは、まとめの最後の行にも区切りの点線を残す */
@@ -1345,7 +1345,7 @@ function recipeDetail(it) {
     } else if (lacking.length) {
       var all = document.createElement('button');
       all.className = 'addall';
-      all.textContent = 'ないものを追加（' + lacking.length + '）';
+      all.textContent = 'なしを追加（' + lacking.length + '）';
       all.addEventListener('click', function () {
         addRecipeItems(it, lacking.map(function (g) { return g.name; }));
       });
