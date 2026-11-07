@@ -104,9 +104,11 @@ body {
   pointer-events: none;
 }
 .sticky > * { max-width: 640px; margin: 0 auto; }
-/* 下へスクロールしている間は上のかたまりごと引っ込め、一覧を広く見せる。上へ戻すと出てくる */
-.sticky { transition: transform .2s ease-out; }
-.sticky.away { transform: translateY(calc(-100% - 16px)); }
+/* 下へスクロールした分だけ上のかたまりを押し上げ、一覧を広く見せる。上へ戻すとその分だけ出てくる。
+   位置はスクロールに合わせて JS が直接動かす（updateSticky）。指を止めたときだけ、
+   半端な位置から出し切る・隠し切るのを短く動かす（snap） */
+.sticky { will-change: transform; }
+.sticky.snap { transition: transform .15s ease-out; }
 
 /* ---- タブ。指が届きやすいよう、下に浮かせて置く ---- */
 .tabbar {
@@ -1848,36 +1850,47 @@ function noteFullHeight() {
 }
 
 /**
- * 上のかたまり（検索・追加欄と切り替えボタン）を、下へスクロールしたら隠し、上へ戻したら出す。
- * 少しの揺れで出たり消えたりしないよう、一定以上動いたときだけ切り替える。
- * 先頭付近と、文字を打っている間は常に出しておく
+ * 上のかたまり（検索・追加欄と切り替えボタン）を、スクロールに合わせて動かす。
+ * 下へ動かした分だけ押し上げ（一覧と同じ速さで消える）、上へ戻した分だけ下ろす。
+ * 隠れる量は 0〜かたまりの高さ（下のぼかし込み）の範囲に収める。
+ * 指を止めて半端な位置で止まったら、最後に動かした向きで出し切るか隠し切る
+ * （上へ戻している途中なら出す。見たくて戻したのに、また隠れると煩わしいため）。
+ * 先頭付近と、文字を打っている間は全部出しておく
  */
 var lastScrollY = 0;
-var scrollTick = false;
-var STICKY_MOVE = 8;   // これ以上動いたら向きを判断する（px）
+var stickyOffset = 0;   // 今どれだけ押し上げているか（px）
+var snapTimer = 0;
+var lastDir = 0;        // 最後に動かした向き（1=下へ、-1=上へ）
+var STICKY_FADE = 16;   // かたまりの下に流しているぼかしの高さ（.sticky::after）
 
-function updateSticky() {
-  scrollTick = false;
-  var y = window.scrollY || window.pageYOffset || 0;
+function setStickyOffset(px, snap) {
   var bar = document.querySelector('.sticky');
-  var typing = document.activeElement === activeInput();
-  if (y < bar.offsetHeight || typing) {
-    bar.classList.remove('away');
-  } else if (y - lastScrollY > STICKY_MOVE) {
-    bar.classList.add('away');
-  } else if (lastScrollY - y > STICKY_MOVE) {
-    bar.classList.remove('away');
-  } else {
-    return;   // 動きが小さいときは、比べる基準を動かさない（ゆっくりでも積み重なれば切り替わる）
-  }
-  lastScrollY = y;
+  stickyOffset = px;
+  bar.classList.toggle('snap', !!snap);
+  bar.style.transform = px ? 'translateY(' + (-px) + 'px)' : '';
 }
 
-window.addEventListener('scroll', function () {
-  if (scrollTick) return;
-  scrollTick = true;
-  requestAnimationFrame(updateSticky);
-}, { passive: true });
+function updateSticky() {
+  var y = Math.max(0, window.scrollY || window.pageYOffset || 0);
+  var max = document.querySelector('.sticky').offsetHeight + STICKY_FADE;
+  var dy = y - lastScrollY;
+  lastScrollY = y;
+  if (dy) lastDir = dy > 0 ? 1 : -1;
+
+  if (document.activeElement === activeInput()) { setStickyOffset(0, true); return; }
+  // 先頭に近いときは、スクロールした分以上は隠さない（上に何も無いのに欄だけ消えないように）
+  var next = Math.min(max, Math.max(0, stickyOffset + dy), y);
+  setStickyOffset(next, false);
+
+  clearTimeout(snapTimer);
+  snapTimer = setTimeout(function () {
+    if (stickyOffset === 0 || stickyOffset === max) return;
+    var hide = lastDir > 0 && lastScrollY > max;
+    setStickyOffset(hide ? max : 0, true);
+  }, 160);
+}
+
+window.addEventListener('scroll', updateSticky, { passive: true });
 
 fullHeight = viewHeight();
 window.addEventListener('resize', function () { noteFullHeight(); updateTabbar(); });
