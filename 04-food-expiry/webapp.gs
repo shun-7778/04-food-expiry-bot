@@ -319,10 +319,32 @@ function webSetRecipePinned(token, id, pinned) {
  * 空にはしない（空だと「レシピ」としか出ず、どれか分からなくなるため）
  */
 function webRenameRecipe(token, id, title) {
+  return webUpdateRecipe(token, id, { title: title });
+}
+
+/**
+ * 「レシピ」タブの1件を書き換える。patch に入っている項目だけを変える。
+ *   title  … 料理名（長押し）。空にはしない。60文字まで
+ *   rating … 評価 0〜3（長押し）。0 は未評価
+ *   memo   … メモ（開いた中の「メモ」）。空で消す。1000文字まで
+ * 料理名は買い物リストの「料理ごと」の見出しにも出るので、変えたときは買い物リストも返す
+ */
+function webUpdateRecipe(token, id, patch) {
   webAssert_(token);
-  var clean = String(title || '').replace(/[\r\n\t]+/g, ' ').trim().substring(0, 60);
-  if (clean) withLock_(function () { recipeSetTitle_(id, clean); });
-  return webPart_({ shop: true, recipes: true });
+  patch = patch || {};
+
+  var title = patch.title === undefined ? ''
+    : String(patch.title || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 60);
+  var hasRating = patch.rating !== undefined;
+  var hasMemo = patch.memo !== undefined;
+  var memo = hasMemo ? String(patch.memo || '').replace(/\r\n?/g, '\n').trim().substring(0, RECIPE_MEMO_MAX) : '';
+
+  withLock_(function () {
+    if (title) recipeSetTitle_(id, title);
+    if (hasRating) recipeSetRating_(id, patch.rating);
+    if (hasMemo) recipeSetMemo_(id, memo);
+  });
+  return webPart_(title ? { shop: true, recipes: true } : { recipes: true });
 }
 
 /** 品名を買い物リストに足す。by は互換のため受けるだけ（名前はトークンで決まる） */
@@ -595,6 +617,8 @@ function webRecipeRead_(pre) {
       ingredients: recipeLines_(cell(r, RECIPE_COL.INGREDIENTS)).map(splitIngredient_),
       steps: recipeLines_(cell(r, RECIPE_COL.STEPS)),
       servings: String(cell(r, RECIPE_COL.SERVINGS) || ''),
+      rating: normalizeRecipeRating_(cell(r, RECIPE_COL.RATING)),
+      memo: String(cell(r, RECIPE_COL.MEMO) || ''),
       pinned: !!cell(r, RECIPE_COL.PINNED),
       group: normalizeRecipeGroup_(cell(r, RECIPE_COL.GROUP))
     });

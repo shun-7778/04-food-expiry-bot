@@ -45,6 +45,7 @@
      レシピIDの順に使い回すので、色数より多い料理があれば一巡して同じ色に戻る */
   --r0: #0f9d58;   --r1: #8b5cf6;   --r2: #ef7c1b;   --r3: #e0457b;   --r4: #0f9aa8;
   --dash: #c4ccd6;                     /* 済みの行の破線 */
+  --star: #f2a900;  --star-off: #c4ccd6;   /* レシピの評価の星。未評価はグレー */
 }
 
 /* ---- 端末がダークモードのときだけ、色を差し替える。形と配置はそのまま ---- */
@@ -78,6 +79,7 @@
     /* 暗い地では沈むので、どれも一段明るくする */
     --r0: #3ec27d;   --r1: #a78bfa;   --r2: #ff9f45;   --r3: #ff6f9c;   --r4: #35bccb;
     --dash: #3d4552;
+    --star: #f5b82e;  --star-off: #4a5565;
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -251,6 +253,30 @@ body {
   background: var(--bg); color: var(--text); font-family: inherit;
   font-size: 16px;   /* 16px 未満だと iOS が入力時に拡大する */
 }
+.mbox textarea {
+  width: 100%; min-height: 150px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg); color: var(--text); font-family: inherit; line-height: 1.6;
+  font-size: 16px; resize: vertical;
+}
+/* 小窓の評価の星。指で押しやすい大きさにする */
+.mstars { display: flex; align-items: center; gap: 2px; margin-top: 12px; }
+.mstars button {
+  border: none; background: none; cursor: pointer; padding: 2px 3px;
+  font-family: inherit; font-size: 34px; line-height: 1; color: var(--star);
+}
+.mstars.none button { color: var(--star-off); }
+.mstars .note { margin-left: 8px; font-size: 12px; color: var(--sub); }
+
+/* カードの評価。料理名の下に小さく並べる。未評価はグレーの☆ */
+.card .stars { font-size: 15px; line-height: 1.3; letter-spacing: 1px; color: var(--star); margin-top: 2px; }
+.card .stars.none { color: var(--star-off); }
+
+/* 開いた中の「メモ」。押すと書き換える */
+.detail .memo {
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6;
+  padding: 10px 12px; border-radius: 10px; background: var(--bg); cursor: pointer;
+}
+.detail .memo.empty { color: var(--sub); }
 .mbox .mbtn { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .mbox button {
   padding: 10px 18px; border: none; border-radius: 12px; cursor: pointer;
@@ -1147,6 +1173,9 @@ function card(opt) {
   }
   body.appendChild(line);
 
+  // 評価の星（レシピのみ）。料理名の下に置く
+  if (typeof opt.stars === 'number') body.appendChild(starRow(opt.stars));
+
   if (opt.meta) {
     var meta = document.createElement('div');
     meta.className = 'meta';
@@ -1269,11 +1298,31 @@ function attachHold(el, fn) {
   });
 }
 
+/** 評価の星。n は 0〜3。0（未評価）はグレーの☆を3つ並べる */
+var RATING_MAX = 3;
+function starText(n) {
+  var s = '';
+  for (var i = 1; i <= RATING_MAX; i++) s += i <= n ? '★' : '☆';
+  return s;
+}
+function starRow(n) {
+  var el = document.createElement('div');
+  el.className = 'stars' + (n ? '' : ' none');
+  el.textContent = starText(n);
+  el.setAttribute('aria-label', n ? '評価 ' + n : '未評価');
+  return el;
+}
+
 /**
- * 1行だけ書き換える小窓。done(新しい値) は「保存」を押したときだけ呼ぶ。
- * 画面の prompt() は LINE の中の枠では出ないことがあるので、自前で出す
+ * 書き換える小窓。done(新しい値, 評価) は「保存」を押したときだけ呼ぶ。
+ * 画面の prompt() は LINE の中の枠では出ないことがあるので、自前で出す。
+ *   opts.heading   … 見出し
+ *   opts.value     … 今の値
+ *   opts.multiline … 複数行（メモ）にするか
+ *   opts.maxLength / opts.placeholder
+ *   opts.rating    … 渡すと星を3つ並べて評価も選べる（0〜3）。同じ星をもう一度押すと未評価に戻る
  */
-function openEditor(heading, value, done) {
+function openEditor(opts, done) {
   var back = document.createElement('div');
   back.className = 'modal';
   var box = document.createElement('form');
@@ -1281,14 +1330,44 @@ function openEditor(heading, value, done) {
 
   var h = document.createElement('div');
   h.className = 'mh';
-  h.textContent = heading;
+  h.textContent = opts.heading;
 
-  var input = document.createElement('input');
-  input.type = 'text';
-  input.value = value;
-  input.maxLength = 60;
+  var input = document.createElement(opts.multiline ? 'textarea' : 'input');
+  if (!opts.multiline) {
+    input.type = 'text';
+    input.enterKeyHint = 'done';
+  }
+  input.value = opts.value || '';
+  input.maxLength = opts.maxLength || 60;
   input.autocomplete = 'off';
-  input.enterKeyHint = 'done';
+  if (opts.placeholder) input.placeholder = opts.placeholder;
+
+  var rating = opts.rating;
+  var stars = null;
+  if (rating !== undefined) {
+    stars = document.createElement('div');
+    stars.className = 'mstars';
+    var drawStars = function () {
+      stars.classList.toggle('none', !rating);
+      Array.prototype.forEach.call(stars.querySelectorAll('button'), function (b, i) {
+        b.textContent = i < rating ? '★' : '☆';
+      });
+      note.textContent = rating ? '同じ星をもう一度押すと未評価' : '未評価';
+    };
+    for (var i = 1; i <= RATING_MAX; i++) {
+      (function (n) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', '評価 ' + n);
+        b.addEventListener('click', function () { rating = rating === n ? 0 : n; drawStars(); });
+        stars.appendChild(b);
+      })(i);
+    }
+    var note = document.createElement('span');
+    note.className = 'note';
+    stars.appendChild(note);
+    drawStars();
+  }
 
   var row = document.createElement('div');
   row.className = 'mbtn';
@@ -1305,6 +1384,7 @@ function openEditor(heading, value, done) {
 
   box.appendChild(h);
   box.appendChild(input);
+  if (stars) box.appendChild(stars);
   box.appendChild(row);
   back.appendChild(box);
 
@@ -1320,7 +1400,7 @@ function openEditor(heading, value, done) {
     e.preventDefault();
     var v = input.value;
     close();
-    done(v);
+    done(v, rating);
   });
 
   document.body.appendChild(back);
@@ -1456,7 +1536,8 @@ function recipeCard(it) {
     pin: !!it.pinned,
     waiting: !!waiting[it.id],
     tap: function () { toggleRecipe(it); },
-    hold: function () { renameRecipe(it); },   // 長押しで料理名を変える
+    stars: it.rating || 0,
+    hold: function () { editRecipe(it); },   // 長押しで料理名と評価を変える
     open: open,
     detail: open ? recipeDetail(it) : null,
     // 品名の位置にもう料理名が出ているので、錠剤は「開く」だけにする
@@ -1557,6 +1638,16 @@ function recipeDetail(it) {
     none.textContent = '材料・作り方の記録はありません';
     box.appendChild(none);
   }
+
+  // 料理についてのメモ。押すと書き換える小窓が開く（打っている途中で一覧が描き直されても消えないよう、
+  // ここに直接入力欄は置かない）
+  var b3 = block(box, 'メモ');
+  var memo = document.createElement('div');
+  memo.className = 'memo' + (it.memo ? '' : ' empty');
+  memo.textContent = it.memo || '＋ メモを書く';
+  memo.setAttribute('role', 'button');
+  memo.addEventListener('click', function () { editMemo(it); });
+  b3.appendChild(memo);
   return box;
 }
 
@@ -1780,15 +1871,35 @@ function undoRecipe(it) {
   send('webSetRecipeHidden', [it.id, false]);
 }
 
-/** 料理名を変える（カードの長押し）。先に画面の名前を変えてから書き込む */
-function renameRecipe(it) {
-  openEditor('料理名を変更', it.title || '', function (v) {
+/** 料理名と評価を変える（カードの長押し）。先に画面を変えてから書き込む */
+function editRecipe(it) {
+  openEditor({ heading: '料理名と評価', value: it.title || '', rating: it.rating || 0 }, function (v, rating) {
+    var patch = {};
     v = String(v || '').replace(/\s+/g, ' ').trim().substring(0, 60);
-    if (!v || v === it.title) return;   // 空にはしない・変わっていなければ送らない
-    it.title = v;
+    if (v && v !== it.title) patch.title = v;   // 空にはしない
+    if (rating !== (it.rating || 0)) patch.rating = rating;
+    if (patch.title === undefined && patch.rating === undefined) return;   // 変わっていなければ送らない
+    if (patch.title !== undefined) it.title = patch.title;
+    if (patch.rating !== undefined) it.rating = patch.rating;
     waiting[it.id] = true;
     render();
-    send('webRenameRecipe', [it.id, v]);
+    send('webUpdateRecipe', [it.id, patch]);
+  });
+}
+
+/** メモを書く（開いた中の「メモ」を押す）。空にして保存すると消える */
+var MEMO_MAX = 1000;
+function editMemo(it) {
+  openEditor({
+    heading: 'メモ', value: it.memo || '', multiline: true, maxLength: MEMO_MAX,
+    placeholder: '作った感想、分量の調整、次に試したいことなど'
+  }, function (v) {
+    v = String(v || '').replace(/\r\n?/g, '\n').trim().substring(0, MEMO_MAX);
+    if (v === (it.memo || '')) return;
+    it.memo = v;
+    waiting[it.id] = true;
+    render();
+    send('webUpdateRecipe', [it.id, { memo: v }]);
   });
 }
 

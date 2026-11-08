@@ -204,11 +204,15 @@ var RECIPE_COL = {
   STEPS: 8,        // 写真から読んだ作り方。1行に1手順。写真に無ければ空
   PINNED: 9,       // 「レシピ」タブで上に固定したもの
   GROUP: 10,       // 料理の分類（RECIPE_GROUPS のどれか）。「レシピ」タブの切り替えに使う
-  SERVINGS: 11     // 写真に書かれた何人分か（「2人前」など書かれたまま）。無ければ空
+  SERVINGS: 11,    // 写真に書かれた何人分か（「2人前」など書かれたまま）。無ければ空
+  RATING: 12,      // 評価（星の数 1〜3）。まだ評価していなければ空
+  MEMO: 13         // 料理についてのメモ。画面の「レシピ」タブで書く
 };
-var RECIPE_COL_COUNT = 11;
+var RECIPE_COL_COUNT = 13;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数', '評価', 'メモ'];
+var RECIPE_RATING_MAX = 3;
+var RECIPE_MEMO_MAX = 1000;   // メモの長さの上限（文字）
 
 // 「レシピ」タブの分類。画面の切り替えボタンはこの順に並ぶ（先頭に「すべて」が付く）。
 // タレ・ドレッシングなどはタブを作るほど無いので、いちばん近いものに入れる
@@ -3287,20 +3291,21 @@ function recipeSheet_() {
  * レシピを1行足して、その ID を返す。
  * detail は { ingredients, steps, group, servings }（材料・作り方は改行区切りの文字列）。
  *
- * 同じリンクをピン留めしたまま送り直したときは、ピン留めを新しい行に引き継ぐ。
- * 画面は同じリンクの最新の1行だけを出すので、引き継がないと固定が外れたように見えるため
+ * 同じリンクを送り直したときは、ピン留め・評価・メモを新しい行に引き継ぐ。
+ * 画面は同じリンクの最新の1行だけを出すので、引き継がないと消えたように見えるため
  */
 function recipeAdd_(title, url, detail) {
   var sh = recipeSheet_();
   var last = sh.getLastRow();
   var id = String(last);   // 見出し行があるので、行数がそのまま次の連番になる
-  var pinned = url ? recipeLinkPinned_(sh, url) : false;
+  var carry = (url && recipeLinkCarry_(sh, url)) || { pinned: '', rating: '', memo: '' };
   detail = detail || {};
 
   sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
     id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', '',
-    detail.ingredients || '', detail.steps || '', pinned ? RECIPE_PIN_MARK : '',
-    normalizeRecipeGroup_(detail.group), detail.servings || ''
+    detail.ingredients || '', detail.steps || '', carry.pinned,
+    normalizeRecipeGroup_(detail.group), detail.servings || '',
+    carry.rating, recipeSafeText_(carry.memo)
   ]]);
   return id;
 }
@@ -3490,17 +3495,46 @@ function buildRecipeGroupPrompt_(todo) {
 
 var RECIPE_PIN_MARK = '📌';
 
-/** そのリンクの最新の行がピン留めされているか */
-function recipeLinkPinned_(sh, url) {
+/** そのリンクの最新の行の、引き継ぐ値 { pinned, rating, memo }。無ければ null */
+function recipeLinkCarry_(sh, url) {
   var last = sh.getLastRow();
-  if (last < 2) return false;
+  if (last < 2) return null;
 
   var rows = sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues();
   for (var i = rows.length - 1; i >= 0; i--) {
-    if (String(rows[i][RECIPE_COL.URL - 1] || '') !== url) continue;
-    return !!rows[i][RECIPE_COL.PINNED - 1];
+    var r = rows[i];
+    if (String(r[RECIPE_COL.URL - 1] || '') !== url) continue;
+    var rating = normalizeRecipeRating_(r[RECIPE_COL.RATING - 1]);
+    return {
+      pinned: r[RECIPE_COL.PINNED - 1] ? RECIPE_PIN_MARK : '',
+      rating: rating || '',
+      memo: String(r[RECIPE_COL.MEMO - 1] || '')
+    };
   }
-  return false;
+  return null;
+}
+
+/** 評価を 0〜3 の整数にそろえる。0 はまだ評価していない */
+function normalizeRecipeRating_(v) {
+  var n = Math.round(Number(v) || 0);
+  return Math.max(0, Math.min(RECIPE_RATING_MAX, n));
+}
+
+/** 「=」などで始まる文字はシートが数式として扱うので、文字として入れる */
+function recipeSafeText_(v) {
+  v = String(v || '');
+  return /^[=+\-@]/.test(v) ? "'" + v : v;
+}
+
+/** 評価を付ける。0 で未評価に戻す */
+function recipeSetRating_(id, rating) {
+  var n = normalizeRecipeRating_(rating);
+  recipeSetCell_(id, RECIPE_COL.RATING, n || '');
+}
+
+/** メモを書き換える。空にすると消える */
+function recipeSetMemo_(id, memo) {
+  recipeSetCell_(id, RECIPE_COL.MEMO, recipeSafeText_(memo));
 }
 
 /** レシピ行の「非表示」を付け外しする。画面の「レシピ」タブから消す・戻すときに使う */
@@ -3513,14 +3547,9 @@ function recipeSetPinned_(id, pinned) {
   recipeSetCell_(id, RECIPE_COL.PINNED, pinned ? RECIPE_PIN_MARK : '');
 }
 
-/**
- * 料理名を変える。画面の「レシピ」タブで長押ししたときに使う。
- * 「=」などで始まるとシートが数式として扱うので、文字として入れる
- */
+/** 料理名を変える。画面の「レシピ」タブで長押ししたときに使う */
 function recipeSetTitle_(id, title) {
-  var v = String(title || '');
-  if (/^[=+\-@]/.test(v)) v = "'" + v;
-  recipeSetCell_(id, RECIPE_COL.TITLE, v);
+  recipeSetCell_(id, RECIPE_COL.TITLE, recipeSafeText_(title));
 }
 
 function recipeSetCell_(id, col, value) {
