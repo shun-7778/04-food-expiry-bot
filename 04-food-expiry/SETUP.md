@@ -34,13 +34,13 @@ LINE に食材の写真を送ると、賞味期限を読み取って返信する
 
 | 用途 | 定数 | 既定 | 目安 |
 |---|---|---|---|
-| 写真の読み取り | `MODEL_VISION` | `claude-sonnet-5` | 約1.1円/枚 |
-| テキスト解析・在庫照合 | `MODEL_TEXT` | `claude-haiku-4-5` | 約0.4円/回 |
+| 写真の読み取り | `MODEL_VISION` | `claude-haiku-5-5`（effort: medium） | 約0.1円/枚 |
+| テキスト解析・在庫照合 | `MODEL_TEXT` | `claude-haiku-5-5`（effort: low） | 約0.05円/回 |
 
 「牛乳使った」のような定型の言い回しは正規表現で処理するため、APIを呼びません。
 
-1日に写真1枚＋操作数回で、月100円程度です。読み取りを外すようなら
-`MODEL_VISION` を `claude-opus-5`（約2.7円/枚）に上げてください。
+1日に写真1枚＋操作数回で、月10円程度です。写真の読み取りを外すようなら
+`MODEL_VISION` を `claude-sonnet-5-5`（約1円/枚）に戻してください。
 
 実際の使用量は https://console.anthropic.com/settings/usage で確認できます。
 

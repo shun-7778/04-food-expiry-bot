@@ -12,19 +12,20 @@
  */
 
 /**
- * タスクごとにモデルを分ける。
- *   レシピ写真の読み取り … 手書き・雑誌など読み取り対象が多様なぶん難度は高いが、Sonnet で足りる想定
- *   テキストの解析・在庫の突き合わせ … 易しいので最安の Haiku
+ * タスクごとにモデルを分ける。どちらも費用を抑えるため最安の Haiku 5.5 にしている。
+ *   レシピ・期限の写真の読み取り … 手書き・雑誌など難度は高めなので、考える深さ（effort）を一段上げる
+ *   テキストの解析・在庫の突き合わせ … 易しいので effort は low
  *
- * 単価（入力/出力 per MTok）と画像1枚あたりの目安:
- *   'claude-opus-5'    $5 / $25   約2.7円/枚  精度最優先
- *   'claude-sonnet-5'  $2 / $10   約1.1円/枚  バランス型
- *   'claude-haiku-4-5' $1 / $5    約0.6円/枚  最安（effort 非対応。自動で除外される）
+ * 単価（入力/出力 per MTok。Haiku 5.5 は1回の入力が10万トークン以下のとき）:
+ *   'claude-sonnet-5-5' $2 / $10     写真の読み取りを外すようならこちらへ戻す
+ *   'claude-haiku-5-5'  $0.10 / $0.50
  *
- * 読み取りを外すようなら MODEL_VISION を 'claude-opus-5' に戻す。
+ * Haiku 5.5 は既定で考えてから答える（その分も出力トークンに数える）。深さは effort で決める
  */
-var MODEL_VISION = 'claude-sonnet-5';
-var MODEL_TEXT = 'claude-haiku-4-5';
+var MODEL_VISION = 'claude-haiku-5-5';
+var MODEL_TEXT = 'claude-haiku-5-5';
+var EFFORT_VISION = 'medium';
+var EFFORT_TEXT = 'low';
 var ANTHROPIC_VERSION = '2023-06-01';
 var MAX_IMAGE_BYTES = 4 * 1024 * 1024; // Claude の画像サイズ上限に対する安全マージン
 
@@ -1748,10 +1749,11 @@ function callClaude_(content, schema, model) {
   var useModel = model || MODEL_VISION;
   var outputConfig = { format: { type: 'json_schema', schema: schema } };
 
-  // effort は Haiku 4.5 では未対応（指定すると 400 になる）。対応モデルのみ付ける。
-  // 抽出タスクなので低 effort で十分で、LINE の応答時間短縮にもなる。
-  if (useModel.indexOf('haiku') < 0) {
-    outputConfig.effort = 'low';
+  // 考える深さ。写真の読み取りだけ一段上げ、ほかは抽出・照合なので low で足りる（応答も速い）。
+  // Haiku 4.5 は effort 非対応（指定すると 400）なので、戻したときのために外す
+  if (useModel !== 'claude-haiku-4-5') {
+    var hasImage = content.some(function (c) { return c.type === 'image'; });
+    outputConfig.effort = hasImage ? EFFORT_VISION : EFFORT_TEXT;
   }
 
   var payload = {
