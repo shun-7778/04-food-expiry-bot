@@ -1556,7 +1556,8 @@ function buildTextPrompt_(text) {
     '  1つの発話に複数の食材がある場合、ラベルは食材ごとに判断してください。',
     '  例:「牛乳は消費期限9月10日、味噌は9月30日」→ 牛乳="消費期限"、味噌="賞味期限"',
     '  「消費期限」という語が1つの食材に付いていても、他の食材まで消費期限にしないこと。',
-    '- 月までしか述べられていない場合（例「10月くらい」）は、その月の末日を date に入れ date_precision を "month"、confidence を "low" にしてください。',
+    '- 月までしか述べられていない場合（例「10月くらい」「2026年12月」）は、その月の末日を date に入れ date_precision を "month" にしてください。',
+    '  賞味期限は月までの表示がよくあるので、月までしか無いことだけを理由に confidence を下げないでください。',
     '- 日付をまったく特定できない食材は、items から省かずに found を false、date を空文字で入れてください。推測で日付を作らないこと。',
     '  「水」「米」「塩」のように期限を言われなかったものも同じです。常にあるものとして登録されるので、',
     '  それらしい期限を補う必要はありません。',
@@ -1828,11 +1829,23 @@ function formatItems_(items, header) {
 }
 
 /**
+ * 期限の読み取りに ⚠ を付けるか。確度が high でなければ付ける。
+ * ただし月までの期限（「2026年12月」など）で確度が low のものは付けない。
+ * 前の指示では月までの期限を一律 low にしていたので、その分を出さないため
+ * （賞味期限は月までの表示がよくあり、警告するほどのことではない）
+ */
+function expiryDoubtful_(it) {
+  if (!it || !it.confidence || it.confidence === 'high') return false;
+  if (it.date_precision === 'month' && it.confidence === 'low') return false;
+  return true;
+}
+
+/**
  * 1件分を2行に整形する。
  *   1. ヨーグルト
  *   2026-09-17（11日）⚠
  * 末尾の ⚠ は、誤変換の訂正・言い直しの採用・年の補完などで
- * モデルの確度が high でなかったことを示す。理由は実行ログに残る。
+ * モデルの確度が high でなかったことを示す（expiryDoubtful_）。理由は実行ログに残る。
  */
 function formatItem_(it, prefix) {
   var name = it.item_name || '(食材名不明)';
@@ -1849,7 +1862,7 @@ function formatItem_(it, prefix) {
   var days = daysLeft_(it.date);
   var remain = days < 0 ? days * -1 + '日超過' : days === 0 ? '今日まで' : days + '日';
   var approx = it.date_precision === 'month' ? '頃' : '';
-  var warn = it.confidence === 'high' ? '' : ' ⚠';
+  var warn = expiryDoubtful_(it) ? ' ⚠' : '';
 
   return prefix + name + '\n' + labelPrefix_(it.label) + it.date + approx
     + '（' + remain + '）' + warn;
@@ -4633,7 +4646,7 @@ function buildStockCheckBubble_(have, missing, token) {
     have.forEach(function (it, i) {
       if (i > 0) rows.push({ type: 'separator', color: pal_().line });
       rows.push(bubbleActionRow_(
-        it.item_name + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
+        it.item_name + (expiryDoubtful_(it) ? ' ⚠' : ''),
         '使用済',
         { type: 'postback', label: '使用済', data: STOCK_USED_PREFIX + it.id },
         stockExpirySub_(it)));
@@ -4692,7 +4705,7 @@ function buildRegisteredBubble_(items) {
   sorted.forEach(function (it, i) {
     if (i > 0) rows.push({ type: 'separator', color: pal_().line });
     rows.push(bubbleActionRow_(
-      (it.item_name || '(名称不明)') + (it.confidence && it.confidence !== 'high' ? ' ⚠' : ''),
+      (it.item_name || '(名称不明)') + (expiryDoubtful_(it) ? ' ⚠' : ''),
       '登録取消',
       { type: 'postback', label: '登録取消', data: STOCK_UNREG_PREFIX + it.stock_id },
       registeredExpirySub_(it)));
