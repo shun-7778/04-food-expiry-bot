@@ -341,12 +341,12 @@ body {
   display: flex; align-items: center; justify-content: center;
   /* 丸数字は緑の数字に緑の縁取り。地は材料の箱と同じ薄い緑 */
   background: var(--ing-bg); color: var(--ok-fg); border: 1px solid var(--ok-line);   /* 「SNS」の縁取りと同じ太さ */
-  font-size: 13px; font-weight: 800; line-height: 1;
+  font-size: 13px; font-weight: 400; line-height: 1;
 }
 /* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
    丸の縁で止めると、端末の丸め方しだいで丸との間にすき間が出て途切れて見えるため */
 .detail li:not(:last-child)::after {
-  content: ''; position: absolute; left: 11px; top: 12px; bottom: -24px; width: 2px;
+  content: ''; position: absolute; left: 11.5px; top: 12px; bottom: -24px; width: 1px;   /* 丸の枠と同じ太さで、丸の中心（12px）を通す */
   background: var(--sub-line); z-index: 0;
 }
 .detail .none { color: var(--sub); font-size: 13px; }
