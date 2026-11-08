@@ -37,11 +37,13 @@
   --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
   --src-line: #b6cdf6;                 /* レシピの「SNS」の縁取り */
   --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
-  --sub-line: #5fae7c;                         /* 作り方の丸数字をつなぐ線（丸数字の緑に合わせた緑） */
   --ok-line: #8cc9a3;   --over-line: #f0a39d;  /* 「あり」「なし」・丸数字の枠（文字の色より薄く） */
   --ing-head: #dcecdf;                         /* 材料の箱の見出しの帯（箱の地より一段濃い緑） */
   --ing-dash: #b3bdc9;                         /* 材料の行の区切りの点線 */
-  --step-bg: #d9e6fb;  --step-fg: #3b6fc4;    /* 作り方の丸数字。塗りの青は強すぎるので薄い地に青い数字 */
+  /* 作り方の箱（薄いオレンジ）。mark は丸数字の枠と、それをつなぐ線 */
+  --step-bg: #fff8ee;  --step-head: #fdebd3;  --step-line: #f3d3a8;  --step-mark: #e5a85c;
+  /* メモの箱（薄い青）。枠は「SNS」と同じ色 */
+  --note-bg: #f4f8fe;  --note-head: #e2ebfb;
 
   /* 写真1枚（レシピ1つ）から入った品目のまとまりを示す色。
      レシピIDの順に使い回すので、色数より多い料理があれば一巡して同じ色に戻る */
@@ -74,11 +76,11 @@
     --src-bg: #223247;
     --src-line: #3a5a8a;
     --ing-bg: #18261d;   --ing-line: #2f5a3c;
-    --sub-line: #3f9a63;
     --ok-line: #2f7a4d;   --over-line: #8a3d38;
     --ing-head: #1f3a28;
     --ing-dash: #4a5565;
-    --step-bg: #263a5c;  --step-fg: #9dbcf0;
+    --step-bg: #261f16;  --step-head: #3a2c1a;  --step-line: #5a4428;  --step-mark: #b07a3a;
+    --note-bg: #19212e;  --note-head: #213048;
 
     /* 暗い地では沈むので、どれも一段明るくする */
     --r0: #3ec27d;   --r1: #a78bfa;   --r2: #ff9f45;   --r3: #ff6f9c;   --r4: #35bccb;
@@ -280,16 +282,21 @@ body {
 .card .stars { font-size: 15px; line-height: 1.3; letter-spacing: 1px; color: var(--star); margin-top: 2px; }
 .card .stars.none { color: var(--star-off); }
 
-/* 開いた中の「メモ」。押すと書き換える小窓が開く */
-/* 「SNS」と同じ青の地・青い文字に、青の縁取りと影を付けて、押せる欄だと分かるようにする */
+/* 開いた中の「メモ」。青い箱の中身で、押すと書き換える小窓が開く（見出しの「編集」でも開く） */
 .detail .memo {
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6;
-  padding: 10px 12px; border-radius: 10px; cursor: pointer;
-  background: var(--src-bg); color: var(--text);
-  border: 1px solid var(--src-line); box-shadow: var(--shadow);   /* 枠は「SNS」と同じ色 */
+  padding: 10px 0 8px; cursor: pointer; color: var(--text);
 }
 /* 書いた中身は黒で読みやすく。まだ無いときの「＋ メモを書く」だけ青にして押せると分かるように */
-.detail .memo.empty { text-align: center; color: var(--blue); }
+/* 一覧の「該当なし」（.empty）の地・影・余白が付かないよう打ち消す */
+.detail .memo.empty {
+  text-align: center; color: var(--blue); font-size: inherit;
+  background: none; box-shadow: none; border-radius: 0; padding: 10px 0 8px;
+}
+.detail .medit {
+  border: none; background: none; padding: 2px 0; cursor: pointer;
+  color: var(--blue); font-family: inherit; font-size: 14px; font-weight: 700;
+}
 .mbox .mbtn { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .mbox button {
   padding: 10px 18px; border: none; border-radius: 12px; cursor: pointer;
@@ -325,9 +332,8 @@ body {
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .detail .ing .a { flex: 0 0 auto; max-width: 45%; text-align: right; color: var(--sub); font-weight: 400; }
-/* 作り方は青の丸数字を縦の線でつなぎ、手順の流れが見えるようにする。
-   緑は「＋」「ないものを追加」のボタンの色なので、押せないものには使わない */
-.detail ol { margin: 10px 0 0; padding: 0; list-style: none; counter-reset: step; }   /* 「作り方」の見出しとの間を少し空ける */
+/* 作り方は丸数字を縦の線でつなぎ、手順の流れが見えるようにする */
+.detail ol { margin: 0; padding: 10px 0; list-style: none; counter-reset: step; }
 .detail li {
   counter-increment: step; position: relative;
   padding-left: 36px; margin: 0 0 12px; min-height: 24px;
@@ -339,15 +345,15 @@ body {
   content: counter(step);
   position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; z-index: 1;
   display: flex; align-items: center; justify-content: center;
-  /* 丸数字は緑の数字に緑の縁取り。地は材料の箱と同じ薄い緑 */
-  background: var(--ing-bg); color: var(--ok-fg); border: 1px solid var(--ok-line);   /* 「SNS」の縁取りと同じ太さ */
+  /* 丸数字は黒い数字にオレンジの縁取り。地は作り方の箱と同じ色 */
+  background: var(--step-bg); color: var(--text); border: 1px solid var(--step-mark);   /* 「SNS」の縁取りと同じ太さ */
   font-size: 13px; font-weight: 400; line-height: 1;
 }
 /* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
    丸の縁で止めると、端末の丸め方しだいで丸との間にすき間が出て途切れて見えるため */
 .detail li:not(:last-child)::after {
   content: ''; position: absolute; left: 11.5px; top: 12px; bottom: -24px; width: 1px;   /* 丸の枠と同じ太さで、丸の中心（12px）を通す */
-  background: var(--sub-line); z-index: 0;
+  background: var(--step-mark); z-index: 0;   /* 丸の枠と同じ色 */
 }
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
@@ -404,14 +410,18 @@ body {
   background: var(--green); color: #fff; white-space: nowrap;
   font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
 }
-/* 材料は薄い緑の箱に入れる。見出しは箱の幅いっぱいの濃い緑の帯にし、下に線を引いて材料と分ける */
-.detail .ingbox {
-  background: var(--ing-bg); border: 1px solid var(--ing-line); border-radius: 12px;
+/* 材料（緑）・作り方（オレンジ）・メモ（青）は箱に入れる。
+   見出しは箱の幅いっぱいの一段濃い帯にし、下に線を引いて中身と分ける */
+.detail .ingbox  { --bx-bg: var(--ing-bg);  --bx-head: var(--ing-head);  --bx-line: var(--ing-line); }
+.detail .stepbox { --bx-bg: var(--step-bg); --bx-head: var(--step-head); --bx-line: var(--step-line); }
+.detail .notebox { --bx-bg: var(--note-bg); --bx-head: var(--note-head); --bx-line: var(--src-line); }
+.detail .rbox {
+  background: var(--bx-bg); border: 1px solid var(--bx-line); border-radius: 12px;
   padding: 0 12px 2px; overflow: hidden; box-shadow: var(--shadow);
 }
-.detail .ingbox > h4.hrow {
+.detail .rbox > h4.hrow {
   margin: 0 -12px 0; padding: 7px 12px;
-  background: var(--ing-head); border-bottom: 1px solid var(--ing-line);
+  background: var(--bx-head); border-bottom: 1px solid var(--bx-line);
 }
 /* 「A」「合わせ調味料」などのまとめは、箱を作らず見出しの行を1行入れ、中身を字下げする。
    作り方の「(調味料)を加える」が何のことか、ここで分かるようにする */
@@ -1780,7 +1790,7 @@ function recipeDetail(it) {
 
     // 材料は箱に入れ、「A」「合わせ調味料」などのまとめは、その中にもう一段の箱で入れる。
     // 作り方の「Aを加える」が何のことか、ここで分かるようにする
-    b1.className = 'blk ingbox';
+    b1.className = 'blk rbox ingbox';
     var lastLabel = '';
     var target = b1;
     ings.forEach(function (g) {
@@ -1802,6 +1812,8 @@ function recipeDetail(it) {
 
   if (steps.length) {
     var b2 = block(box, '作り方');
+    b2.className = 'blk rbox stepbox';
+    b2.firstChild.className = 'hrow';
     var ol = document.createElement('ol');
     steps.forEach(function (s) {
       var li = document.createElement('li');
@@ -1820,6 +1832,13 @@ function recipeDetail(it) {
 
   // 料理についてのメモ。押すと書き換える小窓が開く
   var b3 = block(box, 'メモ');
+  b3.className = 'blk rbox notebox';
+  b3.firstChild.className = 'hrow';
+  var ed = document.createElement('button');
+  ed.className = 'medit';
+  ed.textContent = '✎ 編集';
+  ed.addEventListener('click', function () { editMemo(it); });
+  b3.firstChild.appendChild(ed);
   var memo = document.createElement('div');
   memo.className = 'memo' + (it.memo ? '' : ' empty');
   memo.textContent = it.memo || '＋ メモを書く';
