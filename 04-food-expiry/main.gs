@@ -5518,8 +5518,11 @@ function testConfig() {
       + (cmd ? cmd.action + ' OK' : '*** COMMAND_WORDS に未登録 ***'));
   });
 
-  // 画像の格子とタップ領域がずれていないか
-  var areas = buildRichMenu_().areas;
+  // 画像の格子とタップ領域がずれていないか。
+  // メニューには人ごとの画面URLが入るので、作るときは誰か1人の分として作る（形はみな同じ）
+  var uid = allowedUserIds_()[0];
+  if (!uid) { console.log('リッチメニュー: 利用者が未設定のため検査を飛ばします'); return; }
+  var areas = withUser_(uid, function () { return buildRichMenu_(); }).areas;
   var right = Math.max.apply(null, areas.map(function (a) { return a.bounds.x + a.bounds.width; }));
   var bottom = Math.max.apply(null, areas.map(function (a) { return a.bounds.y + a.bounds.height; }));
   console.log('リッチメニュー: ' + areas.length + '領域 / 右端' + right + ' 下端' + bottom
