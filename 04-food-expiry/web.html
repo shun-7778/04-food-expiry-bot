@@ -260,11 +260,11 @@ body {
 }
 /* 小窓の評価の星。指で押しやすい大きさにする */
 .mbox .mh.sub { margin-top: 18px; }
-.mstars { display: flex; align-items: center; gap: 14px; }
+.mstars { display: flex; align-items: center; gap: 10px; }
 .mbox .mstars button {
-  border: none; background: none; cursor: pointer; padding: 0;
+  border: none; background: none; cursor: pointer; padding: 2px;
   font-family: "Segoe UI Symbol", "Hiragino Sans", sans-serif;
-  font-size: 44px; font-weight: 400; line-height: 1; color: var(--star);
+  font-size: 32px; font-weight: 400; line-height: 1; color: var(--star);
 }
 .mbox .mstars.none button { color: var(--star-off); }
 .mbox input:focus, .mbox textarea:focus { outline: none; border-color: var(--blue); }
@@ -273,15 +273,12 @@ body {
 .card .stars { font-size: 15px; line-height: 1.3; letter-spacing: 1px; color: var(--star); margin-top: 2px; }
 .card .stars.none { color: var(--star-off); }
 
-/* 開いた中の「メモ」。その場で書ける欄。中身に合わせて高さが伸びる */
-.detail .memo-in {
-  display: block; width: 100%; min-height: 64px; resize: none; overflow: hidden;
-  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
-  background: var(--bg); color: var(--text); font-family: inherit; line-height: 1.6;
-  font-size: 16px;   /* 16px 未満だと iOS が入力時に拡大する */
+/* 開いた中の「メモ」。押すと書き換える小窓が開く */
+.detail .memo {
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6;
+  padding: 10px 12px; border-radius: 10px; background: var(--bg); cursor: pointer;
 }
-.detail .memo-in:focus { outline: none; border-color: var(--blue); }
-.detail .memo-in::placeholder { color: var(--sub); }
+.detail .memo.empty { color: var(--sub); }
 .mbox .mbtn { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .mbox button {
   padding: 10px 18px; border: none; border-radius: 12px; cursor: pointer;
@@ -338,8 +335,11 @@ body {
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
 .detail .ing.hit .n { color: var(--green); font-weight: 700; }
 /* 分類の切り替えは5つ並ぶので、横の余白を詰めて、そのぶん文字を大きくする */
-#recipe-seg { gap: 6px; }
-#recipe-seg button { padding: 10px 2px; font-size: 14px; white-space: nowrap; }
+#recipe-seg, #rating-seg { gap: 6px; }
+#recipe-seg button, #rating-seg button { padding: 10px 2px; font-size: 14px; white-space: nowrap; }
+/* 評価の絞り込みの星は金色。選んでいるとき（緑地）は白にする */
+#rating-seg button.star { color: var(--star); letter-spacing: 1px; }
+#rating-seg button.on { color: #fff; }
 
 /* ---- 開いた中の材料。在庫の有無と「＋」を右に並べる ---- */
 /* 「材料」の見出しの行。右端に照合の状態か「ないものを追加」を置く */
@@ -515,6 +515,8 @@ body {
     </div>
     <!-- 分類の切り替え。ボタンはサーバーから届く分類の一覧で作る（renderRecipeSeg） -->
     <div class="seg" id="recipe-seg"></div>
+    <!-- 評価の絞り込み（すべて／★★★／★★☆／★☆☆／未評価）。renderRatingSeg -->
+    <div class="seg" id="rating-seg"></div>
   </div>
 
   <div class="head" id="head-stock" hidden>
@@ -834,10 +836,8 @@ function renderShop() {
  * 上の切り替えで選んだ分類に絞り、検索欄に文字があれば、その中から料理名か材料名に含むものだけに絞る
  */
 function renderRecipes() {
-  // メモを書いている間は描き直さない（欄が作り直されてキーボードが閉じるため）。離れたときに描く
-  if (memoFocused()) { recipeRenderHeld = true; return; }
-  recipeRenderHeld = false;
   renderRecipeSeg();
+  renderRatingSeg();
   var box = $('list-recipe');
   box.textContent = '';
 
@@ -845,6 +845,7 @@ function renderRecipes() {
   var items = recipeItems().concat(doneRecipe)
     .filter(function (it) {
       if (recipeGroup && it.group !== recipeGroup) return false;
+      if (recipeRating !== null && (it.rating || 0) !== recipeRating) return false;
       it.hits = q ? recipeHits(it, q) : null;
       return !q || it.hits;
     })
@@ -857,8 +858,13 @@ function renderRecipes() {
   if (!items.length) {
     var e = document.createElement('div');
     e.className = 'empty lone';
-    e.textContent = q ? (recipeGroup ? '「' + recipeGroup + '」に該当するレシピがありません' : '該当するレシピがありません')
-      : recipeGroup ? '「' + recipeGroup + '」のレシピはありません'
+    // 絞り込みの条件を「おかず・★★☆」のようにつないで出す
+    var conds = [];
+    if (recipeGroup) conds.push(recipeGroup);
+    if (recipeRating !== null) conds.push(ratingLabel(recipeRating));
+    var cond = conds.length ? '「' + conds.join('・') + '」' : '';
+    e.textContent = q ? (cond ? cond + 'に該当するレシピがありません' : '該当するレシピがありません')
+      : cond ? cond + 'のレシピはありません'
       : 'レシピはありません。インスタのリンクを送ってから、レシピの写真を送ると残ります';
     box.appendChild(e);
     return;
@@ -890,6 +896,32 @@ function renderRecipeSeg() {
       recipeGroup = g;
       renderRecipes();
       window.scrollTo(0, 0);   // 切り替えたら先頭から見せる（タブの切り替えと同じ）
+    });
+    seg.appendChild(b);
+  });
+}
+
+/**
+ * 評価の絞り込み。null はすべて、0 は未評価、1〜3 はその星の数ちょうど。
+ * 分類の切り替えと組み合わせて使う（どちらも満たすものだけ出す）
+ */
+var recipeRating = null;
+var RATING_FILTERS = [null, 3, 2, 1, 0];
+function ratingLabel(n) { return n === null ? 'すべて' : n === 0 ? '未評価' : starText(n); }
+
+function renderRatingSeg() {
+  var seg = $('rating-seg');
+  seg.textContent = '';
+  RATING_FILTERS.forEach(function (n) {
+    var b = document.createElement('button');
+    b.textContent = ratingLabel(n);
+    b.className = (recipeRating === n ? 'on' : '') + (n ? ' star' : '');
+    b.setAttribute('aria-label', n === null ? '評価: すべて' : n === 0 ? '未評価' : '評価 ' + n);
+    b.addEventListener('click', function () {
+      if (recipeRating === n) return;
+      recipeRating = n;
+      renderRecipes();
+      window.scrollTo(0, 0);
     });
     seg.appendChild(b);
   });
@@ -1649,9 +1681,14 @@ function recipeDetail(it) {
     box.appendChild(none);
   }
 
-  // 料理についてのメモ。その場で書け、手を止めると自動で保存する（memoBox）
+  // 料理についてのメモ。押すと書き換える小窓が開く
   var b3 = block(box, 'メモ');
-  b3.appendChild(memoBox(it));
+  var memo = document.createElement('div');
+  memo.className = 'memo' + (it.memo ? '' : ' empty');
+  memo.textContent = it.memo || '＋ メモを書く';
+  memo.setAttribute('role', 'button');
+  memo.addEventListener('click', function () { editMemo(it); });
+  b3.appendChild(memo);
   return box;
 }
 
@@ -1891,68 +1928,20 @@ function editRecipe(it) {
   });
 }
 
-/*
- * メモはカードの中でそのまま書く。保存は、手を止めて2秒たったとき・欄から離れたとき・画面を隠したとき。
- * 書いている間に一覧を描き直すと、欄が作り直されてキーボードが閉じ、書きかけも消える。
- * そこで、欄に入っている間は「レシピ」の描き直しを止めておき、離れたときにまとめて描く。
- * 書きかけは memoDraft に控え、保存が済んで欄から離れるまでは控えのほうを出す
- */
+/** メモを書く（開いた中の「メモ」を押す）。空にして保存すると消える */
 var MEMO_MAX = 1000;
-var MEMO_SAVE_MS = 2000;
-var memoDraft = {};       // レシピID → 書きかけの文字
-var memoTimer = {};
-var recipeRenderHeld = false;
-
-function memoFocused() {
-  var a = document.activeElement;
-  return !!(a && a.classList && a.classList.contains('memo-in'));
-}
-
-function memoBox(it) {
-  var id = it.id;
-  var ta = document.createElement('textarea');
-  ta.className = 'memo-in';
-  ta.rows = 2;
-  ta.maxLength = MEMO_MAX;
-  ta.placeholder = '作った感想、分量の調整、次に試したいことなど';
-  ta.value = memoDraft[id] !== undefined ? memoDraft[id] : (it.memo || '');
-
-  // 中身に合わせて高さを伸ばす（欄の中でスクロールさせない）
-  var fit = function () { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
-  ta.addEventListener('input', function () {
-    memoDraft[id] = ta.value;
-    fit();
-    clearTimeout(memoTimer[id]);
-    memoTimer[id] = setTimeout(function () { saveMemo(id); }, MEMO_SAVE_MS);
+function editMemo(it) {
+  openEditor({
+    heading: 'メモ', value: it.memo || '', multiline: true, maxLength: MEMO_MAX,
+    placeholder: '作った感想、分量の調整、次に試したいことなど'
+  }, function (v) {
+    v = String(v || '').replace(/\r\n?/g, '\n').trim().substring(0, MEMO_MAX);
+    if (v === (it.memo || '')) return;
+    it.memo = v;
+    waiting[it.id] = true;
+    render();
+    send('webUpdateRecipe', [it.id, { memo: v }]);
   });
-  ta.addEventListener('blur', function () {
-    saveMemo(id);
-    delete memoDraft[id];   // 保存した値は手元のレシピに入っている
-    // 止めていた描き直しをする。すぐ描くと、いま押したもの（カードの開閉など）の押し先が消えるので少し待つ
-    if (recipeRenderHeld) {
-      setTimeout(function () {
-        if (memoFocused() || !recipeRenderHeld) return;
-        recipeRenderHeld = false;
-        renderRecipes();
-      }, 350);
-    }
-  });
-  setTimeout(fit, 0);
-  return ta;
-}
-
-/** 書きかけのメモを保存する。変わっていなければ送らない */
-function saveMemo(id) {
-  clearTimeout(memoTimer[id]);
-  delete memoTimer[id];
-  if (memoDraft[id] === undefined) return;
-  var it = recipeItems().filter(function (r) { return r.id === id; })[0];
-  if (!it) return;
-  var v = String(memoDraft[id]).replace(/\r\n?/g, '\n').trim().substring(0, MEMO_MAX);
-  if (v === (it.memo || '')) return;
-  it.memo = v;
-  // 待ちの印（読み込み中）は出さない。書いている最中にカードの見た目を変えないため
-  send('webUpdateRecipe', [id, { memo: v }]);
 }
 
 /** ピン留めの付け外し。先に画面で上へ動かしてから書き込む */
@@ -2333,8 +2322,6 @@ var hiddenAt = 0;
 document.addEventListener('visibilitychange', function () {
   if (document.hidden) {
     hiddenAt = Date.now();
-    // 書きかけのメモは、画面を隠した時点で保存する（そのまま閉じられても残るように）
-    Object.keys(memoDraft).forEach(saveMemo);
     return;
   }
   if (TOKEN && state && pending === 0 && hiddenAt && Date.now() - hiddenAt > 30000) load();
