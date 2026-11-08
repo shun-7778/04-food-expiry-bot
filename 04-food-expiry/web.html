@@ -374,7 +374,7 @@ body {
   font-family: inherit; cursor: pointer; text-align: left;
 }
 .dd.open .dd-btn { border-color: var(--green); }
-.dd-h { flex: 0 0 auto; font-size: 12px; color: var(--sub); }
+.dd-h { flex: 0 0 auto; font-size: 15px; color: var(--sub); }   /* 「すべて」と同じ大きさ */
 .dd-v {
   flex: 1 1 auto; min-width: 0; text-align: center;
   font-size: 15px; font-weight: 700;
@@ -2357,7 +2357,7 @@ function noteFullHeight() {
  * 下へ動かした分だけ押し上げ（一覧と同じ速さで消える）、上へ戻した分だけ下ろす。
  * 隠れる量は 0〜かたまりの高さ（下のぼかし込み）の範囲に収める。
  * 指を止めて半端な位置で止まったら、最後に動かした向きで出し切るか隠し切る
- * （上へ戻している途中なら出す。見たくて戻したのに、また隠れると煩わしいため）。
+ * （下へなら少しでも隠し切る。上へ戻している途中なら出す）。
  * 先頭付近と、文字を打っている間は全部出しておく
  */
 var lastScrollY = 0;
@@ -2400,8 +2400,14 @@ function updateSticky() {
   clearTimeout(snapTimer);
   snapTimer = setTimeout(function () {
     if (stickyOffset === 0 || stickyOffset === max) return;
-    var hide = lastDir > 0 && lastScrollY > max;
-    setStickyOffset(hide ? max : 0, true);
+    // 上へ戻して止まった・先頭に戻った → 出し切る
+    if (lastDir < 0 || lastScrollY <= 0) { setStickyOffset(0, true); return; }
+    // 下へ少しでも動かして止まった → 隠し切る。
+    // 先頭付近（欄の高さより上）では、欄だけ消すと上に空きができるので、
+    // 一覧ごと欄の高さまで送る。送る間も欄はスクロールに合わせて上がっていき、着いたときに隠れ切る
+    var room = document.documentElement.scrollHeight - window.innerHeight;
+    if (lastScrollY < max && room >= max) window.scrollTo({ top: max, behavior: 'smooth' });
+    else setStickyOffset(max, true);
   }, 160);
 }
 
