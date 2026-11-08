@@ -340,23 +340,24 @@ body {
 .detail ol { margin: 0 0 0 -5px; padding: 8px 0; list-style: none; counter-reset: step; }
 .detail li {
   counter-increment: step; position: relative;
-  padding-left: 31px; margin: 0 0 6px; min-height: 24px;
+  padding-left: 25px; margin: 0 0 6px; min-height: 26px;
   /* 行の高さは整数の 26px にする（1.6 だと 25.6px で、線の継ぎ目が端末の丸め方しだいでずれて見える） */
   font-size: 16px; line-height: 26px; overflow-wrap: anywhere;
 }
 .detail li:last-child { margin-bottom: 0; }
 .detail li::before {
   content: counter(step);
-  position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; z-index: 1;
+  /* 丸は 20px。1行目（行の高さ 26px）の真ん中にそろえるため 3px 下げる */
+  position: absolute; left: 0; top: 3px; width: 20px; height: 20px; border-radius: 50%; z-index: 1;
   display: flex; align-items: center; justify-content: center;
   /* 丸数字は黒い数字にオレンジの縁取り。地は作り方の箱と同じ色 */
   background: var(--step-bg); color: var(--text); border: 1px solid var(--step-mark);   /* 「SNS」の縁取りと同じ太さ */
-  font-size: 13px; font-weight: 400; line-height: 1;
+  font-size: 12px; font-weight: 400; line-height: 1;
 }
 /* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
    丸の縁で止めると、端末の丸め方しだいで丸との間にすき間が出て途切れて見えるため */
 .detail li:not(:last-child)::after {
-  content: ''; position: absolute; left: 11.5px; top: 12px; bottom: -18px; width: 1px;   /* 下端＝次の丸の中心（間 6px＋丸の半分 12px） */   /* 丸の枠と同じ太さで、丸の中心（12px）を通す */
+  content: ''; position: absolute; left: 9.5px; top: 13px; bottom: -19px; width: 1px;   /* 丸の中心（横10px・縦13px）を通し、下端＝次の丸の中心（間 6px＋13px） */   /* 丸の枠と同じ太さで、丸の中心（12px）を通す */
   background: var(--step-mark); z-index: 0;   /* 丸の枠と同じ色 */
 }
 .detail .none { color: var(--sub); font-size: 13px; }
