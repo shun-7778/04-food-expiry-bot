@@ -235,12 +235,14 @@ body {
 .card.hold { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .card.hold .detail { -webkit-user-select: text; user-select: text; }
 
-/* ---- 1行だけ書き換える小窓（料理名の変更） ---- */
+/* ---- 書き換える小窓（料理名と評価・メモ） ----
+   キーボードが出ると、見えるのは画面の上の4割ほどになる（下は LINE のバーとキーボード）。
+   そこに収まるよう、小窓は上端に寄せて置く */
 .modal {
   position: fixed; inset: 0; z-index: 50;
   background: rgba(0, 0, 0, .4);
   display: flex; align-items: flex-start; justify-content: center;
-  padding: 18vh 16px 0;
+  padding: 12px 16px 0;
 }
 .mbox {
   width: 100%; max-width: 420px;
@@ -254,9 +256,10 @@ body {
   font-size: 16px;   /* 16px 未満だと iOS が入力時に拡大する */
 }
 .mbox textarea {
-  width: 100%; min-height: 150px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
-  background: var(--bg); color: var(--text); font-family: inherit; line-height: 1.6;
-  font-size: 16px; resize: vertical;
+  /* 高さは4行ぶん。長いメモは欄の中でスクロールする（伸ばすと保存ボタンがキーボードの下に隠れる） */
+  width: 100%; height: 118px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg); color: var(--text); font-family: inherit; line-height: 1.55;
+  font-size: 16px; resize: none; overflow-y: auto;
 }
 /* 小窓の評価の星。指で押しやすい大きさにする */
 .mbox .mh.sub { margin-top: 18px; }
@@ -1528,8 +1531,26 @@ function openEditor(opts, done) {
   box.appendChild(row);
   back.appendChild(box);
 
+  // キーボードで見える範囲が縮んだと端末が教えてくれるときは、背景をその範囲に合わせる
+  // （iPhone はキーボードが出ても画面の大きさを変えず、見える範囲だけを縮めるため）
+  var vv = window.visualViewport;
+  var fitView = function () {
+    if (!vv) return;
+    back.style.top = vv.offsetTop + 'px';
+    back.style.height = vv.height + 'px';
+    back.style.bottom = 'auto';
+  };
+  if (vv) {
+    vv.addEventListener('resize', fitView);
+    vv.addEventListener('scroll', fitView);
+  }
+
   var close = function () {
     document.removeEventListener('keydown', onKey);
+    if (vv) {
+      vv.removeEventListener('resize', fitView);
+      vv.removeEventListener('scroll', fitView);
+    }
     if (back.parentNode) back.parentNode.removeChild(back);
   };
   var onKey = function (e) { if (e.key === 'Escape') close(); };
@@ -1544,6 +1565,7 @@ function openEditor(opts, done) {
   });
 
   document.body.appendChild(back);
+  fitView();
   input.focus();
   try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* 選べなくてもよい */ }
 }
