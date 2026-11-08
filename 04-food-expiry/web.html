@@ -37,7 +37,7 @@
   --src-bg: #e8f0fe;                   /* レシピリンクの錠剤の地 */
   --src-line: #b6cdf6;                 /* レシピの「SNS」の縁取り */
   --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
-  --sub-line: #b9dcc2;                         /* 作り方の丸数字をつなぐ線（丸数字の緑に合わせた薄緑） */
+  --sub-line: #5fae7c;                         /* 作り方の丸数字をつなぐ線（丸数字の緑に合わせた緑） */
   --ing-head: #dcecdf;                         /* 材料の箱の見出しの帯（箱の地より一段濃い緑） */
   --ing-dash: #b3bdc9;                         /* 材料の行の区切りの点線 */
   --step-bg: #d9e6fb;  --step-fg: #3b6fc4;    /* 作り方の丸数字。塗りの青は強すぎるので薄い地に青い数字 */
@@ -73,7 +73,7 @@
     --src-bg: #223247;
     --src-line: #3a5a8a;
     --ing-bg: #18261d;   --ing-line: #2f5a3c;
-    --sub-line: #3d6b4b;
+    --sub-line: #3f9a63;
     --ing-head: #1f3a28;
     --ing-dash: #4a5565;
     --step-bg: #263a5c;  --step-fg: #9dbcf0;
@@ -283,10 +283,11 @@ body {
 .detail .memo {
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6;
   padding: 10px 12px; border-radius: 10px; cursor: pointer;
-  background: var(--src-bg); color: var(--blue);
+  background: var(--src-bg); color: var(--text);
   border: 1px solid var(--blue); box-shadow: var(--shadow);
 }
-.detail .memo.empty { text-align: center; }
+/* 書いた中身は黒で読みやすく。まだ無いときの「＋ メモを書く」だけ青にして押せると分かるように */
+.detail .memo.empty { text-align: center; color: var(--blue); }
 .mbox .mbtn { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .mbox button {
   padding: 10px 18px; border: none; border-radius: 12px; cursor: pointer;
@@ -328,7 +329,8 @@ body {
 .detail li {
   counter-increment: step; position: relative;
   padding-left: 36px; margin: 0 0 12px; min-height: 24px;
-  font-size: 16px; line-height: 1.6; overflow-wrap: anywhere;
+  /* 行の高さは整数の 26px にする（1.6 だと 25.6px で、線の継ぎ目が端末の丸め方しだいでずれて見える） */
+  font-size: 16px; line-height: 26px; overflow-wrap: anywhere;
 }
 .detail li:last-child { margin-bottom: 0; }
 .detail li::before {
@@ -336,7 +338,7 @@ body {
   position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; z-index: 1;
   display: flex; align-items: center; justify-content: center;
   /* 丸数字は緑の数字に緑の縁取り。地は材料の箱と同じ薄い緑 */
-  background: var(--ing-bg); color: var(--ok-fg); border: 1.5px solid var(--ok-fg);
+  background: var(--ing-bg); color: var(--ok-fg); border: 1px solid var(--ok-fg);   /* 「SNS」の縁取りと同じ太さ */
   font-size: 13px; font-weight: 800; line-height: 1;
 }
 /* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
