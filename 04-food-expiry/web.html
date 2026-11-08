@@ -335,11 +335,42 @@ body {
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
 .detail .ing.hit .n { color: var(--green); font-weight: 700; }
 /* 分類の切り替えは5つ並ぶので、横の余白を詰めて、そのぶん文字を大きくする */
-#recipe-seg, #rating-seg { gap: 6px; }
-#recipe-seg button, #rating-seg button { padding: 10px 2px; font-size: 14px; white-space: nowrap; }
-/* 評価の絞り込みの星は金色。選んでいるとき（緑地）は白にする */
-#rating-seg button.star { color: var(--star); letter-spacing: 1px; }
-#rating-seg button.on { color: #fff; }
+/* 「カテゴリ」「評価」の絞り込み。横に2つ並べ、押すと下にチェックボックスの一覧が開く */
+.filters { display: flex; gap: 8px; margin-top: 8px; }
+.dd { position: relative; flex: 1 1 0; min-width: 0; }
+.dd-btn {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 11px 12px; border: 1px solid transparent; border-radius: 12px;
+  background: var(--card); color: var(--text); box-shadow: var(--shadow);
+  font-family: inherit; cursor: pointer; text-align: left;
+}
+.dd.open .dd-btn { border-color: var(--green); }
+.dd-h { flex: 0 0 auto; font-size: 12px; color: var(--sub); }
+.dd-v {
+  flex: 1 1 auto; min-width: 0; text-align: center;
+  font-size: 15px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dd .star { color: var(--star); letter-spacing: 1px; }
+/* 開閉の矢印。線2本の「く」の字を回して描く */
+.dd-a {
+  flex: 0 0 auto; width: 8px; height: 8px; margin: 0 2px 3px;
+  border-right: 2px solid var(--sub); border-bottom: 2px solid var(--sub);
+  transform: rotate(45deg);
+}
+.dd.open .dd-a { transform: rotate(225deg); margin-bottom: -3px; }
+.dd-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow-lift); overflow: hidden;
+}
+.dd-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; font-size: 15px; cursor: pointer;
+}
+.dd-row + .dd-row { border-top: 1px solid var(--line); }
+.dd-row.on { background: var(--ok-bg); color: var(--ok-fg); font-weight: 700; }
+.dd-row input { width: 20px; height: 20px; margin: 0; accent-color: var(--green); flex: 0 0 auto; }
 
 /* ---- 開いた中の材料。在庫の有無と「＋」を右に並べる ---- */
 /* 「材料」の見出しの行。右端に照合の状態か「ないものを追加」を置く */
@@ -513,10 +544,8 @@ body {
       <input id="recipe-q" type="search" placeholder="🔍 料理名・材料で検索" autocomplete="off">
       <button class="clear" id="recipe-clear" hidden>✕</button>
     </div>
-    <!-- 分類の切り替え。ボタンはサーバーから届く分類の一覧で作る（renderRecipeSeg） -->
-    <div class="seg" id="recipe-seg"></div>
-    <!-- 評価の絞り込み（すべて／★★★／★★☆／★☆☆／未評価）。renderRatingSeg -->
-    <div class="seg" id="rating-seg"></div>
+    <!-- 「カテゴリ」と「評価」の絞り込み。押すとチェックボックスの一覧が開く（renderRecipeFilters） -->
+    <div class="filters" id="recipe-filters"></div>
   </div>
 
   <div class="head" id="head-stock" hidden>
@@ -598,8 +627,8 @@ var doneShop = [];
 var doneStock = [];
 var doneRecipe = [];    // 「レシピ」タブで消したもの。その場では「削除済み」として残し、戻せるようにする
 var openRecipe = {};    // 「レシピ」タブで開いているカード（ID → true）。描き直しても開いたままにする
-// 「レシピ」タブで選んでいる分類。'' は「すべて」。開くたびに「すべて」から始める（覚えない）
-var recipeGroup = '';
+// 「レシピ」タブで選んでいる分類（分類名 → true）。空は「すべて」。開くたびに「すべて」から始める（覚えない）
+var recipeGroupSel = {};
 // 開いたレシピの材料を在庫と突き合わせた結果（ID → { have: {材料名: true} } / { loading } / { error }）
 var stockInfo = {};
 // 分類ごとの左の帯の色。同じ分類は同じ色にそろえる（おかずはすべて緑）
@@ -836,16 +865,17 @@ function renderShop() {
  * 上の切り替えで選んだ分類に絞り、検索欄に文字があれば、その中から料理名か材料名に含むものだけに絞る
  */
 function renderRecipes() {
-  renderRecipeSeg();
-  renderRatingSeg();
+  renderRecipeFilters();
+  var groupOn = selKeys(recipeGroupSel).length > 0;
+  var ratingOn = selKeys(recipeRatingSel).length > 0;
   var box = $('list-recipe');
   box.textContent = '';
 
   var q = normalizeForSearch($('recipe-q').value);
   var items = recipeItems().concat(doneRecipe)
     .filter(function (it) {
-      if (recipeGroup && it.group !== recipeGroup) return false;
-      if (recipeRating !== null && (it.rating || 0) !== recipeRating) return false;
+      if (groupOn && !recipeGroupSel[it.group]) return false;
+      if (ratingOn && !recipeRatingSel[String(it.rating || 0)]) return false;
       it.hits = q ? recipeHits(it, q) : null;
       return !q || it.hits;
     })
@@ -860,8 +890,8 @@ function renderRecipes() {
     e.className = 'empty lone';
     // 絞り込みの条件を「おかず・★★☆」のようにつないで出す
     var conds = [];
-    if (recipeGroup) conds.push(recipeGroup);
-    if (recipeRating !== null) conds.push(ratingLabel(recipeRating));
+    if (groupOn) conds.push(recipeGroups().filter(function (g) { return recipeGroupSel[g]; }).join('・'));
+    if (ratingOn) conds.push(RATING_FILTERS.filter(function (n) { return recipeRatingSel[n]; }).map(ratingLabel).join('・'));
     var cond = conds.length ? '「' + conds.join('・') + '」' : '';
     e.textContent = q ? (cond ? cond + 'に該当するレシピがありません' : '該当するレシピがありません')
       : cond ? cond + 'のレシピはありません'
@@ -883,49 +913,116 @@ function recipeGroups() {
   return (state.recipes && state.recipes.groups) || ['おかず', 'ご飯・麺', '汁物', 'デザート'];
 }
 
-/** 「すべて／おかず／…」の切り替え。選んでいる分類だけ緑にする */
-function renderRecipeSeg() {
-  var seg = $('recipe-seg');
-  seg.textContent = '';
-  [''].concat(recipeGroups()).forEach(function (g) {
-    var b = document.createElement('button');
-    b.textContent = g || 'すべて';
-    b.className = recipeGroup === g ? 'on' : '';
-    b.addEventListener('click', function () {
-      if (recipeGroup === g) return;
-      recipeGroup = g;
-      renderRecipes();
-      window.scrollTo(0, 0);   // 切り替えたら先頭から見せる（タブの切り替えと同じ）
-    });
-    seg.appendChild(b);
-  });
-}
-
-/**
- * 評価の絞り込み。null はすべて、0 は未評価、1〜3 はその星の数ちょうど。
- * 分類の切り替えと組み合わせて使う（どちらも満たすものだけ出す）
+/*
+ * 「カテゴリ」と「評価」の絞り込み。押すとチェックボックスの一覧が開き、いくつでも選べる。
+ * どちらも何も選んでいなければ「すべて」。2つは組み合わせて使う（どちらも満たすものだけ出す）。
+ * 評価は 0 が未評価、1〜3 はその星の数ちょうど
  */
-var recipeRating = null;
-var RATING_FILTERS = [null, 3, 2, 1, 0];
-function ratingLabel(n) { return n === null ? 'すべて' : n === 0 ? '未評価' : starText(n); }
+var RATING_FILTERS = [3, 2, 1, 0];
+function ratingLabel(n) { return n === 0 ? '未評価' : starText(n); }
+var recipeRatingSel = {};   // 選んでいる評価（'0'〜'3' → true）
+var filterOpen = '';        // 開いている一覧（'group' / 'rating' / ''）
 
-function renderRatingSeg() {
-  var seg = $('rating-seg');
-  seg.textContent = '';
-  RATING_FILTERS.forEach(function (n) {
-    var b = document.createElement('button');
-    b.textContent = ratingLabel(n);
-    b.className = (recipeRating === n ? 'on' : '') + (n ? ' star' : '');
-    b.setAttribute('aria-label', n === null ? '評価: すべて' : n === 0 ? '未評価' : '評価 ' + n);
-    b.addEventListener('click', function () {
-      if (recipeRating === n) return;
-      recipeRating = n;
-      renderRecipes();
-      window.scrollTo(0, 0);
-    });
-    seg.appendChild(b);
-  });
+function selKeys(sel) { return Object.keys(sel).filter(function (k) { return sel[k]; }); }
+
+function renderRecipeFilters() {
+  var box = $('recipe-filters');
+  box.textContent = '';
+  var groups = recipeGroups();
+  // 選んでいた分類がサーバーの一覧から消えていたら外す
+  Object.keys(recipeGroupSel).forEach(function (g) { if (groups.indexOf(g) < 0) delete recipeGroupSel[g]; });
+
+  box.appendChild(filterBox('group', 'カテゴリ', recipeGroupSel,
+    groups.map(function (g) { return { key: g, label: g }; })));
+  box.appendChild(filterBox('rating', '評価', recipeRatingSel,
+    RATING_FILTERS.map(function (n) { return { key: String(n), label: ratingLabel(n), star: n > 0 }; })));
 }
+
+/** 絞り込み1つ分。ボタン（見出し＋選んでいるもの＋矢印）と、開いたときのチェックボックスの一覧 */
+function filterBox(name, heading, sel, options) {
+  var wrap = document.createElement('div');
+  wrap.className = 'dd' + (filterOpen === name ? ' open' : '');
+
+  var picked = options.filter(function (o) { return sel[o.key]; });
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'dd-btn';
+  var h = document.createElement('span');
+  h.className = 'dd-h';
+  h.textContent = heading;
+  var v = document.createElement('span');
+  v.className = 'dd-v';
+  if (!picked.length || picked.length === options.length) {
+    v.textContent = 'すべて';
+  } else {
+    picked.forEach(function (o, i) {
+      if (i) v.appendChild(document.createTextNode('・'));
+      var s = document.createElement('span');
+      if (o.star) s.className = 'star';
+      s.textContent = o.label;
+      v.appendChild(s);
+    });
+  }
+  var arrow = document.createElement('span');
+  arrow.className = 'dd-a';
+  btn.appendChild(h);
+  btn.appendChild(v);
+  btn.appendChild(arrow);
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    filterOpen = filterOpen === name ? '' : name;
+    renderRecipeFilters();
+  });
+  wrap.appendChild(btn);
+
+  if (filterOpen === name) {
+    var list = document.createElement('div');
+    list.className = 'dd-list';
+    // 一覧の中を押しても閉じない（外を押したら閉じる）
+    list.addEventListener('click', function (e) { e.stopPropagation(); });
+    var row = function (label, checked, star, onClick) {
+      var r = document.createElement('label');
+      r.className = 'dd-row' + (checked ? ' on' : '');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = checked;
+      cb.addEventListener('change', onClick);
+      var t = document.createElement('span');
+      t.className = star ? 'star' : '';
+      t.textContent = label;
+      r.appendChild(cb);
+      r.appendChild(t);
+      list.appendChild(r);
+    };
+    // 「すべて」は何も選んでいない状態。押すと選んでいたものを外す
+    row('すべて', !picked.length, false, function () {
+      Object.keys(sel).forEach(function (k) { delete sel[k]; });
+      filterChanged();
+    });
+    options.forEach(function (o) {
+      row(o.label, !!sel[o.key], o.star, function () {
+        if (sel[o.key]) delete sel[o.key]; else sel[o.key] = true;
+        // 全部選んだら「すべて」と同じなので、選んでいない状態に戻す
+        if (selKeys(sel).length === options.length) Object.keys(sel).forEach(function (k) { delete sel[k]; });
+        filterChanged();
+      });
+    });
+    wrap.appendChild(list);
+  }
+  return wrap;
+}
+
+function filterChanged() {
+  renderRecipes();
+  window.scrollTo(0, 0);   // 切り替えたら先頭から見せる（タブの切り替えと同じ）
+}
+
+// 一覧の外を押したら閉じる
+document.addEventListener('click', function () {
+  if (!filterOpen) return;
+  filterOpen = '';
+  renderRecipeFilters();
+});
 
 /**
  * 検索語に当たるか。当たらなければ null、当たれば { title, names } を返す。
