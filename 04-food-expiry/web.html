@@ -629,6 +629,9 @@ var doneRecipe = [];    // 「レシピ」タブで消したもの。その場�
 var openRecipe = {};    // 「レシピ」タブで開いているカード（ID → true）。描き直しても開いたままにする
 // 「レシピ」タブで選んでいる分類（分類名 → true）。空は「すべて」。開くたびに「すべて」から始める（覚えない）
 var recipeGroupSel = {};
+// 写真から料理名が読めなかったレシピの仮の名前。「レシピ」だとどれのことか分かりにくいので、
+// 名前が無いことがひと目で分かる「？」にする（長押しで名前を付けられる）
+var UNKNOWN_DISH = '？';
 // 開いたレシピの材料を在庫と突き合わせた結果（ID → { have: {材料名: true} } / { loading } / { error }）
 var stockInfo = {};
 // 分類ごとの左の帯の色。同じ分類は同じ色にそろえる（おかずはすべて緑）
@@ -1058,7 +1061,7 @@ function groupByRecipe(rows) {
       recipeColor[it.recipeId] = level;
       g = {
         key: it.recipeId,
-        title: (it.recipe && it.recipe.title) || 'レシピ',
+        title: (it.recipe && it.recipe.title) || UNKNOWN_DISH,
         url: (it.recipe && it.recipe.url) || '',
         level: level,
         items: []
@@ -1651,7 +1654,7 @@ function shopCard(it) {
  * 右へなぞると消す、左へなぞるとピン留め（LINE のトークの固定と同じ向き）
  */
 function recipeCard(it) {
-  var title = it.title || 'レシピ';
+  var title = it.title || UNKNOWN_DISH;
   if (it.done) {
     return card({
       done: true,
