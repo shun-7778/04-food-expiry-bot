@@ -38,6 +38,7 @@
   --src-line: #b6cdf6;                 /* レシピの「SNS」の縁取り */
   --ing-bg: #f1f8f2;   --ing-line: #b9dcc2;   /* レシピの材料の箱 */
   --sub-line: #5fae7c;                         /* 作り方の丸数字をつなぐ線（丸数字の緑に合わせた緑） */
+  --ok-line: #8cc9a3;   --over-line: #f0a39d;  /* 「あり」「なし」・丸数字の枠（文字の色より薄く） */
   --ing-head: #dcecdf;                         /* 材料の箱の見出しの帯（箱の地より一段濃い緑） */
   --ing-dash: #b3bdc9;                         /* 材料の行の区切りの点線 */
   --step-bg: #d9e6fb;  --step-fg: #3b6fc4;    /* 作り方の丸数字。塗りの青は強すぎるので薄い地に青い数字 */
@@ -74,6 +75,7 @@
     --src-line: #3a5a8a;
     --ing-bg: #18261d;   --ing-line: #2f5a3c;
     --sub-line: #3f9a63;
+    --ok-line: #2f7a4d;   --over-line: #8a3d38;
     --ing-head: #1f3a28;
     --ing-dash: #4a5565;
     --step-bg: #263a5c;  --step-fg: #9dbcf0;
@@ -284,7 +286,7 @@ body {
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6;
   padding: 10px 12px; border-radius: 10px; cursor: pointer;
   background: var(--src-bg); color: var(--text);
-  border: 1px solid var(--blue); box-shadow: var(--shadow);
+  border: 1px solid var(--src-line); box-shadow: var(--shadow);   /* 枠は「SNS」と同じ色 */
 }
 /* 書いた中身は黒で読みやすく。まだ無いときの「＋ メモを書く」だけ青にして押せると分かるように */
 .detail .memo.empty { text-align: center; color: var(--blue); }
@@ -338,7 +340,7 @@ body {
   position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; z-index: 1;
   display: flex; align-items: center; justify-content: center;
   /* 丸数字は緑の数字に緑の縁取り。地は材料の箱と同じ薄い緑 */
-  background: var(--ing-bg); color: var(--ok-fg); border: 1px solid var(--ok-fg);   /* 「SNS」の縁取りと同じ太さ */
+  background: var(--ing-bg); color: var(--ok-fg); border: 1px solid var(--ok-line);   /* 「SNS」の縁取りと同じ太さ */
   font-size: 13px; font-weight: 800; line-height: 1;
 }
 /* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
@@ -429,8 +431,8 @@ body {
 }
 /* あり＝緑、なし＝赤。文字と同じ色の枠を付けて、薄い地の上でも見分けやすくする */
 .detail .st { border: 1px solid transparent; }
-.detail .st.have { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-fg); }
-.detail .st.none { background: var(--over-bg); color: var(--over-fg); border-color: var(--over-fg); }
+.detail .st.have { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-line); }
+.detail .st.none { background: var(--over-bg); color: var(--over-fg); border-color: var(--over-line); }
 .detail .st.listed { background: var(--src-bg); color: var(--blue); }
 .detail .plus {
   flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
