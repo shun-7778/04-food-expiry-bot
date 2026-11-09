@@ -52,9 +52,7 @@
   --star: #f2a900;  --star-off: #c4ccd6;   /* レシピの評価の星。未評価はグレー */
 
   /* 選んでいるタブ・個別／料理ごとは、塗りつぶしの緑ではなく淡い緑の地に緑の文字。n は件数の丸 */
-  --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;  --sel-line: #8cc9a3;   /* line は周りの線 */
-  --add-bg: #4ea36a;                       /* 「追加」ボタン。LINE の緑より落ち着かせる */
-}
+  --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;  --sel-line: #8cc9a3;   /* line は周りの線 */}
 
 /* ---- 端末がダークモードのときだけ、色を差し替える。形と配置はそのまま ---- */
 @media (prefers-color-scheme: dark) {
@@ -91,9 +89,7 @@
     --dash: #3d4552;
     --star: #f5b82e;  --star-off: #4a5565;
 
-    --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;
-    --add-bg: #3d8d58;
-  }
+    --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* overscroll-behavior は既定（auto）のままにする。contain にすると、
@@ -167,10 +163,14 @@ body {
 }
 .tab.on .n { background: var(--sel-n); color: var(--sel-fg); }
 
-/* 入力欄と「追加」を1本の白い枠にまとめる。枠は外側（.addbox）が持ち、中の入力欄は枠なしにする */
-.addbox {
-  display: flex; gap: 6px; padding: 4px;
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+/* 品名の追加欄。「追加」ボタンは置かず、Enter で足す。見た目は在庫の検索欄にそろえ、左に細い＋を描く */
+.addbox { position: relative; display: flex; }
+.addbox::before {
+  content: ''; position: absolute; left: 14px; top: 50%; width: 16px; height: 16px;
+  transform: translateY(-50%); pointer-events: none; z-index: 1;
+  background: var(--sub); opacity: .75;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E") no-repeat center / contain;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E") no-repeat center / contain;
 }
 .search { position: relative; }
 /* 虫眼鏡。絵文字だと色が強いので、細い線の形を地の灰色で描く */
@@ -196,12 +196,7 @@ body {
 .addbox input::placeholder, .search input::placeholder { color: var(--sub); }
 /* 左は虫眼鏡、右は ✕ のぶんを空ける（上の共通の padding より後に書くこと） */
 .search input { padding-left: 38px; padding-right: 42px; }
-/* 枠の中に入るので、入力欄自身の枠・影・地は消し、高さが前と変わらないよう上下を詰める */
-.addbox input { border: none; box-shadow: none; background: transparent; padding: 8px 10px; outline: none; }
-.addbox button {
-  padding: 0 18px; border: none; border-radius: 9px; background: var(--add-bg); color: #fff;
-  font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
-}
+.addbox input { padding-left: 38px; }   /* 左の＋のぶん */
 
 /* ---- 期限ごとの絞り込み。横一列の小さなボタンにして場所を取らない ---- */
 .head { margin-top: 0; }
@@ -603,8 +598,7 @@ body {
 <div class="sticky">
   <div class="head" id="head-shop">
     <div class="addbox">
-      <input id="add-name" type="text" placeholder="＋ 品名を追加" autocomplete="off">
-      <button id="add-btn">追加</button>
+      <input id="add-name" type="text" placeholder="品名を追加" autocomplete="off" enterkeyhint="done">
     </div>
     <div class="seg">
       <button id="seg-list" class="on">個別</button>
@@ -2256,9 +2250,12 @@ function setShopView(mode) {
 $('seg-list').addEventListener('click', function () { setShopView('list'); });
 $('seg-recipe').addEventListener('click', function () { setShopView('recipe'); });
 
-$('add-btn').addEventListener('click', add);
+// 「追加」ボタンは置かず、Enter だけで足す。
+// 日本語入力で変換を確定する Enter は足さない（確定のたびに書きかけが入ってしまうため）
 $('add-name').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') add();
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+  e.preventDefault();
+  add();
 });
 $('add-name').addEventListener('focus', noteFocus);
 $('add-name').addEventListener('blur', updateTabbar);
