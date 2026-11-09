@@ -52,7 +52,7 @@
   --star: #f2a900;  --star-off: #c4ccd6;   /* レシピの評価の星。未評価はグレー */
 
   /* 選んでいるタブ・個別／料理ごとは、塗りつぶしの緑ではなく淡い緑の地に緑の文字。n は件数の丸 */
-  --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;
+  --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;  --sel-line: #8cc9a3;   /* line は周りの線 */
   --add-bg: #4ea36a;                       /* 「追加」ボタン。LINE の緑より落ち着かせる */
 }
 
@@ -91,7 +91,7 @@
     --dash: #3d4552;
     --star: #f5b82e;  --star-off: #4a5565;
 
-    --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;
+    --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;
     --add-bg: #3d8d58;
   }
 }
@@ -159,7 +159,8 @@ body {
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .tab { background: none; color: var(--sub); }
-.tab.on { background: var(--sel-bg); color: var(--sel-fg); }
+/* 周りの線は内側の影で描く（枠線にすると幅が1px増えて、選ぶたびにタブが揺れるため） */
+.tab.on { background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 0 0 0 1px var(--sel-line); }
 .tab .n {
   font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
   background: var(--pill); color: var(--sub);
@@ -490,7 +491,7 @@ body {
   background: var(--card); color: var(--sub); box-shadow: var(--shadow);
   font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;   /* レシピの「すべて」（.dd-v）と同じ大きさ */
 }
-.seg button.on { background: var(--sel-bg); color: var(--sel-fg); box-shadow: var(--shadow); }
+.seg button.on { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-line); box-shadow: var(--shadow); }
 .loadingbar {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   color: var(--sub); font-size: 12px; font-weight: 700; padding: 10px 0 2px;
