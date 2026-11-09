@@ -464,7 +464,8 @@ body {
 .seg { display: flex; gap: 8px; margin-top: 8px; }
 .seg button {
   flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 9px 10px;
-  background: var(--card); color: var(--text); box-shadow: var(--shadow);
+  /* 選んでいない側は、下のタブ（.tab）と同じ灰色にする */
+  background: var(--card); color: var(--sub); box-shadow: var(--shadow);
   font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;   /* レシピの「すべて」（.dd-v）と同じ大きさ */
 }
 .seg button.on { background: var(--green); color: #fff; box-shadow: var(--shadow); }
