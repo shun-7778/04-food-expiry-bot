@@ -299,6 +299,10 @@ body {
 /* カードの評価。料理名の下に小さく並べる。未評価はグレーの☆ */
 .card .stars { font-size: 15px; line-height: 1.3; letter-spacing: 1px; color: var(--star); margin-top: 2px; }
 .card .stars.none { color: var(--star-off); }
+/* 星と、その右の添え書き（検索に当たった材料）を1行に収める。高さは星だけのときと同じ */
+.card .starline { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; }
+.card .starline .stars { flex: 0 0 auto; margin-top: 0; }
+.card .starline .meta { min-width: 0; margin-top: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 開いた中の「メモ」。青い箱の中身で、表示だけ（書き換えは見出しの「編集」から） */
 .detail .memo {
@@ -1383,9 +1387,23 @@ function card(opt) {
   body.appendChild(line);
 
   // 評価の星（レシピのみ）。料理名の下に置く
-  if (typeof opt.stars === 'number') body.appendChild(starRow(opt.stars));
-
-  if (opt.meta) {
+  if (typeof opt.stars === 'number') {
+    var stars = starRow(opt.stars);
+    if (opt.meta) {
+      // 星があるカード（レシピ）は、添え書き（検索に当たった材料）を星の右に並べる。
+      // 3行目を使うとカードが高くなるため。入りきらない分は … で切る
+      var sl = document.createElement('div');
+      sl.className = 'starline';
+      sl.appendChild(stars);
+      var sm = document.createElement('span');
+      sm.className = 'meta';
+      sm.textContent = opt.meta;
+      sl.appendChild(sm);
+      body.appendChild(sl);
+    } else {
+      body.appendChild(stars);
+    }
+  } else if (opt.meta) {
     var meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent = opt.meta;
