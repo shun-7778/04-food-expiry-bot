@@ -166,9 +166,20 @@ body {
 }
 .tab.on .n { background: var(--sel-n); color: var(--sel-fg); }
 
-.addbox { display: flex; gap: 8px; }
+/* 入力欄と「追加」を1本の白い枠にまとめる。枠は外側（.addbox）が持ち、中の入力欄は枠なしにする */
+.addbox {
+  display: flex; gap: 6px; padding: 4px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+}
 .search { position: relative; }
-.search input { padding-right: 42px; }
+/* 虫眼鏡。絵文字だと色が強いので、細い線の形を地の灰色で描く */
+.search::before {
+  content: ''; position: absolute; left: 14px; top: 50%; width: 16px; height: 16px;
+  transform: translateY(-50%); pointer-events: none; z-index: 1;
+  background: var(--sub); opacity: .75;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E") no-repeat center / contain;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E") no-repeat center / contain;
+}
 .search .clear {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   width: 26px; height: 26px; border: none; border-radius: 50%;
@@ -182,8 +193,12 @@ body {
   font-size: 16px;
 }
 .addbox input::placeholder, .search input::placeholder { color: var(--sub); }
+/* 左は虫眼鏡、右は ✕ のぶんを空ける（上の共通の padding より後に書くこと） */
+.search input { padding-left: 38px; padding-right: 42px; }
+/* 枠の中に入るので、入力欄自身の枠・影・地は消し、高さが前と変わらないよう上下を詰める */
+.addbox input { border: none; box-shadow: none; background: transparent; padding: 8px 10px; outline: none; }
 .addbox button {
-  padding: 0 18px; border: none; border-radius: 12px; background: var(--add-bg); color: #fff;
+  padding: 0 18px; border: none; border-radius: 9px; background: var(--add-bg); color: #fff;
   font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
 }
 
@@ -598,7 +613,7 @@ body {
 
   <div class="head" id="head-recipe" hidden>
     <div class="search">
-      <input id="recipe-q" type="search" placeholder="🔍 料理名・材料で検索" autocomplete="off">
+      <input id="recipe-q" type="search" placeholder="料理名・材料で検索" autocomplete="off">
       <button class="clear" id="recipe-clear" hidden>✕</button>
     </div>
     <!-- 「カテゴリ」と「評価」の絞り込み。押すとチェックボックスの一覧が開く（renderRecipeFilters） -->
@@ -607,7 +622,7 @@ body {
 
   <div class="head" id="head-stock" hidden>
     <div class="search">
-      <input id="stock-q" type="search" placeholder="🔍 在庫を検索" autocomplete="off">
+      <input id="stock-q" type="search" placeholder="在庫を検索" autocomplete="off">
       <button class="clear" id="stock-clear" hidden>✕</button>
     </div>
     <div class="chips">
