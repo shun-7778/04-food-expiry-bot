@@ -490,7 +490,21 @@ body {
 .card {
   position: relative; display: flex; align-items: center; gap: 11px;
   background: var(--card); padding: 10px 13px; touch-action: pan-y;
+  /* 周りを左の帯の色を淡くした線で囲む。帯の色は --tint で渡す（下の .lv-*） */
+  --tint: var(--line);
+  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--tint) 40%, transparent);
+  border-radius: 11px;
 }
+.card.lv-shop { --tint: var(--blue); }
+.card.lv-r0 { --tint: var(--r0); }
+.card.lv-r1 { --tint: var(--r1); }
+.card.lv-r2 { --tint: var(--r2); }
+.card.lv-r3 { --tint: var(--r3); }
+.card.lv-r4 { --tint: var(--r4); }
+.card.lv-over { --tint: var(--over-fg); }
+.card.lv-soon { --tint: var(--soon-mark); }
+.card.lv-ok { --tint: var(--ok-fg); }
 .card.slide { transition: transform .22s ease-out, opacity .22s ease-out; }
 .card .bar { flex: 0 0 auto; width: 4px; height: 31px; border-radius: 999px; background: var(--line); }
 .card .bar.shop { background: var(--blue); }
@@ -1299,7 +1313,9 @@ function card(opt) {
 
   var el = document.createElement('div');
   el.className = 'card' + (opt.done ? ' done' : '')
-    + (opt.tap ? ' tap' : '') + (opt.open ? ' open' : '');
+    + (opt.tap ? ' tap' : '') + (opt.open ? ' open' : '')
+    // 縁取りの色を左の帯にそろえる（.card.lv-*）
+    + (opt.level ? ' lv-' + opt.level : '');
 
   if (opt.done) {
     // 済みの行は期限の色帯を出さない。代わりにチェックを置く
