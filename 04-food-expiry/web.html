@@ -493,9 +493,11 @@ body {
   /* 周りを左の帯の色を淡くした線で囲む。帯の色は --tint で渡す（下の .lv-*） */
   --tint: var(--line);
   border: 1px solid var(--line);
-  border: 1px solid color-mix(in srgb, var(--tint) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tint) 22%, transparent);
   border-radius: 11px;
 }
+/* 色の帯があるカードは、背景もその色をごく薄く混ぜる（済みのカードは今の灰色のまま） */
+.card[class*=" lv-"]:not(.done) { background: color-mix(in srgb, var(--tint) 7%, var(--card)); }
 .card.lv-shop { --tint: var(--blue); }
 .card.lv-r0 { --tint: var(--r0); }
 .card.lv-r1 { --tint: var(--r1); }
