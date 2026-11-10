@@ -380,7 +380,14 @@ body {
 .card.open .name { white-space: normal; overflow-wrap: anywhere; }
 /* 左右の余白はカードの内側の余白（13px）だけにして、左右をそろえる */
 .card > .detail { flex: 0 0 100%; }
-.card .pin { flex: 0 0 auto; font-size: 13px; line-height: 1; margin-right: -4px; }
+/* ピン留めの印。カテゴリの色（カードの帯と同じ --tint）の丸に、斜めにした白いピン */
+.card .pin {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--tint); margin-right: -2px;
+}
+.card:not([class*=" lv-"]) .pin { background: var(--slate); }   /* カテゴリが無いときは締め色 */
+.card .pin svg { width: 13px; height: 13px; fill: #fff; transform: rotate(45deg); }
 /* 開いているかどうかの印。品名の右に小さく出す */
 .card .fold { flex: 0 0 auto; color: var(--sub); font-size: 11px; transition: transform .15s; }
 .card.open .fold { transform: rotate(180deg); }
@@ -1457,7 +1464,9 @@ function card(opt) {
   if (opt.pin) {
     var pin = document.createElement('span');
     pin.className = 'pin';
-    pin.textContent = '📌';
+    // カテゴリの色の丸に白いピン（色は CSS で --tint から付ける）
+    pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>';
+    pin.setAttribute('aria-label', 'ピン留め');
     line.appendChild(pin);
   }
 
