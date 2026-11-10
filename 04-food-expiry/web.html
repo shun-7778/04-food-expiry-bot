@@ -557,7 +557,8 @@ body {
   font-size: 14px; font-weight: 800; line-height: 1;
   font-family: inherit; cursor: pointer;
 }
-.detail .plus.minus, .detail .plus.muted { background: var(--line); color: var(--sub); box-shadow: none; }
+/* グレーの「＋」「－」も、色付きの「＋」と同じくボタンだと分かるよう、少し濃いグレーの線で囲む */
+.detail .plus.minus, .detail .plus.muted { background: var(--line); color: var(--sub); box-shadow: inset 0 0 0 1px var(--dash); }
 .detail .plus:disabled { opacity: .5; cursor: default; }
 /* ピン留めのスワイプは、在庫の「買い物リストへ」の青と区別して締め色で出す */
 .act.left.pin { background: var(--slate); }
