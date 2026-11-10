@@ -466,10 +466,10 @@ body {
   --bx-bg: var(--box-bg); --bx-head: var(--box-head); --bx-line: var(--box-line);
 }
 /* 見出しの帯と箱の線は、レシピカードの地（カテゴリの色 7%）を一段濃くした色にする。
-   目立ちすぎず、カテゴリの違いは分かる程度（帯 14%・線 22%） */
+   目立ちすぎず、カテゴリの違いは分かる程度（帯 20%・線 28%） */
 .card[class*=" lv-"] .detail .rbox {
-  --bx-head: color-mix(in srgb, var(--tint) 14%, var(--card));
-  --bx-line: color-mix(in srgb, var(--tint) 22%, var(--card));
+  --bx-head: color-mix(in srgb, var(--tint) 20%, var(--card));
+  --bx-line: color-mix(in srgb, var(--tint) 28%, var(--card));
 }
 .detail .rbox {
   background: var(--bx-bg); border: 1px solid var(--bx-line); border-radius: 12px;
