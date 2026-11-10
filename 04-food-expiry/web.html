@@ -759,6 +759,8 @@ var shopView = 'list';
 var who = '';            // この端末を使っている人の呼び名。足したものに残す（起動時に控えから読む）
 var RECIPE_COLORS = 5;   // --r0〜--r4 の数。これを超える料理は色が一巡する
 var order = [];          // 買い物リストを並べる区分の順。サーバーから届く
+// 在庫のカードの帯の色（.card.lv-over など）。スワイプの「買い物リストへ」もこの色にする
+var STOCK_COLOR = { over: 'over-fg', soon: 'soon-mark', ok: 'ok-fg' };
 var SOON_DAYS = 7;   // 「期限が近い」とみなす残り日数。絞り込みのボタンの文言と揃えること
 
 // この画面で操作したぶんだけを控える。読み込み直すと消えるので、
@@ -2138,8 +2140,13 @@ function stockCard(it) {
     meta: stockMeta(it),
     level: level(it),
     days: daysBox(it),
-    right: { label: '使用済み', run: function () { useStock(it, false); } },
-    left: { label: '使用済み＋\n買い物リストへ', run: function () { useStock(it, true); } }
+    // レシピと同じく、使用済みは薄いグレー、買い物リストへはカードの色（期限の近さの色）を薄めて出す
+    right: { label: '使用済み', cls: 'del', run: function () { useStock(it, false); } },
+    left: {
+      label: '使用済み＋\n買い物リストへ',
+      color: STOCK_COLOR[level(it)] || '',
+      run: function () { useStock(it, true); }
+    }
   });
 }
 
