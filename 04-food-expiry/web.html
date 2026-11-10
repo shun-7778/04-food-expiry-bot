@@ -354,6 +354,12 @@ body {
 /* レシピから開いたときは、小窓の地をレシピカードの地と同じ色（カテゴリの色 7%）にし、
    入力欄の枠をそのカテゴリの色（--c）にする。打っている間は少し濃く */
 .mbox.tinted { background: color-mix(in srgb, var(--c) 7%, var(--card)); }
+/* 保存もカテゴリの色（「なしを追加」と同じ作り）。カテゴリを選び直すと --c が変わって一緒に変わる */
+.mbox.tinted .ok {
+  background: color-mix(in srgb, var(--c) 12%, var(--card));
+  color: color-mix(in srgb, var(--c) 85%, var(--text));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, var(--card));
+}
 .mbox.tinted input, .mbox.tinted textarea { border-color: color-mix(in srgb, var(--c) 45%, var(--card)); }
 .mbox.tinted input:focus, .mbox.tinted textarea:focus { border-color: var(--c); }
 /* レシピの「SNS」。押せるボタンだと分かるよう、縁取りと影を付ける。
