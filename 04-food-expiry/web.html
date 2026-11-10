@@ -343,7 +343,11 @@ body {
   font-family: inherit; font-size: 15px; font-weight: 700;
 }
 .mbox .cancel { background: var(--pill); color: var(--sub); }
-.mbox .ok { background: var(--green); color: #fff; }
+/* 保存は下のタブで選んでいるときと同じ見た目（淡い緑の地・緑の文字・緑の線） */
+.mbox .ok { background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 0 0 0 1px var(--sel-line); }
+/* レシピから開いたときは、入力欄の枠をそのカテゴリの色（--c）にする。打っている間は少し濃く */
+.mbox.tinted input, .mbox.tinted textarea { border-color: color-mix(in srgb, var(--c) 45%, var(--card)); }
+.mbox.tinted input:focus, .mbox.tinted textarea:focus { border-color: var(--c); }
 /* レシピの「SNS」。押せるボタンだと分かるよう、縁取りと影を付ける。
    印（🍴）を外した分、小さめにして目立ちすぎないようにする */
 .card .src.big {
@@ -457,8 +461,13 @@ body {
 }
 /* 「なしを追加」と材料の「＋」は、下のタブで選んでいるときと同じ見た目（淡い緑の地・緑の文字・緑の線）。
    「あり」「なし」の表示は線を地と同じ色にして、押せるボタンと見分けられるようにする */
+.detail .addall .n {
+  margin-left: 6px; font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: var(--sel-n); color: var(--sel-fg);
+}
 .detail .addall {
-  border: none; border-radius: 999px; padding: 6px 14px;
+  display: inline-flex; align-items: center;
+  border: none; border-radius: 999px; padding: 5px 8px 5px 14px;
   background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 0 0 0 1px var(--sel-line); white-space: nowrap;
   font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
 }
@@ -1607,7 +1616,8 @@ function openEditor(opts, done) {
   var back = document.createElement('div');
   back.className = 'modal';
   var box = document.createElement('form');
-  box.className = 'mbox';
+  box.className = 'mbox' + (opts.color ? ' tinted' : '');
+  if (opts.color) box.style.setProperty('--c', 'var(--' + opts.color + ')');
 
   var h = document.createElement('div');
   h.className = 'mh';
@@ -1915,7 +1925,12 @@ function recipeDetail(it) {
     } else if (lacking.length) {
       var all = document.createElement('button');
       all.className = 'addall';
-      all.textContent = 'なしを追加（' + lacking.length + '）';
+      // 件数は下のタブと同じく、括弧ではなく地の色を変えた丸で出す
+      all.appendChild(document.createTextNode('なしを追加'));
+      var cnt = document.createElement('span');
+      cnt.className = 'n';
+      cnt.textContent = lacking.length;
+      all.appendChild(cnt);
       all.addEventListener('click', function () {
         addRecipeItems(it, lacking.map(function (g) { return g.name; }));
       });
@@ -2209,7 +2224,7 @@ function undoRecipe(it) {
 /** 料理名・カテゴリ・評価を変える（カードの長押し）。先に画面を変えてから書き込む */
 function editRecipe(it) {
   openEditor({
-    heading: '料理名', value: it.title || '',
+    heading: '料理名', value: it.title || '', color: GROUP_COLOR[it.group] || '',
     groups: recipeGroups(), group: it.group || '',
     rating: it.rating || 0
   }, function (v, rating, group) {
@@ -2236,6 +2251,7 @@ var MEMO_MAX = 1000;
 function editMemo(it) {
   openEditor({
     heading: 'メモ', value: it.memo || '', multiline: true, maxLength: MEMO_MAX,
+    color: GROUP_COLOR[it.group] || '',
     placeholder: '作った感想、分量の調整、次に試したいことなど'
   }, function (v) {
     v = String(v || '').replace(/\r\n?/g, '\n').trim().substring(0, MEMO_MAX);
