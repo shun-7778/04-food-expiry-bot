@@ -426,12 +426,7 @@ body {
   border: 1px solid color-mix(in srgb, var(--tint, var(--step-mark)) 60%, var(--card));
   font-size: 12px; font-weight: 400; line-height: 1;
 }
-/* 線は丸の中心から次の丸の中心まで引き、丸を上に重ねる。
-   丸の縁で止めると、端末の丸め方しだいで丸との間にすき間が出て途切れて見えるため */
-.detail li:not(:last-child)::after {
-  content: ''; position: absolute; left: 9.5px; top: 13px; bottom: -19px; width: 1px;   /* 丸の中心（横10px・縦13px）を通し、下端＝次の丸の中心（間 6px＋13px） */   /* 丸の枠と同じ太さで、丸の中心（12px）を通す */
-  background: color-mix(in srgb, var(--tint, var(--step-mark)) 60%, var(--card)); z-index: 0;   /* 丸の枠と同じ色 */
-}
+/* 丸数字どうしをつなぐ縦の線は引かない（以前は .detail li::after で引いていた） */
 .detail .none { color: var(--sub); font-size: 13px; }
 /* 検索に引っかかった材料。どの材料で当たったかが開いて分かるように */
 .detail .ing.hit .n { color: var(--green); font-weight: 700; }
