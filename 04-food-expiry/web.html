@@ -785,6 +785,7 @@ function apply(data) {
   // 呼び名の表から消えた人は、名乗っていない扱いに戻す
   if (who && state.users && state.users.indexOf(who) < 0) who = '';
   if (data.order) order = data.order;
+  if (data.aliases) setAliases(data.aliases);   // 全体の読み直しのときだけ届く
   render();
   refreshOpenStock();
 }
@@ -1248,57 +1249,18 @@ function normalizeForSearch(s) {
 }
 
 /**
- * 漢字はかなに直せないので、同じ食材の別の書き方を並べておく。
- * 一行のうちどれか一つが品名に含まれていれば、その行の言葉すべてで探せる
+ * 漢字はかなに直せないので、同じ食材の別の書き方を束ねておく。
+ * 一束のうちどれか一つが品名に含まれていれば、その束の言葉すべてで探せる。
+ * 中身はスプレッドシートの「言い換え」シート（webapp.gs の webAliases_）。
+ * 届いたときに setAliases で、ならした形にして持っておく（打つたびにならし直さないため）
  */
-var NAME_ALIASES = [
-  ['にんにく', '大蒜', 'ガーリック', 'garlic'],
-  ['たまねぎ', '玉ねぎ', '玉葱', 'オニオン', 'onion'],
-  ['ねぎ', '葱'],
-  ['にんじん', '人参', 'キャロット', 'carrot'],
-  ['じゃがいも', 'じゃが芋', '馬鈴薯', 'ポテト', 'potato'],
-  ['さつまいも', 'さつま芋'],
-  ['しょうが', '生姜', 'ジンジャー', 'ginger'],
-  ['たまご', '卵', '玉子', 'egg'],
-  ['ぎゅうにゅう', '牛乳', 'ミルク', 'milk'],
-  ['とうふ', '豆腐'],
-  ['なっとう', '納豆'],
-  ['みそ', '味噌'],
-  ['しょうゆ', '醤油', 'しょう油'],
-  ['さとう', '砂糖', 'シュガー', 'sugar'],
-  ['しお', '塩', 'salt'],
-  ['こしょう', '胡椒', 'ペッパー', 'pepper'],
-  ['りょうりしゅ', '料理酒', '日本酒'],
-  ['みりん', '味醂'],
-  ['あぶら', '油', 'サラダ油', 'オイル', 'oil'],
-  ['こめ', '米', 'ごはん', 'ご飯', 'ライス', 'rice'],
-  ['ぶたにく', '豚肉', 'ポーク', 'pork'],
-  ['ぎゅうにく', '牛肉', 'ビーフ', 'beef'],
-  ['とりにく', '鶏肉', '鳥肉', 'チキン', 'chicken'],
-  ['ひきにく', 'ひき肉', '挽肉', 'ミンチ'],
-  ['さかな', '魚', 'fish'],
-  ['えび', '海老', 'シュリンプ', 'shrimp'],
-  ['しゃけ', '鮭', 'サーモン', 'salmon'],
-  ['まぐろ', '鮪', 'ツナ', 'tuna'],
-  ['きゃべつ', 'キャベツ', 'cabbage'],
-  ['はくさい', '白菜'],
-  ['ほうれんそう', 'ほうれん草'],
-  ['なす', '茄子', 'ナスビ'],
-  ['きゅうり', '胡瓜'],
-  ['とまと', 'トマト', 'tomato'],
-  ['しいたけ', '椎茸'],
-  ['えのき', 'えのき茸'],
-  ['きのこ', '茸'],
-  ['だいこん', '大根'],
-  ['ごぼう', '牛蒡'],
-  ['れんこん', '蓮根'],
-  ['かぼちゃ', '南瓜'],
-  ['にら', '韮'],
-  ['ちーず', 'チーズ', 'cheese'],
-  ['ばたー', 'バター', 'butter'],
-  ['ぱん', 'パン', '食パン', 'bread'],
-  ['めん', '麺', 'うどん', 'そば', 'パスタ', 'スパゲッティ']
-];
+var NAME_ALIASES = [];
+
+function setAliases(list) {
+  NAME_ALIASES = (list || []).map(function (g) {
+    return (g || []).map(normalizeForSearch).filter(function (w) { return w; });
+  }).filter(function (g) { return g.length >= 2; });
+}
 
 /** 品名と分類から、探しやすい形の文字列を作る */
 function searchKey(it) {
@@ -1308,14 +1270,15 @@ function searchKey(it) {
 /** 文字をならし、言い換えの表に載っている言葉なら別の書き方も後ろに足す */
 function aliasKey(text) {
   var key = normalizeForSearch(text);
+  var base = key;   // 足した言い換えの中で、さらに別の束に当たらないよう、元の文字だけで判断する
   for (var i = 0; i < NAME_ALIASES.length; i++) {
     var group = NAME_ALIASES[i];
     var hit = false;
     for (var j = 0; j < group.length; j++) {
-      if (key.indexOf(normalizeForSearch(group[j])) >= 0) { hit = true; break; }
+      if (base.indexOf(group[j]) >= 0) { hit = true; break; }
     }
     if (!hit) continue;
-    for (var k = 0; k < group.length; k++) key += normalizeForSearch(group[k]);
+    key += '|' + group.join('|');
   }
   return key;
 }

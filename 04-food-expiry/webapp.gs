@@ -166,8 +166,125 @@ function webData(token) {
     shop: webShopData_(recipeRows), stock: webStockData_(),
     recipes: webRecipeData_(recipeRows),    // 「レシピ」タブに出す、リンク付きで照合したレシピ
     users: userNames_(),     // 画面の「あなた」の選択肢
-    order: CATEGORY_ORDER    // 買い物リストを並べる順（店を回る順）
+    order: CATEGORY_ORDER,   // 買い物リストを並べる順（店を回る順）
+    aliases: webAliases_()   // 検索の言い換え（「言い換え」シート）
   };
+}
+
+// ---------------------------------------------------------------- 検索の言い換え
+
+/**
+ * 検索の言い換えは、スプレッドシートの「言い換え」シートに置く。
+ * 1行に同じ食材の別の書き方を横に並べる（A列から右へ、列はいくつ使ってもよい）。
+ * 1つのセルに「豚肉、豚こま」のように読点・カンマ・改行で区切って書いてもよい。
+ * シートを直せば、デプロイなしで次に画面を開いたときから効く。
+ *
+ * シートが無ければ、下の既定の表を書き込んで作る。
+ * 作った後はシートが正なので、既定の表を直してもシートには反映されない（シートを直すこと）
+ */
+var ALIAS_SHEET_NAME = '言い換え';
+var ALIAS_HEADER = '同じ食材の書き方を1行に横へ並べる（列はいくつ使ってもよい。1セルに「、」区切りでも可）';
+
+var DEFAULT_NAME_ALIASES = [
+  ['にんにく', '大蒜', 'ガーリック', 'garlic'],
+  ['たまねぎ', '玉ねぎ', '玉葱', 'オニオン', 'onion'],
+  ['ねぎ', '葱'],
+  ['にんじん', '人参', 'キャロット', 'carrot'],
+  ['じゃがいも', 'じゃが芋', '馬鈴薯', 'ポテト', 'potato'],
+  ['さつまいも', 'さつま芋'],
+  ['しょうが', '生姜', 'ジンジャー', 'ginger'],
+  ['たまご', '卵', '玉子', 'egg'],
+  ['ぎゅうにゅう', '牛乳', 'ミルク', 'milk'],
+  ['とうふ', '豆腐'],
+  ['なっとう', '納豆'],
+  ['みそ', '味噌'],
+  ['しょうゆ', '醤油', 'しょう油'],
+  ['さとう', '砂糖', 'シュガー', 'sugar'],
+  ['しお', '塩', 'salt'],
+  ['こしょう', '胡椒', 'ペッパー', 'pepper'],
+  ['りょうりしゅ', '料理酒', '日本酒'],
+  ['みりん', '味醂'],
+  ['あぶら', '油', 'サラダ油', 'オイル', 'oil'],
+  ['こめ', '米', 'ごはん', 'ご飯', 'ライス', 'rice'],
+  ['ぶたにく', '豚肉', 'ポーク', 'pork'],
+  ['ぎゅうにく', '牛肉', 'ビーフ', 'beef'],
+  ['とりにく', '鶏肉', '鳥肉', 'チキン', 'chicken'],
+  ['ひきにく', 'ひき肉', '挽肉', 'ミンチ'],
+  ['さかな', '魚', 'fish'],
+  ['えび', '海老', 'シュリンプ', 'shrimp'],
+  ['しゃけ', '鮭', 'サーモン', 'salmon'],
+  ['まぐろ', '鮪', 'ツナ', 'tuna'],
+  ['きゃべつ', 'キャベツ', 'cabbage'],
+  ['はくさい', '白菜'],
+  ['ほうれんそう', 'ほうれん草'],
+  ['なす', '茄子', 'ナスビ'],
+  ['きゅうり', '胡瓜'],
+  ['とまと', 'トマト', 'tomato'],
+  ['しいたけ', '椎茸'],
+  ['えのき', 'えのき茸'],
+  ['きのこ', '茸'],
+  ['だいこん', '大根'],
+  ['ごぼう', '牛蒡'],
+  ['れんこん', '蓮根'],
+  ['かぼちゃ', '南瓜'],
+  ['にら', '韮'],
+  ['ちーず', 'チーズ', 'cheese'],
+  ['ばたー', 'バター', 'butter'],
+  ['ぱん', 'パン', '食パン', 'bread'],
+  ['めん', '麺', 'うどん', 'そば', 'パスタ', 'スパゲッティ']
+];
+
+/**
+ * 「言い換え」シートを読んで、[[書き方, 書き方, ...], ...] を返す。
+ * 2つ以上の書き方がある行だけを使う（1つだけの行は言い換えにならないため）。
+ * 読めなかったときは既定の表を返す（検索が使えなくなるよりよいため）
+ */
+function webAliases_() {
+  try {
+    var ss = ss_();
+    var sh = ss.getSheetByName(ALIAS_SHEET_NAME) || createAliasSheet_(ss);
+    var last = sh.getLastRow();
+    if (last < 2) return [];
+    var cols = Math.max(1, sh.getLastColumn());
+    var rows = sh.getRange(2, 1, last - 1, cols).getDisplayValues();
+
+    var out = [];
+    rows.forEach(function (r) {
+      var words = [];
+      r.forEach(function (cell) {
+        String(cell || '').split(/[、,，\n]/).forEach(function (w) {
+          w = w.trim();
+          if (w && words.indexOf(w) < 0) words.push(w);
+        });
+      });
+      if (words.length >= 2) out.push(words);
+    });
+    return out;
+  } catch (err) {
+    console.error('言い換えシートを読めません（既定の表で続ける）: ' + err.stack);
+    return DEFAULT_NAME_ALIASES;
+  }
+}
+
+/** 「言い換え」シートを、既定の表を書き込んで作る。同時に開いた人と二重に作らないよう錠の中で確かめ直す */
+function createAliasSheet_(ss) {
+  return withLock_(function () {
+    var sh = ss.getSheetByName(ALIAS_SHEET_NAME);
+    if (sh) return sh;
+
+    sh = ss.insertSheet(ALIAS_SHEET_NAME);
+    var width = DEFAULT_NAME_ALIASES.reduce(function (m, g) { return Math.max(m, g.length); }, 1);
+    var rows = DEFAULT_NAME_ALIASES.map(function (g) {
+      var r = g.slice();
+      while (r.length < width) r.push('');
+      return r;
+    });
+    sh.getRange(1, 1).setValue(ALIAS_HEADER).setFontWeight('bold');
+    sh.getRange(2, 1, rows.length, width).setValues(rows);
+    sh.setFrozenRows(1);
+    console.log('「言い換え」シートを作りました（' + rows.length + '行）');
+    return sh;
+  });
 }
 
 /**
