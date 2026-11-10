@@ -526,8 +526,9 @@ body {
 }
 /* あり＝緑、なし＝赤。枠は地と同じ色にして、押せるボタン（緑の線で囲む）と見分けられるようにする */
 .detail .st { border: 1px solid transparent; }
+/* あり＝カテゴリの色、なし＝グレー（「＋」のグレーと同じ色） */
 .detail .st.have { background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }
-.detail .st.none { background: var(--over-bg); color: var(--over-fg); border-color: var(--over-bg); }
+.detail .st.none { background: var(--line); color: var(--sub); border-color: var(--line); }
 .detail .st.listed { background: var(--src-bg); color: var(--blue); }
 .detail .plus {
   flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
