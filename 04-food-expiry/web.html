@@ -362,6 +362,12 @@ body {
   padding: 5px 11px; font-size: 13px;
   border: 1px solid var(--src-line); box-shadow: var(--shadow);
 }
+/* カテゴリのあるレシピは、「なしを追加」などと同じくカテゴリの色（淡い地・その色の文字・その色の線） */
+.card[class*=" lv-"] .src.big {
+  background: color-mix(in srgb, var(--tint) 12%, var(--card));
+  color: color-mix(in srgb, var(--tint) 85%, var(--text));
+  border-color: color-mix(in srgb, var(--tint) 50%, var(--card));
+}
 /* 開いた中身は「開く」の錠剤の下まで横いっぱいに使う。1段目（料理名の行）はそのまま、
    中身だけを折り返して2段目に置き、頭を料理名に揃える（帯4px＋間11px） */
 .card.open { flex-wrap: wrap; row-gap: 0; }
