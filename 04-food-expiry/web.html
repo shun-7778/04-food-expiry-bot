@@ -1776,8 +1776,13 @@ function actionLayer(side, action) {
   if (!action) return null;
   var el = document.createElement('div');
   el.className = 'act ' + side + (action.cls ? ' ' + action.cls : '');
-  // color（--r0 など）があれば、その色で塗る（レシピのピン留めをカテゴリの色にする）
-  if (action.color) el.style.background = 'var(--' + action.color + ')';
+  // color（--r0 など）があれば、その色を薄めて塗る（レシピのピン留めをカテゴリの色にする）。
+  // 地が薄いので、文字は白ではなくその色を濃くしたもの
+  if (action.color) {
+    var c = 'var(--' + action.color + ')';
+    el.style.background = 'color-mix(in srgb, ' + c + ' 35%, var(--card))';
+    el.style.color = 'color-mix(in srgb, ' + c + ' 75%, var(--text))';
+  }
   el.textContent = action.label;
   return el;
 }
