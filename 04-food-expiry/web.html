@@ -292,7 +292,11 @@ body {
 }
 /* 小窓の評価の星。指で押しやすい大きさにする */
 .mbox .mh.sub { margin-top: 18px; }
-.mstars { display: flex; align-items: center; gap: 10px; }
+/* 星はカテゴリのボタンと同じく白い地の枠に入れる（小窓の地がカテゴリの色でも見やすく） */
+.mstars {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--box-bg); border: 1px solid var(--box-line); border-radius: 10px; padding: 6px 10px;
+}
 .mbox .mstars button {
   border: none; background: none; cursor: pointer; padding: 2px;
   font-family: "Segoe UI Symbol", "Hiragino Sans", sans-serif;
@@ -303,7 +307,7 @@ body {
 .mgroups { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mbox .mgroups button {
   padding: 9px 2px; border-radius: 10px; font-size: 14px; font-weight: 700;
-  background: var(--bg); color: var(--c); border: 1px solid var(--line); white-space: nowrap;
+  background: var(--box-bg); color: var(--c); border: 1px solid var(--box-line); white-space: nowrap;
 }
 .mbox .mgroups button.on {
   background: color-mix(in srgb, var(--c) 14%, var(--card)); border-color: var(--c);
@@ -328,10 +332,12 @@ body {
 /* メモが無いときは見出しの帯だけ。帯の下の線と箱の下の余白を消す */
 .detail .notebox.only { padding-bottom: 0; }
 .detail .notebox.only > h4.hrow { border-bottom: none; }
+/* メモの「編集」は「なしを追加」と同じ見た目（淡い緑の地・緑の文字・緑の線） */
 .detail .medit {
   display: inline-flex; align-items: center; gap: 4px;
-  border: none; background: none; padding: 2px 0; cursor: pointer;
-  color: var(--blue); font-family: inherit; font-size: 14px; font-weight: 700;
+  border: none; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 0 0 0 1px var(--sel-line);
+  font-family: inherit; font-size: 14px; font-weight: 700; white-space: nowrap;
 }
 .detail .medit svg {
   width: 15px; height: 15px; fill: none; stroke: currentColor;
