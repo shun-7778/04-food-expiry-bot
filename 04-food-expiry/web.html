@@ -572,6 +572,8 @@ body {
 .act.right { background: var(--green); justify-content: flex-start; }
 /* 戻す側は、消したときの緑と区別してグレーにする */
 .swipe.undo .act.right { background: var(--sub); }
+/* レシピの削除は薄めのグレー（地が薄いので文字は濃い色） */
+.act.right.del { background: var(--dash); color: var(--text); }
 .act.left {
   background: var(--blue); justify-content: flex-end;
   text-align: right; white-space: pre-line; line-height: 1.25;
@@ -1774,6 +1776,8 @@ function actionLayer(side, action) {
   if (!action) return null;
   var el = document.createElement('div');
   el.className = 'act ' + side + (action.cls ? ' ' + action.cls : '');
+  // color（--r0 など）があれば、その色で塗る（レシピのピン留めをカテゴリの色にする）
+  if (action.color) el.style.background = 'var(--' + action.color + ')';
   el.textContent = action.label;
   return el;
 }
@@ -1906,10 +1910,12 @@ function recipeCard(it) {
     detail: open ? recipeDetail(it) : null,
     // 品名の位置にもう料理名が出ているので、錠剤は「開く」だけにする
     src: { url: it.url, title: 'SNS', big: true },
-    right: { label: '削除', run: function () { hideRecipe(it); } },
+    // 削除は薄いグレー、ピン留めはカテゴリの色（カテゴリが無ければ従来の締め色）
+    right: { label: '削除', cls: 'del', run: function () { hideRecipe(it); } },
     left: {
       label: it.pinned ? 'ピン留め\n解除' : 'ピン留め',
       cls: 'pin',
+      color: it.level || '',
       run: function () { pinRecipe(it, !it.pinned); }
     }
   });
