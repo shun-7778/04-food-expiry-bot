@@ -44,6 +44,8 @@
   --step-bg: #fff8ee;  --step-head: #fdebd3;  --step-line: #f3d3a8;  --step-mark: #e5a85c;
   /* メモの箱（薄い青）。枠は「SNS」と同じ色 */
   --note-bg: #f4f8fe;  --note-head: #e2ebfb;
+  /* 材料・作り方・メモの箱（白い地＋薄いグレーの見出し） */
+  --box-bg: #ffffff;  --box-head: #f3f4f6;  --box-line: #e3e6ea;
 
   /* 写真1枚（レシピ1つ）から入った品目のまとまりを示す色。
      レシピIDの順に使い回すので、色数より多い料理があれば一巡して同じ色に戻る */
@@ -83,6 +85,7 @@
     --ing-dash: #4a5565;
     --step-bg: #261f16;  --step-head: #3a2c1a;  --step-line: #5a4428;  --step-mark: #b07a3a;
     --note-bg: #19212e;  --note-head: #213048;
+    --box-bg: #1e232b;  --box-head: #262c35;  --box-line: #2e3641;
 
     /* 暗い地では沈むので、どれも一段明るくする */
     --r0: #3ec27d;   --r1: #a78bfa;   --r2: #ff9f45;   --r3: #ff6f9c;   --r4: #35bccb;
@@ -111,7 +114,7 @@ body {
 
 /* ---- 上のひとかたまり（入力欄）は、スクロールしても残す ---- */
 .sticky {
-  position: sticky; top: 0; z-index: 5;
+  z-index: 5;
   background: var(--bg); padding: 12px 12px 10px;
   /* 下の品目が透けて重なって見えないよう、地の色で覆っておく */
 }
@@ -122,14 +125,13 @@ body {
   pointer-events: none;
 }
 .sticky > * { max-width: 640px; margin: 0 auto; }
-/* 下へスクロールしたら上のかたまりを隠し、上へ戻したら出す（updateSticky）。
-   以前は指の動きに合わせて JS で1コマずつ動かしていたが、スクロールの通知が飛び飛びに来る端末で
-   カクついたので、出す・隠すの2つだけにして、動きはブラウザのアニメーションに任せる */
-.sticky {
-  will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden;
-  transition: transform .25s cubic-bezier(.2, .7, .3, 1);
-}
-.sticky.hide { transform: translate3d(0, calc(-100% - 16px), 0); }
+/* 下へスクロールした分だけ上のかたまりが隠れ、上へ戻した分だけ出てくる（updateSticky）。
+   以前は JS で1コマずつ transform を書き換えていたが、一覧のスクロール（ブラウザが別の流れで描く）より
+   1コマ遅れて追いかけるためカクついた。今は動いている間はかたまりをページの中に置き（absolute）、
+   一覧と一緒にブラウザにスクロールさせる。出し切ったら画面の上に留める（fixed）。
+   JS は向きが変わったときに置き場所を付け替えるだけ。指を止めたときの出し切り・隠し切りだけ短く動かす */
+.sticky { position: absolute; left: 0; right: 0; top: 0; will-change: transform; backface-visibility: hidden; }
+#sticky-space { height: 0; }   /* かたまりがページの流れから外れた分の高さ（JS で合わせる） */
 
 /* ---- タブ。指が届きやすいよう、下に浮かせて置く ---- */
 .tabbar {
@@ -438,6 +440,8 @@ body {
 .dd-row.tinted { color: var(--c); font-weight: 700; }
 .dd-row.tinted input { accent-color: var(--c); }
 .dd-row.tinted.on { background: color-mix(in srgb, var(--c) 12%, var(--card)); color: var(--c); }
+/* 「すべて」は文字だけ黒（チェックと選んでいるときの地は緑のまま） */
+.dd-row.tinted.all, .dd-row.tinted.all.on { color: var(--text); }
 
 /* ---- 開いた中の材料。在庫の有無と「＋」を右に並べる ---- */
 /* 「材料」の見出しの行。右端に照合の状態か「ないものを追加」を置く */
@@ -453,11 +457,11 @@ body {
   background: var(--green); color: #fff; white-space: nowrap;
   font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
 }
-/* 材料（緑）・作り方（オレンジ）・メモ（青）は箱に入れる。
-   見出しは箱の幅いっぱいの一段濃い帯にし、下に線を引いて中身と分ける */
-.detail .ingbox  { --bx-bg: var(--ing-bg);  --bx-head: var(--ing-head);  --bx-line: var(--ing-line); }
-.detail .stepbox { --bx-bg: var(--step-bg); --bx-head: var(--step-head); --bx-line: var(--step-line); }
-.detail .notebox { --bx-bg: var(--note-bg); --bx-head: var(--note-head); --bx-line: var(--src-line); }
+/* 材料・作り方・メモは箱に入れる。どれも白い地に薄いグレーの見出しの帯とグレーの枠でそろえる
+   （以前は緑・オレンジ・青で塗り分けていた）。見出しは箱の幅いっぱいの帯にし、下に線を引いて中身と分ける */
+.detail .ingbox, .detail .stepbox, .detail .notebox {
+  --bx-bg: var(--box-bg); --bx-head: var(--box-head); --bx-line: var(--box-line);
+}
 .detail .rbox {
   background: var(--bx-bg); border: 1px solid var(--bx-line); border-radius: 12px;
   padding: 0 12px 2px; overflow: hidden; box-shadow: var(--shadow);
@@ -648,6 +652,7 @@ body {
     </div>
   </div>
 </div>
+<div id="sticky-space"></div>
 
 <div class="wrap">
   <div class="loadingbar" id="loadingbar" hidden><span class="spin"></span>更新中…</div>
@@ -1051,6 +1056,7 @@ function filterBox(name, heading, sel, options, allColor) {
       if (i) v.appendChild(document.createTextNode('・'));
       var s = document.createElement('span');
       if (o.star) s.className = 'star';
+      if (o.color) s.style.color = 'var(--' + o.color + ')';   // カテゴリはその色で出す
       s.textContent = o.label;
       v.appendChild(s);
     });
@@ -1072,9 +1078,9 @@ function filterBox(name, heading, sel, options, allColor) {
     list.className = 'dd-list';
     // 一覧の中を押しても閉じない（外を押したら閉じる）
     list.addEventListener('click', function (e) { e.stopPropagation(); });
-    var row = function (label, checked, star, onClick, color) {
+    var row = function (label, checked, star, onClick, color, all) {
       var r = document.createElement('label');
-      r.className = 'dd-row' + (checked ? ' on' : '') + (color ? ' tinted' : '');
+      r.className = 'dd-row' + (checked ? ' on' : '') + (color ? ' tinted' : '') + (all ? ' all' : '');
       if (color) r.style.setProperty('--c', 'var(--' + color + ')');
       var cb = document.createElement('input');
       cb.type = 'checkbox';
@@ -1096,7 +1102,7 @@ function filterBox(name, heading, sel, options, allColor) {
       filterOpen = '';
       filterChanged();
     };
-    row('すべて', !picked.length, false, function () { choose(''); }, allColor);
+    row('すべて', !picked.length, false, function () { choose(''); }, allColor, true);
     options.forEach(function (o) {
       row(o.label, !!sel[o.key], o.star, function () { choose(o.key); }, o.color);
     });
@@ -2480,29 +2486,62 @@ function noteFullHeight() {
 }
 
 /**
- * 上のかたまり（検索・追加欄と切り替えボタン）を、スクロールの向きで出し入れする。
- * 下へ一定量（STICKY_TRAVEL）動かしたら隠し、上へ一定量戻したら出す。動きは CSS の transition に任せる。
- * 小刻みな揺れで出たり消えたりしないよう、同じ向きに続けて動いた量で決める。
- * 先頭付近（欄の高さより上）と、文字を打っている間は出しておく
+ * 上のかたまり（検索・追加欄と切り替えボタン）を、スクロールに合わせて出し入れする。
+ * 下へ動かした分だけ隠れ（一覧と同じ速さ）、上へ戻した分だけ出てくる。
+ * 指を止めて半端な位置で止まったら、最後に動かした向きで出し切るか隠し切る
+ * （下へなら少しでも隠し切る。上へ戻している途中なら出す）。
+ * 先頭と、文字を打っている間は全部出しておく。
+ *
+ * 動かし方：かたまりは2つの置き方を行き来する。
+ *  - 出し切っているとき：画面の上に留める（fixed）
+ *  - それ以外：ページの中の決まった高さ（stickyTop）に置く（absolute）。こうするとブラウザが一覧と
+ *    一緒にスクロールさせるので、JS が追いかけて遅れることがない。
+ *    下へ動き始めたら、その場の高さでページに置く → 一覧と一緒に上へ流れて消える。
+ *    隠れ切ったあと上へ戻し始めたら、画面のすぐ上の高さに置き直す → 一覧と一緒に下りてくる。
+ *    出し切ったところで画面の上に留め直す
  */
 var lastScrollY = 0;
-var stickyTravel = 0;   // 同じ向きに続けて動いた量（下へ＋、上へ−）
-var stickyHidden = false;
-var STICKY_TRAVEL = 12;
+var snapTimer = 0;
+var lastDir = 0;        // 最後に動かした向き（1=下へ、-1=上へ）
+var STICKY_FADE = 16;   // かたまりの下に流しているぼかしの高さ（.sticky::after）
 
 var stickyEl = document.querySelector('.sticky');
-var stickyMax = 0;      // 欄の高さ。スクロール中に測り直さないよう控える
+var stickySpace = $('sticky-space');
+var stickyMax = 0;      // 隠し切るときの量（欄の高さ＋ぼかし）
+var stickyFixed = false;
+var stickyTop = 0;      // absolute のときの、ページの中での高さ
 var stickyFrame = 0;
 
-/** 欄の高さを測り直す。タブを切り替えたとき・画面の大きさが変わったときだけ呼ぶ */
+/** 欄の高さを測り直し、ページの流れから外した分の場所を空けておく */
 function measureSticky() {
-  stickyMax = stickyEl.offsetHeight;
+  var h = stickyEl.offsetHeight;
+  stickySpace.style.height = h + 'px';
+  stickyMax = h + STICKY_FADE;
 }
 
-function setStickyHidden(h) {
-  if (h === stickyHidden) return;
-  stickyHidden = h;
-  stickyEl.classList.toggle('hide', h);
+function placeSticky(fixed, top) {
+  stickyFixed = fixed;
+  stickyTop = fixed ? 0 : top;
+  stickyEl.style.position = fixed ? 'fixed' : 'absolute';
+  stickyEl.style.top = stickyTop + 'px';
+}
+
+/**
+ * 置き場所を付け替えた直後に、元の見た目の位置から新しい位置まで短く動かす。
+ * from は「新しい位置から見て、いま見えている位置がどれだけずれているか」（px）
+ */
+function slideSticky(from) {
+  if (!from) return;
+  stickyEl.style.transition = 'none';
+  stickyEl.style.transform = 'translate3d(0,' + from + 'px,0)';
+  void stickyEl.offsetHeight;   // いったん描かせてから動かす
+  stickyEl.style.transition = 'transform .18s ease-out';
+  stickyEl.style.transform = '';
+}
+
+/** いまどれだけ隠れているか（0〜stickyMax） */
+function stickyHiddenAt(y) {
+  return stickyFixed ? 0 : Math.max(0, Math.min(stickyMax, y - stickyTop));
 }
 
 function updateSticky() {
@@ -2513,18 +2552,53 @@ function updateSticky() {
   var y = Math.min(room, Math.max(0, window.scrollY || window.pageYOffset || 0));
   var dy = y - lastScrollY;
   lastScrollY = y;
+  if (dy) lastDir = dy > 0 ? 1 : -1;
 
-  if (document.activeElement === activeInput() || y <= stickyMax) {
-    stickyTravel = 0;
-    setStickyHidden(false);
+  if (document.activeElement === activeInput()) {
+    if (!stickyFixed) { var h0 = stickyHiddenAt(y); placeSticky(true, 0); slideSticky(-h0); }
     return;
   }
-  if (!dy) return;
-  if ((dy > 0) !== (stickyTravel > 0)) stickyTravel = 0;   // 向きが変わったら数え直す
-  stickyTravel += dy;
-  if (stickyTravel > STICKY_TRAVEL) setStickyHidden(true);
-  else if (stickyTravel < -STICKY_TRAVEL) setStickyHidden(false);
+
+  if (y <= 0) {
+    // 先頭では本来の場所（ページの一番上）に戻す。見た目の位置は fixed のときと同じ
+    if (stickyFixed || stickyTop !== 0) placeSticky(false, 0);
+  } else if (dy > 0) {
+    // 下へ動き始めた：いま見えている位置のままページに置き、一覧と一緒に流す
+    if (stickyFixed) placeSticky(false, y - dy);
+  } else if (dy < 0 && !stickyFixed) {
+    if (y - stickyTop > stickyMax) placeSticky(false, y - stickyMax);   // 隠れ切っている → 画面のすぐ上へ
+    else if (y <= stickyTop) placeSticky(true, 0);                       // 出し切った → 上に留める
+  }
+
+  clearTimeout(snapTimer);
+  snapTimer = setTimeout(function () { snapSticky(room); }, 160);
 }
+
+/** 指を止めたとき、半端な位置なら出し切るか隠し切る */
+function snapSticky(room) {
+  var y = lastScrollY;
+  var h = stickyHiddenAt(y);
+  if (h <= 0 || h >= stickyMax) return;
+  if (lastDir < 0) {
+    // 上へ戻して止まった → 出し切る
+    placeSticky(true, 0);
+    slideSticky(-h);
+    return;
+  }
+  // 下へ少しでも動かして止まった → 隠し切る。
+  // 先頭付近（欄の高さより上）では、欄だけ消すと上に空きができるので、一覧ごと欄の高さまで送る。
+  // 送る間も欄は一覧と一緒に上がっていき、着いたときに隠れ切る
+  if (y < stickyMax && room >= stickyMax) {
+    window.scrollTo({ top: stickyMax, behavior: 'smooth' });
+    return;
+  }
+  placeSticky(false, y - stickyMax);
+  slideSticky(stickyMax - h);
+}
+
+measureSticky();
+// 中身（タブの切り替え・絞り込みの描き直し）で欄の高さが変わったら、空けておく場所も合わせる
+if (window.ResizeObserver) new ResizeObserver(function () { measureSticky(); }).observe(stickyEl);
 
 // 位置の書き換えは、画面を描く直前（requestAnimationFrame）に1コマ1回だけ行う。
 // scroll は1コマに何度も来ることがあり、そのたびに書き換えると動きが揃わずカクつく
@@ -2589,8 +2663,8 @@ function switchTab(name) {
   // タブごとに上の欄の高さが違うので測り直し、隠していた欄は出しておく
   measureSticky();
   lastScrollY = 0;
-  stickyTravel = 0;
-  setStickyHidden(false);
+  clearTimeout(snapTimer);
+  placeSticky(false, 0);
 }
 
 // このURLに入っている呼び名。無ければ、前にこの端末で覚えた分
