@@ -345,7 +345,9 @@ body {
 .mbox .cancel { background: var(--pill); color: var(--sub); }
 /* 保存は下のタブで選んでいるときと同じ見た目（淡い緑の地・緑の文字・緑の線） */
 .mbox .ok { background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 0 0 0 1px var(--sel-line); }
-/* レシピから開いたときは、入力欄の枠をそのカテゴリの色（--c）にする。打っている間は少し濃く */
+/* レシピから開いたときは、小窓の地をレシピカードの地と同じ色（カテゴリの色 7%）にし、
+   入力欄の枠をそのカテゴリの色（--c）にする。打っている間は少し濃く */
+.mbox.tinted { background: color-mix(in srgb, var(--c) 7%, var(--card)); }
 .mbox.tinted input, .mbox.tinted textarea { border-color: color-mix(in srgb, var(--c) 45%, var(--card)); }
 .mbox.tinted input:focus, .mbox.tinted textarea:focus { border-color: var(--c); }
 /* レシピの「SNS」。押せるボタンだと分かるよう、縁取りと影を付ける。
@@ -1650,6 +1652,9 @@ function openEditor(opts, done) {
       b.className = g === group ? 'on' : '';
       b.addEventListener('click', function () {
         group = g;
+        // 小窓の地と入力欄の枠も、選んだカテゴリの色に変える
+        box.classList.add('tinted');
+        box.style.setProperty('--c', 'var(--' + (GROUP_COLOR[g] || 'green') + ')');
         Array.prototype.forEach.call(groupBox.children, function (x) { x.className = x === b ? 'on' : ''; });
       });
       groupBox.appendChild(b);
