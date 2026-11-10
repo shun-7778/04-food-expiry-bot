@@ -389,7 +389,7 @@ body {
 }
 .card:not([class*=" lv-"]) .pin { background: var(--slate); }   /* カテゴリが無いときは締め色 */
 /* ピンの絵は頭が大きく針が細いので、45°傾けると見た目の重心が右上に寄る。左下へ少しずらして丸の中央に見せる */
-.card .pin svg { width: 10px; height: 10px; fill: #fff; transform: translate(-1px, 1px) rotate(45deg); }
+.card .pin svg { width: 10px; height: 10px; fill: #fff; transform: translate(-0.5px, 0.5px) rotate(45deg); }
 /* 開いているかどうかの印。品名の右に小さく出す */
 .card .fold { flex: 0 0 auto; color: var(--sub); font-size: 11px; transition: transform .15s; }
 .card.open .fold { transform: rotate(180deg); }
