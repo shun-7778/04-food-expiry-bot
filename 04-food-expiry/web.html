@@ -945,13 +945,13 @@ function renderRecipes() {
   var box = $('list-recipe');
   box.textContent = '';
 
-  var q = normalizeForSearch($('recipe-q').value);
+  var terms = searchTerms($('recipe-q').value);
   var items = recipeItems().concat(doneRecipe)
     .filter(function (it) {
       if (groupOn && !recipeGroupSel[it.group]) return false;
       if (ratingOn && !recipeRatingSel[String(it.rating || 0)]) return false;
-      it.hits = q ? recipeHits(it, q) : null;
-      return !q || it.hits;
+      it.hits = terms.length ? recipeHits(it, terms) : null;
+      return !terms.length || it.hits;
     })
     .sort(function (a, b) {
       // 消した行は消したその場に残すので、ピン留めの並びにも元のまま入れておく
@@ -1100,16 +1100,29 @@ document.addEventListener('click', function () {
 
 /**
  * 検索語に当たるか。当たらなければ null、当たれば { title, names } を返す。
+ * terms は searchTerms で区切った語の並び。「卵 にんにく」なら、どの語も
+ * 料理名か材料のどれかに含むレシピだけを当たりにする（全部を使う料理を探したいため）。
  * names は当たった材料名で、開いたときに色を付けるのと、閉じたままでも
  * どの材料で当たったかを添えるのに使う。言い換え（にんにく／大蒜 など）は在庫の検索と同じ
  */
-function recipeHits(it, q) {
-  var title = aliasKey(it.title || '').indexOf(q) >= 0;
-  var names = [];
-  (it.ingredients || []).forEach(function (g) {
-    if (aliasKey(g.name).indexOf(q) >= 0) names.push(g.name);
-  });
-  return title || names.length ? { title: title, names: names } : null;
+function recipeHits(it, terms) {
+  var titleKey = aliasKey(it.title || '');
+  var ings = (it.ingredients || []).map(function (g) { return { name: g.name, key: aliasKey(g.name) }; });
+  var title = false;
+  var hit = {};
+  for (var i = 0; i < terms.length; i++) {
+    var t = terms[i];
+    var found = false;
+    if (titleKey.indexOf(t) >= 0) { title = true; found = true; }
+    ings.forEach(function (g) {
+      if (g.key.indexOf(t) >= 0) { hit[g.name] = true; found = true; }
+    });
+    if (!found) return null;   // 1語でも見つからなければ外す
+  }
+  var names = ings.filter(function (g) { return hit[g.name]; }).map(function (g) { return g.name; });
+  // 同じ名前の材料が2回出ることがある（たれ用と本体用など）ので、重ねない
+  names = names.filter(function (n, i) { return names.indexOf(n) === i; });
+  return { title: title, names: names };
 }
 
 /**
@@ -1199,10 +1212,24 @@ function stockRows() {
 
 /** 検索欄と絞り込みボタンの両方を通ったか */
 function passesStockFilter(it) {
-  var q = normalizeForSearch($('stock-q').value);
+  var terms = searchTerms($('stock-q').value);
   if (filter && level(it) !== filter) return false;
-  if (!q) return true;
-  return searchKey(it).indexOf(q) >= 0;
+  if (!terms.length) return true;
+  // 在庫は1件が1品目なので、「卵 にんにく」はどちらかに当たるものを全部出す
+  var key = searchKey(it);
+  return terms.some(function (t) { return key.indexOf(t) >= 0; });
+}
+
+/**
+ * 検索欄の文字を語に分ける。半角・全角の空白と読点（、）、カンマで区切り、
+ * それぞれを normalizeForSearch でならす。空の語は落とす
+ */
+function searchTerms(s) {
+  s = (s || '') + '';
+  if (s.normalize) s = s.normalize('NFKC');   // 全角の空白はここで半角になる
+  return s.split(/[\s、,]+/)
+    .map(normalizeForSearch)
+    .filter(function (t) { return t; });
 }
 
 /**
@@ -2283,7 +2310,8 @@ $('stock-q').addEventListener('input', function () {
   render();
 });
 $('stock-q').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') $('stock-q').blur();   // 探したらキーボードは閉じる
+  // 探したらキーボードは閉じる。変換を確定する Enter では閉じない（続けて2語目を打てるように）
+  if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) $('stock-q').blur();
 });
 $('stock-q').addEventListener('focus', noteFocus);
 $('stock-q').addEventListener('blur', updateTabbar);
@@ -2302,7 +2330,7 @@ $('recipe-q').addEventListener('input', function () {
   render();
 });
 $('recipe-q').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') $('recipe-q').blur();
+  if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) $('recipe-q').blur();
 });
 $('recipe-q').addEventListener('focus', noteFocus);
 $('recipe-q').addEventListener('blur', updateTabbar);
