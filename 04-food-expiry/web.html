@@ -122,11 +122,14 @@ body {
   pointer-events: none;
 }
 .sticky > * { max-width: 640px; margin: 0 auto; }
-/* 下へスクロールした分だけ上のかたまりを押し上げ、一覧を広く見せる。上へ戻すとその分だけ出てくる。
-   位置はスクロールに合わせて JS が直接動かす（updateSticky）。指を止めたときだけ、
-   半端な位置から出し切る・隠し切るのを短く動かす（snap） */
-.sticky { will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden; }
-.sticky.snap { transition: transform .15s ease-out; }
+/* 下へスクロールしたら上のかたまりを隠し、上へ戻したら出す（updateSticky）。
+   以前は指の動きに合わせて JS で1コマずつ動かしていたが、スクロールの通知が飛び飛びに来る端末で
+   カクついたので、出す・隠すの2つだけにして、動きはブラウザのアニメーションに任せる */
+.sticky {
+  will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden;
+  transition: transform .25s cubic-bezier(.2, .7, .3, 1);
+}
+.sticky.hide { transform: translate3d(0, calc(-100% - 16px), 0); }
 
 /* ---- タブ。指が届きやすいよう、下に浮かせて置く ---- */
 .tabbar {
@@ -294,6 +297,15 @@ body {
   font-size: 32px; font-weight: 400; line-height: 1; color: var(--star);
 }
 .mbox .mstars.none button { color: var(--star-off); }
+/* 小窓のカテゴリ。文字はカテゴリの色（--c）、選んでいるものはその色を薄く敷いて同じ色の線で囲む */
+.mgroups { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.mbox .mgroups button {
+  padding: 9px 2px; border-radius: 10px; font-size: 14px; font-weight: 700;
+  background: var(--bg); color: var(--c); border: 1px solid var(--line); white-space: nowrap;
+}
+.mbox .mgroups button.on {
+  background: color-mix(in srgb, var(--c) 14%, var(--card)); border-color: var(--c);
+}
 .mbox input:focus, .mbox textarea:focus { outline: none; border-color: var(--blue); }
 
 /* カードの評価。料理名の下に小さく並べる。未評価はグレーの☆ */
@@ -329,10 +341,10 @@ body {
 }
 .mbox .cancel { background: var(--pill); color: var(--sub); }
 .mbox .ok { background: var(--green); color: #fff; }
-/* レシピの「開く」は押しやすいよう一回り大きくする（買い物リストの料理名の錠剤はそのまま）。
-   押せるボタンだと分かるよう、縁取りと影を付ける */
+/* レシピの「SNS」。押せるボタンだと分かるよう、縁取りと影を付ける。
+   印（🍴）を外した分、小さめにして目立ちすぎないようにする */
 .card .src.big {
-  padding: 8px 15px; font-size: 14px;
+  padding: 5px 11px; font-size: 13px;
   border: 1px solid var(--src-line); box-shadow: var(--shadow);
 }
 /* 開いた中身は「開く」の錠剤の下まで横いっぱいに使う。1段目（料理名の行）はそのまま、
@@ -422,6 +434,10 @@ body {
 .dd-row + .dd-row { border-top: 1px solid var(--line); }
 .dd-row.on { background: var(--ok-bg); color: var(--ok-fg); font-weight: 700; }
 .dd-row input { width: 20px; height: 20px; margin: 0; accent-color: var(--green); flex: 0 0 auto; }
+/* カテゴリの一覧。文字とチェックをそのカテゴリの色（--c）にし、選んでいる行はその色を薄く敷く */
+.dd-row.tinted { color: var(--c); font-weight: 700; }
+.dd-row.tinted input { accent-color: var(--c); }
+.dd-row.tinted.on { background: color-mix(in srgb, var(--c) 12%, var(--card)); color: var(--c); }
 
 /* ---- 開いた中の材料。在庫の有無と「＋」を右に並べる ---- */
 /* 「材料」の見出しの行。右端に照合の状態か「ないものを追加」を置く */
@@ -1007,14 +1023,15 @@ function renderRecipeFilters() {
   // 選んでいた分類がサーバーの一覧から消えていたら外す
   Object.keys(recipeGroupSel).forEach(function (g) { if (groups.indexOf(g) < 0) delete recipeGroupSel[g]; });
 
+  // カテゴリの一覧は、文字とチェックをカードの左の帯と同じ色にする（「すべて」は緑）
   box.appendChild(filterBox('group', 'カテゴリ', recipeGroupSel,
-    groups.map(function (g) { return { key: g, label: g }; })));
+    groups.map(function (g) { return { key: g, label: g, color: GROUP_COLOR[g] || '' }; }), 'green'));
   box.appendChild(filterBox('rating', '評価', recipeRatingSel,
     RATING_FILTERS.map(function (n) { return { key: String(n), label: ratingLabel(n), star: n > 0 }; })));
 }
 
 /** 絞り込み1つ分。ボタン（見出し＋選んでいるもの＋矢印）と、開いたときのチェックボックスの一覧 */
-function filterBox(name, heading, sel, options) {
+function filterBox(name, heading, sel, options, allColor) {
   var wrap = document.createElement('div');
   wrap.className = 'dd' + (filterOpen === name ? ' open' : '');
 
@@ -1055,9 +1072,10 @@ function filterBox(name, heading, sel, options) {
     list.className = 'dd-list';
     // 一覧の中を押しても閉じない（外を押したら閉じる）
     list.addEventListener('click', function (e) { e.stopPropagation(); });
-    var row = function (label, checked, star, onClick) {
+    var row = function (label, checked, star, onClick, color) {
       var r = document.createElement('label');
-      r.className = 'dd-row' + (checked ? ' on' : '');
+      r.className = 'dd-row' + (checked ? ' on' : '') + (color ? ' tinted' : '');
+      if (color) r.style.setProperty('--c', 'var(--' + color + ')');
       var cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = checked;
@@ -1078,9 +1096,9 @@ function filterBox(name, heading, sel, options) {
       filterOpen = '';
       filterChanged();
     };
-    row('すべて', !picked.length, false, function () { choose(''); });
+    row('すべて', !picked.length, false, function () { choose(''); }, allColor);
     options.forEach(function (o) {
-      row(o.label, !!sel[o.key], o.star, function () { choose(o.key); });
+      row(o.label, !!sel[o.key], o.star, function () { choose(o.key); }, o.color);
     });
     wrap.appendChild(list);
   }
@@ -1092,12 +1110,37 @@ function filterChanged() {
   window.scrollTo(0, 0);   // 切り替えたら先頭から見せる（タブの切り替えと同じ）
 }
 
-// 一覧の外を押したら閉じる
-document.addEventListener('click', function () {
-  if (!filterOpen) return;
+// 一覧が開いているときに外を押したら、閉じるだけにする。
+// 押した先のレシピは開かず、長押し・横スワイプも始めない（取り込み段階で先に受けて止める）
+var filterDismissAt = 0;
+function outsideFilters(e) {
+  return !(e.target.closest && e.target.closest('#recipe-filters'));
+}
+document.addEventListener('touchstart', function (e) {
+  if (!filterOpen || !outsideFilters(e)) return;
+  e.stopPropagation();
+  filterDismissAt = Date.now();
   filterOpen = '';
   renderRecipeFilters();
-});
+}, { capture: true, passive: true });
+document.addEventListener('click', function (e) {
+  // 指で閉じた直後のクリック（タッチのあとに来る分）は、どこにも届けない
+  if (Date.now() - filterDismissAt < 800) {
+    filterDismissAt = 0;
+    if (outsideFilters(e)) { e.stopPropagation(); e.preventDefault(); }
+    return;
+  }
+  if (!filterOpen || !outsideFilters(e)) return;
+  // マウスで外を押したとき
+  e.stopPropagation();
+  e.preventDefault();
+  filterOpen = '';
+  renderRecipeFilters();
+}, true);
+// 開いたまま長押しのメニュー（右クリック・Android の長押し）が出ても、レシピの編集は開かない
+document.addEventListener('contextmenu', function (e) {
+  if (Date.now() - filterDismissAt < 1500 && outsideFilters(e)) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 
 /**
  * 検索語に当たるか。当たらなければ null、当たれば { title, names } を返す。
@@ -1420,12 +1463,15 @@ function card(opt) {
     src.target = '_blank';
     src.rel = 'noopener noreferrer';
 
-    var icon = document.createElement('span');
-    icon.textContent = '🍴';
+    // レシピの「SNS」は文字だけ。買い物リストの料理名の錠剤には 🍴 を付けて、料理だと分かるようにする
+    if (!opt.src.big) {
+      var icon = document.createElement('span');
+      icon.textContent = '🍴';
+      src.appendChild(icon);
+    }
     var label = document.createElement('span');
     label.className = 't';
     label.textContent = opt.src.title || 'レシピを開く';
-    src.appendChild(icon);
     src.appendChild(label);
 
     // 横スワイプ（購入済み／取消）に巻き込まれてリンクが開かないようにする。
@@ -1559,6 +1605,29 @@ function openEditor(opts, done) {
   input.autocomplete = 'off';
   if (opts.placeholder) input.placeholder = opts.placeholder;
 
+  // カテゴリ。見出し「カテゴリ」の下に、カードの帯と同じ色のボタンを並べ、1つだけ選べる
+  var group = opts.group;
+  var groupHead = null, groupBox = null;
+  if (opts.groups) {
+    groupHead = document.createElement('div');
+    groupHead.className = 'mh sub';
+    groupHead.textContent = 'カテゴリ';
+    groupBox = document.createElement('div');
+    groupBox.className = 'mgroups';
+    opts.groups.forEach(function (g) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = g;
+      b.style.setProperty('--c', 'var(--' + (GROUP_COLOR[g] || 'green') + ')');
+      b.className = g === group ? 'on' : '';
+      b.addEventListener('click', function () {
+        group = g;
+        Array.prototype.forEach.call(groupBox.children, function (x) { x.className = x === b ? 'on' : ''; });
+      });
+      groupBox.appendChild(b);
+    });
+  }
+
   // 評価。見出し「評価」の下に大きな星を3つ。同じ星をもう一度押すと未評価に戻る
   var rating = opts.rating;
   var stars = null, starHead = null;
@@ -1601,6 +1670,7 @@ function openEditor(opts, done) {
 
   box.appendChild(h);
   box.appendChild(input);
+  if (groupBox) { box.appendChild(groupHead); box.appendChild(groupBox); }
   if (stars) { box.appendChild(starHead); box.appendChild(stars); }
   box.appendChild(row);
   back.appendChild(box);
@@ -1635,7 +1705,7 @@ function openEditor(opts, done) {
     e.preventDefault();
     var v = input.value;
     close();
-    done(v, rating);
+    done(v, rating, group);
   });
 
   document.body.appendChild(back);
@@ -2118,16 +2188,25 @@ function undoRecipe(it) {
   send('webSetRecipeHidden', [it.id, false]);
 }
 
-/** 料理名と評価を変える（カードの長押し）。先に画面を変えてから書き込む */
+/** 料理名・カテゴリ・評価を変える（カードの長押し）。先に画面を変えてから書き込む */
 function editRecipe(it) {
-  openEditor({ heading: '料理名', value: it.title || '', rating: it.rating || 0 }, function (v, rating) {
+  openEditor({
+    heading: '料理名', value: it.title || '',
+    groups: recipeGroups(), group: it.group || '',
+    rating: it.rating || 0
+  }, function (v, rating, group) {
     var patch = {};
     v = String(v || '').replace(/\s+/g, ' ').trim().substring(0, 60);
     if (v && v !== it.title) patch.title = v;   // 空にはしない
+    if (group && group !== (it.group || '')) patch.group = group;
     if (rating !== (it.rating || 0)) patch.rating = rating;
-    if (patch.title === undefined && patch.rating === undefined) return;   // 変わっていなければ送らない
+    if (patch.title === undefined && patch.rating === undefined && patch.group === undefined) return;   // 変わっていなければ送らない
     if (patch.title !== undefined) it.title = patch.title;
     if (patch.rating !== undefined) it.rating = patch.rating;
+    if (patch.group !== undefined) {
+      it.group = patch.group;
+      it.level = GROUP_COLOR[it.group] || '';   // 左の帯の色も先に変える
+    }
     waiting[it.id] = true;
     render();
     send('webUpdateRecipe', [it.id, patch]);
@@ -2401,62 +2480,50 @@ function noteFullHeight() {
 }
 
 /**
- * 上のかたまり（検索・追加欄と切り替えボタン）を、スクロールに合わせて動かす。
- * 下へ動かした分だけ押し上げ（一覧と同じ速さで消える）、上へ戻した分だけ下ろす。
- * 隠れる量は 0〜かたまりの高さ（下のぼかし込み）の範囲に収める。
- * 指を止めて半端な位置で止まったら、最後に動かした向きで出し切るか隠し切る
- * （下へなら少しでも隠し切る。上へ戻している途中なら出す）。
- * 先頭付近と、文字を打っている間は全部出しておく
+ * 上のかたまり（検索・追加欄と切り替えボタン）を、スクロールの向きで出し入れする。
+ * 下へ一定量（STICKY_TRAVEL）動かしたら隠し、上へ一定量戻したら出す。動きは CSS の transition に任せる。
+ * 小刻みな揺れで出たり消えたりしないよう、同じ向きに続けて動いた量で決める。
+ * 先頭付近（欄の高さより上）と、文字を打っている間は出しておく
  */
 var lastScrollY = 0;
-var stickyOffset = 0;   // 今どれだけ押し上げているか（px）
-var snapTimer = 0;
-var lastDir = 0;        // 最後に動かした向き（1=下へ、-1=上へ）
-var STICKY_FADE = 16;   // かたまりの下に流しているぼかしの高さ（.sticky::after）
+var stickyTravel = 0;   // 同じ向きに続けて動いた量（下へ＋、上へ−）
+var stickyHidden = false;
+var STICKY_TRAVEL = 12;
 
 var stickyEl = document.querySelector('.sticky');
-var stickyMax = 0;      // 隠し切るときの量（欄の高さ＋ぼかし）。スクロール中に測り直さないよう控える
+var stickyMax = 0;      // 欄の高さ。スクロール中に測り直さないよう控える
 var stickyFrame = 0;
 
 /** 欄の高さを測り直す。タブを切り替えたとき・画面の大きさが変わったときだけ呼ぶ */
 function measureSticky() {
-  stickyMax = stickyEl.offsetHeight + STICKY_FADE;
+  stickyMax = stickyEl.offsetHeight;
 }
 
-function setStickyOffset(px, snap) {
-  if (px === stickyOffset && !snap) return;   // 動かないときは書き換えない（無駄な再描画を避ける）
-  stickyOffset = px;
-  stickyEl.classList.toggle('snap', !!snap);
-  // translate3d にして描画をGPUに任せる。translateY だと端末によっては毎回描き直しが入り、カクつく
-  stickyEl.style.transform = px ? 'translate3d(0,' + (-px) + 'px,0)' : '';
+function setStickyHidden(h) {
+  if (h === stickyHidden) return;
+  stickyHidden = h;
+  stickyEl.classList.toggle('hide', h);
 }
 
 function updateSticky() {
   stickyFrame = 0;
-  var y = Math.max(0, window.scrollY || window.pageYOffset || 0);
   if (!stickyMax) measureSticky();
-  var max = stickyMax;
+  // 端で跳ね返る動き（iPhone の上下のバウンド）を向きの変化に数えないよう、動ける範囲に収める
+  var room = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  var y = Math.min(room, Math.max(0, window.scrollY || window.pageYOffset || 0));
   var dy = y - lastScrollY;
   lastScrollY = y;
-  if (dy) lastDir = dy > 0 ? 1 : -1;
 
-  if (document.activeElement === activeInput()) { setStickyOffset(0, true); return; }
-  // 先頭に近いときは、スクロールした分以上は隠さない（上に何も無いのに欄だけ消えないように）
-  var next = Math.min(max, Math.max(0, stickyOffset + dy), y);
-  setStickyOffset(next, false);
-
-  clearTimeout(snapTimer);
-  snapTimer = setTimeout(function () {
-    if (stickyOffset === 0 || stickyOffset === max) return;
-    // 上へ戻して止まった・先頭に戻った → 出し切る
-    if (lastDir < 0 || lastScrollY <= 0) { setStickyOffset(0, true); return; }
-    // 下へ少しでも動かして止まった → 隠し切る。
-    // 先頭付近（欄の高さより上）では、欄だけ消すと上に空きができるので、
-    // 一覧ごと欄の高さまで送る。送る間も欄はスクロールに合わせて上がっていき、着いたときに隠れ切る
-    var room = document.documentElement.scrollHeight - window.innerHeight;
-    if (lastScrollY < max && room >= max) window.scrollTo({ top: max, behavior: 'smooth' });
-    else setStickyOffset(max, true);
-  }, 160);
+  if (document.activeElement === activeInput() || y <= stickyMax) {
+    stickyTravel = 0;
+    setStickyHidden(false);
+    return;
+  }
+  if (!dy) return;
+  if ((dy > 0) !== (stickyTravel > 0)) stickyTravel = 0;   // 向きが変わったら数え直す
+  stickyTravel += dy;
+  if (stickyTravel > STICKY_TRAVEL) setStickyHidden(true);
+  else if (stickyTravel < -STICKY_TRAVEL) setStickyHidden(false);
 }
 
 // 位置の書き換えは、画面を描く直前（requestAnimationFrame）に1コマ1回だけ行う。
@@ -2522,7 +2589,8 @@ function switchTab(name) {
   // タブごとに上の欄の高さが違うので測り直し、隠していた欄は出しておく
   measureSticky();
   lastScrollY = 0;
-  setStickyOffset(0, false);
+  stickyTravel = 0;
+  setStickyHidden(false);
 }
 
 // このURLに入っている呼び名。無ければ、前にこの端末で覚えた分

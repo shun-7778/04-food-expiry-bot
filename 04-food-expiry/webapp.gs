@@ -455,9 +455,12 @@ function webUpdateRecipe(token, id, patch) {
   var hasRating = patch.rating !== undefined;
   var hasMemo = patch.memo !== undefined;
   var memo = hasMemo ? String(patch.memo || '').replace(/\r\n?/g, '\n').trim().substring(0, RECIPE_MEMO_MAX) : '';
+  // カテゴリは決まった4つ（RECIPE_GROUPS）のどれかだけ受ける。それ以外は書かない
+  var group = patch.group === undefined ? '' : normalizeRecipeGroup_(patch.group);
 
   withLock_(function () {
     if (title) recipeSetTitle_(id, title);
+    if (group) recipeSetCell_(id, RECIPE_COL.GROUP, group);
     if (hasRating) recipeSetRating_(id, patch.rating);
     if (hasMemo) recipeSetMemo_(id, memo);
   });
