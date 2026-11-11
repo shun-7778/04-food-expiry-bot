@@ -237,17 +237,25 @@ body {
 }
 .gsec .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gsec a.t { text-decoration: none; }
-/* 押せることを示す印。見出しの文字より大きくして、指でも狙いやすくする。
-   行の高さは見出しの余白に収まる範囲に留める */
-.gsec .jump {
-  flex: 0 0 auto; margin: -8px 0; padding: 8px 5px;
-  font-size: 22px; line-height: 1; text-decoration: none; color: inherit;
+/* 料理名の右のリンク。個別表示のカードの右の錠剤と同じ作りで、その料理の色（淡い地・その色の文字・その色の線） */
+.gsec .src {
+  flex: 0 0 auto; margin: -4px 0;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; text-decoration: none;
+  background: color-mix(in srgb, var(--tint) 12%, var(--card));
+  color: color-mix(in srgb, var(--tint) 85%, var(--text));
+  border: 1px solid color-mix(in srgb, var(--tint) 50%, var(--card));
 }
-.gsec.r0 .t, .gsec.r0 .jump { color: var(--r0); }
-.gsec.r1 .t, .gsec.r1 .jump { color: var(--r1); }
-.gsec.r2 .t, .gsec.r2 .jump { color: var(--r2); }
-.gsec.r3 .t, .gsec.r3 .jump { color: var(--r3); }
-.gsec.r4 .t, .gsec.r4 .jump { color: var(--r4); }
+.gsec.r0 { --tint: var(--r0); }
+.gsec.r1 { --tint: var(--r1); }
+.gsec.r2 { --tint: var(--r2); }
+.gsec.r3 { --tint: var(--r3); }
+.gsec.r4 { --tint: var(--r4); }
+.gsec.r0 .t { color: var(--r0); }
+.gsec.r1 .t { color: var(--r1); }
+.gsec.r2 .t { color: var(--r2); }
+.gsec.r3 .t { color: var(--r3); }
+.gsec.r4 .t { color: var(--r4); }
 .gsec.none .t { color: var(--sub); }
 /* 料理ごとで品目が無いときの案内。見出しが無いぶん切り替えボタンに密着して
    ボタンの影が被るので、見出しと同じだけ離す */
@@ -368,8 +376,10 @@ body {
   padding: 5px 11px; font-size: 13px;
   border: 1px solid var(--src-line); box-shadow: var(--shadow);
 }
-/* カテゴリのあるレシピは、「なしを追加」などと同じくカテゴリの色（淡い地・その色の文字・その色の線） */
-.card[class*=" lv-"] .src.big {
+/* 色のあるカード（カテゴリのあるレシピ・料理から入った買い物）は、
+   「なしを追加」などと同じくそのカードの色（淡い地・その色の文字・その色の線） */
+.card .src:not(.big) { border: 1px solid transparent; }
+.card[class*=" lv-"] .src {
   background: color-mix(in srgb, var(--tint) 12%, var(--card));
   color: color-mix(in srgb, var(--tint) 85%, var(--text));
   border-color: color-mix(in srgb, var(--tint) 50%, var(--card));
@@ -1305,20 +1315,21 @@ function groupHeader(g) {
 
   el.appendChild(t);
 
+  var n = document.createElement('span');
+  n.className = 'cnt';
+  n.textContent = g.items.length;
+  el.appendChild(n);
+
+  // 料理名（と件数）の右に、個別表示のカードの右と同じ作りのリンクを置く
   if (g.url) {
     var mark = document.createElement('a');
-    mark.className = 'jump';
-    mark.textContent = '⇗';
+    mark.className = 'src';
+    mark.textContent = 'SNS';
     mark.href = g.url;
     mark.target = '_blank';
     mark.rel = 'noopener noreferrer';
     el.appendChild(mark);
   }
-
-  var n = document.createElement('span');
-  n.className = 'cnt';
-  n.textContent = g.items.length;
-  el.appendChild(n);
   return el;
 }
 
@@ -1537,12 +1548,7 @@ function card(opt) {
     src.target = '_blank';
     src.rel = 'noopener noreferrer';
 
-    // レシピの「SNS」は文字だけ。買い物リストの料理名の錠剤には 🍴 を付けて、料理だと分かるようにする
-    if (!opt.src.big) {
-      var icon = document.createElement('span');
-      icon.textContent = '🍴';
-      src.appendChild(icon);
-    }
+    // 印は付けず文字だけ（色と枠線はそのカードの色）
     var label = document.createElement('span');
     label.className = 't';
     label.textContent = opt.src.title || 'レシピを開く';
