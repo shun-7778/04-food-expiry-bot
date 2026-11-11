@@ -414,16 +414,16 @@ body {
 .detail ol { margin: 0; padding: 0; list-style: none; counter-reset: step; }
 .detail li {
   counter-increment: step; position: relative;
-  padding: 6px 0 6px 17px; margin: 0; min-height: 38px;   /* 番号との隙間は 3px ほど */
+  padding: 6px 0 6px 17px; margin: 0; min-height: 34px;   /* 番号との隙間は 3px ほど */
   border-bottom: 1px dashed var(--ing-dash);
-  font-size: 16px; line-height: 26px; overflow-wrap: anywhere;
+  font-size: 16px; line-height: 22px;   /* 折り返した行の間を詰める（26px から） */ overflow-wrap: anywhere;
 }
 .detail li:last-child { border-bottom: none; }
 .detail li::before {
   content: counter(step);
-  /* 丸は 16px。1行目（上の余白 6px＋行の高さ 26px）の真ん中にそろえるため 11px 下げる。
+  /* 丸は 16px。1行目（上の余白 6px＋行の高さ 22px）の真ん中にそろえるため 9px 下げる。
      文章の幅を広く取るため、丸は点線の左端より 3px 外（箱の余白側）に寄せる */
-  position: absolute; left: -3px; top: 11px; width: 16px; height: 16px; border-radius: 50%; z-index: 1;
+  position: absolute; left: -3px; top: 9px; width: 16px; height: 16px; border-radius: 50%; z-index: 1;
   display: flex; align-items: center; justify-content: center;
   /* 51 以上の手順だけ使う丸（ふだんは下の丸数字の文字で出す）。地は塗らず、数字と丸の線を文字と同じ黒にする */
   background: none; color: var(--text);
@@ -434,7 +434,7 @@ body {
 .detail li[data-n]::before {
   content: attr(data-n);
   left: -2px; top: 6px; width: auto; height: auto; border: none; border-radius: 0;
-  display: block; font-size: 16px; line-height: 26px;
+  display: block; font-size: 16px; line-height: 22px;
 }
 /* 丸数字どうしをつなぐ縦の線は引かない（以前は .detail li::after で引いていた） */
 .detail .none { color: var(--sub); font-size: 13px; }
