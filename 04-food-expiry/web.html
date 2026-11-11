@@ -640,7 +640,15 @@ body {
    （下にグレーで添えると小さくて読みにくいため） */
 .card .line { display: flex; align-items: baseline; gap: 10px; }
 .card .name { min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card .amt { flex: 0 0 auto; margin-left: auto; font-weight: 700; color: var(--text); }
+/* 入りきらないときは品名を優先し、分量のほうを先に縮めて「…」にする（縮める重みを大きく）。
+   それでも足りないときだけ品名も縮む。分量は最低でも「…」が見える幅は残す */
+.card .amt {
+  flex: 0 1000 auto; min-width: 2.2em; margin-left: auto; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right;
+}
+/* 切れているカードを押したら、品名も分量も折り返して全部見せる（もう一度押すと戻る） */
+.card.full .line { flex-wrap: wrap; }
+.card.full .name, .card.full .amt { white-space: normal; overflow-wrap: anywhere; overflow: visible; }
 .card.done .amt { color: var(--sub); }
 .card .meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
 /* 出どころのレシピ。品名の下に置くと行の高さが変わってしまうので、
@@ -1315,12 +1323,7 @@ function groupHeader(g) {
 
   el.appendChild(t);
 
-  var n = document.createElement('span');
-  n.className = 'cnt';
-  n.textContent = g.items.length;
-  el.appendChild(n);
-
-  // 料理名（と件数）の右に、個別表示のカードの右と同じ作りのリンクを置く
+  // 料理名の右に、個別表示のカードの右と同じ作りのリンクを置く
   if (g.url) {
     var mark = document.createElement('a');
     mark.className = 'src';
@@ -1442,6 +1445,8 @@ function renderList(box, items, build, emptyText) {
  *   open / detail … 開いているか、開いたときに品名の下に出す要素
  *   pin   … ピン留めの印を品名の前に出すか
  */
+var wideCards = {};   // 押して全部見せているカード（opt.key → true）
+
 function card(opt) {
   var wrap = document.createElement('div');
   wrap.className = 'swipe' + (opt.done ? ' undo' : '');
@@ -1494,6 +1499,20 @@ function card(opt) {
     amt.className = 'amt';
     amt.textContent = opt.amount;
     line.appendChild(amt);
+  }
+
+  // 押して開くカード（レシピ）以外は、品名や分量が「…」で切れているときだけ、
+  // 押すと折り返して全部見せる。開いた状態は描き直しても残す（opt.key ごと）
+  if (!opt.tap && opt.key) {
+    if (wideCards[opt.key]) el.className += ' full';
+    el.addEventListener('click', function (e) {
+      if (el.dataset.swiped) return;
+      if (e.target.closest && e.target.closest('a')) return;
+      var cut = [name, amt].some(function (x) { return x && x.scrollWidth > x.clientWidth + 1; });
+      if (!cut && !el.classList.contains('full')) return;
+      wideCards[opt.key] = el.classList.toggle('full');
+      if (!wideCards[opt.key]) delete wideCards[opt.key];
+    });
   }
 
   if (opt.tap) {
@@ -1895,6 +1914,7 @@ function shopCard(it) {
   return card({
     // 分量は品名の右。下に小さく添えると読みにくいという声があったため
     amount: it.amount || '',
+    key: 'shop-' + it.id,
     // 同じ写真から入った品目は同じ色の帯にして、まとまりが見えるようにする
     level: recipeLevel(it),
     name: it.name,
