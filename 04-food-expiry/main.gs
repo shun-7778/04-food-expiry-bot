@@ -206,11 +206,12 @@ var RECIPE_COL = {
   GROUP: 10,       // 料理の分類（RECIPE_GROUPS のどれか）。「レシピ」タブの切り替えに使う
   SERVINGS: 11,    // 写真に書かれた何人分か（「2人前」など書かれたまま）。無ければ空
   RATING: 12,      // 評価（星の数 1〜3）。まだ評価していなければ空
-  MEMO: 13         // 料理についてのメモ。画面の「レシピ」タブで書く
+  MEMO: 13,        // 料理についてのメモ。画面の「レシピ」タブで書く
+  ORDER_AT: 14     // ピン留めを外した日時（ミリ秒）。「レシピ」タブは、これと登録日時の新しいほうで並べる
 };
-var RECIPE_COL_COUNT = 13;
+var RECIPE_COL_COUNT = 14;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数', '評価', 'メモ'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数', '評価', 'メモ', '並び替え日時'];
 var RECIPE_RATING_MAX = 3;
 var RECIPE_MEMO_MAX = 1000;   // メモの長さの上限（文字）
 
@@ -3305,7 +3306,7 @@ function recipeAdd_(title, url, detail) {
     id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', '',
     detail.ingredients || '', detail.steps || '', carry.pinned,
     normalizeRecipeGroup_(detail.group), detail.servings || '',
-    carry.rating, recipeSafeText_(carry.memo)
+    carry.rating, recipeSafeText_(carry.memo), ''
   ]]);
   return id;
 }
@@ -3545,6 +3546,8 @@ function recipeSetHidden_(id, hidden) {
 /** レシピ行のピン留めを付け外しする。画面の「レシピ」タブで左にスワイプしたときに使う */
 function recipeSetPinned_(id, pinned) {
   recipeSetCell_(id, RECIPE_COL.PINNED, pinned ? RECIPE_PIN_MARK : '');
+  // 外したときは、その時刻を残して一覧のいちばん上（ピン留めの下）に来るようにする
+  if (!pinned) recipeSetCell_(id, RECIPE_COL.ORDER_AT, Date.now());
 }
 
 /** 料理名を変える。画面の「レシピ」タブで長押ししたときに使う */

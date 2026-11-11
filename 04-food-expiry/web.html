@@ -1061,7 +1061,8 @@ function renderRecipes() {
     .sort(function (a, b) {
       // 消した行は消したその場に残すので、ピン留めの並びにも元のまま入れておく
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-      return Number(b.id) - Number(a.id);
+      // 追加した時刻とピン留めを外した時刻の新しいほうが上。同じなら ID の新しい順
+      return (b.sortAt || 0) - (a.sortAt || 0) || Number(b.id) - Number(a.id);
     });
 
   if (!items.length) {
@@ -2361,6 +2362,8 @@ function editMemo(it) {
 /** ピン留めの付け外し。先に画面で上へ動かしてから書き込む */
 function pinRecipe(it, pinned) {
   it.pinned = pinned;
+  // 外したものは、ピン留めのすぐ下（外していない中でいちばん上）に来る
+  if (!pinned) it.sortAt = Date.now();
   waiting[it.id] = true;
   render();
   send('webSetRecipePinned', [it.id, pinned]);

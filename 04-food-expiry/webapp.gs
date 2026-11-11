@@ -740,6 +740,8 @@ function webRecipeRead_(pre) {
       rating: normalizeRecipeRating_(cell(r, RECIPE_COL.RATING)),
       memo: String(cell(r, RECIPE_COL.MEMO) || ''),
       pinned: !!cell(r, RECIPE_COL.PINNED),
+      // 並び順。登録した時刻とピン留めを外した時刻の、新しいほう
+      sortAt: Math.max(at || 0, Number(cell(r, RECIPE_COL.ORDER_AT)) || 0),
       group: normalizeRecipeGroup_(cell(r, RECIPE_COL.GROUP))
     });
   }
