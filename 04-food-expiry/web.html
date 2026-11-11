@@ -422,8 +422,9 @@ body {
   display: flex; align-items: center; justify-content: center;
   /* 丸数字は黒い数字にオレンジの縁取り。地は作り方の箱と同じ色 */
   /* 地はレシピカードの地と同じ色（カテゴリの色＝--tint を 7% 混ぜたもの）。枠はその色を少し薄めて合わせる */
-  background: color-mix(in srgb, var(--tint, var(--step-mark)) 7%, var(--card)); color: var(--text);
-  border: 1px solid color-mix(in srgb, var(--tint, var(--step-mark)) 60%, var(--card));
+  /* 地は塗らず、数字と丸の線を文字と同じ黒にする */
+  background: none; color: var(--text);
+  border: 1px solid var(--text);
   font-size: 12px; font-weight: 400; line-height: 1;   /* 丸（16px）に対して読める大きさ */
 }
 /* 丸数字どうしをつなぐ縦の線は引かない（以前は .detail li::after で引いていた） */
