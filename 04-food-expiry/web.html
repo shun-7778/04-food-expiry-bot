@@ -424,7 +424,7 @@ body {
   /* 地はレシピカードの地と同じ色（カテゴリの色＝--tint を 7% 混ぜたもの）。枠はその色を少し薄めて合わせる */
   background: color-mix(in srgb, var(--tint, var(--step-mark)) 7%, var(--card)); color: var(--text);
   border: 1px solid color-mix(in srgb, var(--tint, var(--step-mark)) 60%, var(--card));
-  font-size: 10px; font-weight: 400; line-height: 1;
+  font-size: 12px; font-weight: 400; line-height: 1;   /* 丸（16px）に対して読める大きさ */
 }
 /* 丸数字どうしをつなぐ縦の線は引かない（以前は .detail li::after で引いていた） */
 .detail .none { color: var(--sub); font-size: 13px; }
