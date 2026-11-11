@@ -329,7 +329,7 @@ body {
 /* 開いた中の「メモ」。青い箱の中身で、表示だけ（書き換えは見出しの「編集」から） */
 .detail .memo {
   /* 多く書けるよう、上下は詰め、左右は箱の余白（12px）に少しはみ出させて 8px にする */
-  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 22px;   /* 作り方と同じ行の高さ */
   margin: 0 -4px; padding: 6px 0 4px; color: var(--text);
 }
 /* メモが無いときは見出しの帯だけ。帯の下の線と箱の下の余白を消す */
@@ -405,7 +405,7 @@ body {
 .detail h4 + * { margin-top: 0; }
 .detail .blk + .blk { margin-top: 12px; }
 /* 材料は1行ずつ詰めて並べる。行の高さは「＋」（24px）で決まる */
-.detail .ing { display: flex; gap: 8px; padding: 4px 0; line-height: 1.35; font-size: 16px; border-bottom: 1px dashed var(--ing-dash); }
+.detail .ing { display: flex; gap: 8px; padding: 4px 0; line-height: 22px; font-size: 16px; border-bottom: 1px dashed var(--ing-dash); }
 .detail .ing:last-child { border-bottom: none; }
 /* 材料名は長いと折り返す（開いた中身は1行に収めなくてよい） */
 .detail .ing .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
