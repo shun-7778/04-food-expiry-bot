@@ -228,20 +228,15 @@ body {
 .sec { font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 2px 4px; }
 /* 料理ごとの見出し。料理名は、その料理の品目の帯と同じ色にして対応を見せる */
 .gsec {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 700; margin: 14px 2px 4px;
-}
-.gsec .cnt {
-  flex: 0 0 auto; font-size: 11px; font-weight: 800;
-  background: var(--pill); color: var(--sub); border-radius: 999px; padding: 1px 7px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 16px; font-weight: 700; margin: 16px 2px 6px;
 }
 .gsec .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gsec a.t { text-decoration: none; }
-/* 料理名の右のリンク。個別表示のカードの右の錠剤と同じ作りで、その料理の色（淡い地・その色の文字・その色の線） */
+/* 料理名の右のリンク。レシピのカードの「SNS」と同じ大きさ・作りで、その料理の色（淡い地・その色の文字・その色の線） */
 .gsec .src {
-  flex: 0 0 auto; margin: -4px 0;
-  padding: 3px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 700; text-decoration: none;
+  flex: 0 0 auto;
+  padding: 5px 11px; border-radius: 999px; box-shadow: var(--shadow);
+  font-size: 13px; font-weight: 700; text-decoration: none;
   background: color-mix(in srgb, var(--tint) 12%, var(--card));
   color: color-mix(in srgb, var(--tint) 85%, var(--text));
   border: 1px solid color-mix(in srgb, var(--tint) 50%, var(--card));
@@ -560,7 +555,7 @@ body {
 /* あり＝グレー（その行の「＋」と同じ。買わなくてよいので目立たせない）、なし＝カテゴリの色（買うもの） */
 .detail .st.have { background: var(--line); color: var(--sub); border-color: var(--line); }
 .detail .st.none { background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg); }
-.detail .st.listed { background: var(--src-bg); color: var(--blue); }
+.detail .st.listed { background: var(--line); color: var(--sub); border-color: var(--line); }
 .detail .plus {
   flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
   background: var(--btn-bg); color: var(--btn-fg); box-shadow: inset 0 0 0 1px var(--btn-line);
@@ -640,15 +635,18 @@ body {
    （下にグレーで添えると小さくて読みにくいため） */
 .card .line { display: flex; align-items: baseline; gap: 10px; }
 .card .name { min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 入りきらないときは品名を優先し、分量のほうを先に縮めて「…」にする（縮める重みを大きく）。
-   それでも足りないときだけ品名も縮む。分量は最低でも「…」が見える幅は残す */
+/* 入りきらないときは品名を優先する。品名は縮めず（スマホのブラウザでも確実に効くよう flex-shrink 0）、
+   分量が残りの幅に収まらなければ「…」にする。品名がとても長いときだけ、分量の「…」の幅を残して品名も切る */
+.card .name.has-amt { flex-shrink: 0; max-width: calc(100% - 2.2em - 10px); }
 .card .amt {
-  flex: 0 1000 auto; min-width: 2.2em; margin-left: auto; font-weight: 700; color: var(--text);
+  flex: 1 1 0; min-width: 2.2em; margin-left: auto; font-weight: 700; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right;
 }
 /* 切れているカードを押したら、品名も分量も折り返して全部見せる（もう一度押すと戻る） */
 .card.full .line { flex-wrap: wrap; }
 .card.full .name, .card.full .amt { white-space: normal; overflow-wrap: anywhere; overflow: visible; }
+.card.full .name.has-amt { flex-shrink: 1; max-width: 100%; }
+.card.full .amt { flex: 0 1 auto; }
 .card.done .amt { color: var(--sub); }
 .card .meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
 /* 出どころのレシピ。品名の下に置くと行の高さが変わってしまうので、
@@ -1311,16 +1309,10 @@ function groupHeader(g) {
   var el = document.createElement('div');
   el.className = 'gsec ' + g.level;
 
-  // リンクがあれば料理名ごと押せるようにする。行を足さないので縦幅は変わらない
-  var t = document.createElement(g.url ? 'a' : 'span');
+  // 料理名は文字だけ（押してもリンクは開かない）。開くのは右の「SNS」から
+  var t = document.createElement('span');
   t.className = 't';
   t.textContent = g.title;
-  if (g.url) {
-    t.href = g.url;
-    t.target = '_blank';
-    t.rel = 'noopener noreferrer';
-  }
-
   el.appendChild(t);
 
   // 料理名の右に、個別表示のカードの右と同じ作りのリンクを置く
@@ -1499,6 +1491,7 @@ function card(opt) {
     amt.className = 'amt';
     amt.textContent = opt.amount;
     line.appendChild(amt);
+    name.className += ' has-amt';
   }
 
   // 押して開くカード（レシピ）以外は、品名や分量が「…」で切れているときだけ、
@@ -2116,7 +2109,7 @@ function ingredientRow(it, g, st, isHit) {
 
   var listed = shopItemFor(it, g.name);
   var chip = document.createElement('span');
-  if (listed) { chip.className = 'st listed'; chip.textContent = '追加済み'; }
+  if (listed) { chip.className = 'st listed'; chip.textContent = '追加済'; }
   else if (!st || st.loading) { chip.className = 'st'; chip.textContent = '…'; }
   else if (st.error) { chip.className = 'st'; chip.textContent = '？'; }
   else if (st.have[g.name]) { chip.className = 'st have'; chip.textContent = 'あり'; }
