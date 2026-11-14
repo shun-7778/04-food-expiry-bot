@@ -410,11 +410,23 @@ function webRecipeAiSearch(token, query) {
   var recipes = webRecipeRead_().items;
   if (!recipes.length) return { query: query, results: [] };
 
+  // 在庫の品名に、期限までの残り日数を添える（「期限が近い食材を使う」に答えるため）。
+  // 期限が近い順に並べ、同じ品名は近いほうだけを残す。常備品・期限なしは品名だけ
   var stockNames = [];
-  currentStockRows_().forEach(function (s) {
-    var n = String(s.name || '').trim();
-    if (n && stockNames.indexOf(n) < 0) stockNames.push(n);
-  });
+  var seenStock = {};
+  currentStockRows_()
+    .sort(function (a, b) {
+      if (!a.date) return b.date ? 1 : 0;
+      if (!b.date) return -1;
+      return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+    })
+    .forEach(function (s) {
+      var n = String(s.name || '').trim();
+      if (!n || seenStock[n]) return;
+      seenStock[n] = true;
+      var d = s.date && s.precision !== PRECISION_ALWAYS ? daysLeft_(s.date) : null;
+      stockNames.push(d === null ? n : n + '（' + (d < 0 ? '期限切れ' : d === 0 ? '今日まで' : 'あと' + d + '日') + '）');
+    });
 
   var lines = [
     'あなたは家庭のレシピ帳の検索係です。ユーザーの質問に合うレシピを、下の一覧から選んでください。',
@@ -426,11 +438,13 @@ function webRecipeAiSearch(token, query) {
     '- 質問が材料を指定しているときは、その材料が材料欄にあるものだけを選んでください（表記ゆれは同じとみなす。例: 醤油/しょうゆ）。',
     '- 「在庫で」「家にあるもので」などと言われたら、下の在庫の品名で材料をなるべく多くまかなえるものを優先してください。',
     '  在庫は商品名で書かれていることがあります（例:「ダノンビオ」はヨーグルト）。調味料など常にありそうなものは気にしなくてよいです。',
+    '- 「期限が近い」「早く使いたい」などと言われたら、在庫の残り日数が少ない食材（期限切れ・あと数日）を材料に使うものを優先してください。',
+    '- 「15分で」「時短」「火を使わない」などの手間の条件は、料理名と材料から調理の手間を推し量ってください。',
     '- 評価（★の数）やメモは、「評価の高い」「おいしかった」などと言われたときの手がかりにしてください。',
     '- 合うものだけを、合う順に最大' + RECIPE_AI_MAX + '件。無理に件数を埋めないでください。',
     '- reason は、なぜ合うのかを15文字程度で。',
     '',
-    'いまの在庫の品名:',
+    'いまの在庫の品名（期限が近い順。括弧内は期限までの残り）:',
     stockNames.length ? stockNames.join('、') : '（なし）',
     '',
     'レシピ一覧（ID | 料理名 | 分類 | 評価 | 材料 | メモ）:'

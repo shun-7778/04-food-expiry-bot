@@ -252,6 +252,20 @@ body {
   -webkit-mask: var(--ai-mask) no-repeat center / contain;
           mask: var(--ai-mask) no-repeat center / contain;
 }
+/* 質問の例のチップ。1行に並べて横にスクロールさせる（縦に増えるのはこの1行だけ） */
+.ai-chips {
+  display: flex; gap: 8px; margin-top: 8px;
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  margin-left: -12px; margin-right: -12px; padding: 0 12px;   /* 画面の端までスクロールさせる */
+}
+.ai-chips::-webkit-scrollbar { display: none; }
+.ai-chips[hidden] { display: none; }
+.ai-chip {
+  flex: 0 0 auto; white-space: nowrap;
+  padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--ai-line); background: var(--card); color: var(--ai-fg);
+  font-family: inherit; font-size: 14px; line-height: 1.2; cursor: pointer;
+}
 /* 問い合わせ中。文字をゆっくり明滅させる */
 .empty.ai-wait { color: var(--ai-fg); animation: ai-pulse 1.4s ease-in-out infinite; }
 @keyframes ai-pulse { 50% { opacity: .45; } }
@@ -772,6 +786,8 @@ body {
       <!-- AI モードの切り替え。オンのときは Enter で AI に問い合わせる（webRecipeAiSearch） -->
       <button class="ai-btn" id="recipe-ai" type="button" aria-pressed="false">AI</button>
     </div>
+    <!-- AI モードで何も入力していないときだけ出す質問の例。横にスクロールする1行（renderAiChips） -->
+    <div class="ai-chips" id="ai-chips" hidden></div>
     <!-- 「カテゴリ」と「評価」の絞り込み。押すとチェックボックスの一覧が開く（renderRecipeFilters） -->
     <div class="filters" id="recipe-filters"></div>
   </div>
@@ -2588,8 +2604,37 @@ function setAiMode(on) {
   aiState = { query: '', loading: false, error: '', results: [] };
   $('recipe-search').classList.toggle('ai', on);
   $('recipe-ai').setAttribute('aria-pressed', on ? 'true' : 'false');
-  $('recipe-q').placeholder = on ? 'AIに質問' : '料理名・材料で検索';
+  $('recipe-q').placeholder = on ? 'AIで検索' : '料理名・材料で検索';
+  renderAiChips();
   render();
+}
+
+// 質問の例。在庫と組み合わせないと答えられないもの（このアプリならではの聞き方）を先に置く
+var AI_EXAMPLES = ['在庫だけで作れる', '期限が近い食材を使う', '15分で作れる', '火を使わない', 'さっぱりした副菜', '評価の高いおかず'];
+
+/** 例のチップの行。AI モードで、何も入力しておらず、まだ問い合わせていないときだけ出す */
+function renderAiChips() {
+  var box = $('ai-chips');
+  if (!box.firstChild) {
+    AI_EXAMPLES.forEach(function (text) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ai-chip';
+      b.textContent = text;
+      // 押したら、その文を入れてそのまま問い合わせる（キーボードは出さない）
+      b.addEventListener('click', function () {
+        $('recipe-q').value = text;
+        $('recipe-clear').hidden = false;
+        $('recipe-q').blur();
+        runAiSearch();
+      });
+      box.appendChild(b);
+    });
+  }
+  var show = aiMode && !$('recipe-q').value && !aiState.query;
+  if (box.hidden === !show) return;
+  box.hidden = !show;
+  if (show) box.scrollLeft = 0;
 }
 
 function runAiSearch() {
@@ -2598,6 +2643,7 @@ function runAiSearch() {
   var seq = ++aiSeq;
   aiState = { query: q, loading: true, error: '', results: [] };
   window.scrollTo(0, 0);
+  renderAiChips();
   render();
   google.script.run
     .withSuccessHandler(function (res) {
@@ -2616,6 +2662,7 @@ function runAiSearch() {
 
 $('recipe-q').addEventListener('input', function () {
   $('recipe-clear').hidden = !$('recipe-q').value;
+  renderAiChips();
   updateTabbar();
   if (!aiMode) render();
 });
@@ -2632,6 +2679,7 @@ $('recipe-clear').addEventListener('click', function () {
   $('recipe-clear').hidden = true;
   $('recipe-q').blur();
   if (aiMode) { aiSeq++; aiState = { query: '', loading: false, error: '', results: [] }; }
+  renderAiChips();
   updateTabbar();
   render();
 });
