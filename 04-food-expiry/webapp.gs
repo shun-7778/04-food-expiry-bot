@@ -722,8 +722,12 @@ function webRecipeRead_(pre) {
   for (var i = rows.length - 1; i >= 0; i--) {
     var r = rows[i];
     var url = String(cell(r, RECIPE_COL.URL) || '');
-    if (!url || seen[url]) continue;
-    seen[url] = true;
+    // どちらを残すか聞いている途中の行は、無いものとして飛ばす（古い同じリンクの行が出る）
+    if (String(cell(r, RECIPE_COL.HIDDEN) || '') === RECIPE_PENDING_MARK) continue;
+    // ?igsh= の違いなどで同じリールが2つ並ばないよう、そろえた鍵で比べる
+    var key = recipeUrlKey_(url);
+    if (!key || seen[key]) continue;
+    seen[key] = true;
 
     if (cell(r, RECIPE_COL.HIDDEN)) continue;
     var at = recipeTime_(cell(r, RECIPE_COL.ADDED));

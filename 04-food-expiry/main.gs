@@ -993,7 +993,7 @@ function detachRecipeLink_(token) {
   var cleared = shopSetRecipe_(set.shopIds || [], '');
   // 取り違えたリンクなので、画面の「レシピ」タブにも残さない
   if (set.recipeId) recipeSetHidden_(set.recipeId, true);
-  updateAddSet_(token, { url: '', recipeId: '' });
+  updateAddSet_(token, { url: '', recipeId: '', dupOf: '' });
 
   return 'リンクの紐づけを外しました。'
     + (cleared ? '\n買い物リストの' + cleared + '件からも外しました。' : '')
@@ -2663,16 +2663,22 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
 
   // リンクを写真より先に送っていた場合は、ここで結びつける
   var waiting = takeWaitingLink_();
+  // 同じリンクで登録済みのレシピ。あれば、新しい行は「確認中」にしておき、どちらを残すか聞く
+  var dup = waiting ? findRecipeByUrl_(waiting) : null;
   // リンク付きの照合は、材料を1品も足さなくてもレシピ行を作る。
   // 画面の「レシピ」タブは、家にあるものだけで作れた料理も出すため。
   // 材料と作り方もここで書く（写真は残さないので、あとからは読み直せない）
   if (waiting) {
-    ensureRecipeId_(updateAddSet_(token, { url: waiting }), {
+    var newId = ensureRecipeId_(updateAddSet_(token, { url: waiting }), {
       ingredients: recipeIngredientsText_(items),
       steps: (steps || []).join('\n'),
       group: group || '',
       servings: servings || ''
     });
+    if (dup && newId) {
+      recipeSetCell_(newId, RECIPE_COL.HIDDEN, RECIPE_PENDING_MARK);
+      updateAddSet_(token, { dupOf: dup.id });
+    }
   }
 
   // 紐づけ中の表示。料理名が読めていればそれを、読めていなければ帯だけ出す
@@ -2685,7 +2691,80 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
   }];
   // リンクが無いと「レシピ」タブには残らない。照合だけは済ませたうえで、残し方を伝える
   if (!waiting) messages.push({ type: 'text', text: RECIPE_NO_LINK_MESSAGE });
+  if (dup) {
+    messages.push({
+      type: 'flex',
+      altText: 'このリンクは登録済みです',
+      contents: buildRecipeDupBubble_(dup, dish, token)
+    });
+  }
   replyMessages_(replyToken, messages);
+}
+
+// data の文字列は変えないこと。トークに残っている古いバブルが押せなくなる
+var DUP_KEEP_PREFIX = 'recipe_dup_keep:';   // 登録済みのほうを使う（今回の分は追加しない）
+var DUP_NEW_PREFIX = 'recipe_dup_new:';     // 今回の分で登録し直す
+
+/**
+ * 同じリンクが登録済みのときの確認バブル。登録済みの1件と今回読んだ分を並べ、
+ * どちらを「レシピ」タブに残すかを選んでもらう。答えなければ今回の分は追加しない
+ */
+function buildRecipeDupBubble_(dup, dish, token) {
+  var stars = '';
+  for (var i = 1; i <= RECIPE_RATING_MAX; i++) stars += i <= dup.rating ? '★' : '☆';
+  var oldSub = [dup.rating ? stars : '', dup.added ? dup.added + ' 登録' : '', dup.hidden ? '削除済み' : '']
+    .filter(function (s) { return s; }).join('　');
+
+  var rows = [
+    {
+      type: 'box', layout: 'vertical', backgroundColor: pal_().headerBg,
+      paddingAll: '10px', paddingStart: '14px', paddingEnd: '14px',
+      contents: [{
+        type: 'text', size: 'md', wrap: true, color: pal_().text, weight: 'bold',
+        text: '⚠ このリンクは登録済みです'
+      }, {
+        type: 'text', size: 'xs', wrap: true, color: pal_().gray, margin: 'xs',
+        text: '選ぶまで、今回の分はレシピに追加しません'
+      }]
+    },
+    bubbleActionRow_(dup.title || '（料理名なし）', 'これを使う',
+      { type: 'postback', label: 'これを使う', data: DUP_KEEP_PREFIX + token },
+      oldSub ? { text: oldSub, color: pal_().gray } : null),
+    { type: 'separator', color: pal_().line },
+    bubbleActionRow_(dish || '今回の写真', '登録し直す',
+      { type: 'postback', label: '登録し直す', data: DUP_NEW_PREFIX + token },
+      { text: '評価・メモ・ピン留めは引き継ぎます', color: pal_().gray }, pal_().gray)
+  ];
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
+  };
+}
+
+/**
+ * 確認バブルの答え。keep なら登録済みのほうを使い、今回の行は確認中のまま残す
+ * （行は消さない。ID が行番号で決まるため）。返り値は本人に返す文面
+ */
+function resolveRecipeDup_(token, keep) {
+  var set = findAddSet_(token);
+  if (!set) return ADD_SET_STALE_MESSAGE;
+  if (!set.dupOf) return 'この確認はもう済んでいます。';
+
+  if (keep) {
+    // この照合から買い物リストに入れた品目も、登録済みのレシピに付け替える
+    if ((set.shopIds || []).length) shopSetRecipe_(set.shopIds, set.dupOf);
+    recipeSetHidden_(set.dupOf, false);
+    // 一覧のいちばん上（ピン留めの下）に出す
+    recipeSetCell_(set.dupOf, RECIPE_COL.ORDER_AT, Date.now());
+    updateAddSet_(token, { recipeId: set.dupOf, dupOf: '' });
+    return '登録済みのレシピを使います。今回の分は追加しませんでした。';
+  }
+
+  if (set.recipeId) recipeSetHidden_(set.recipeId, false);
+  updateAddSet_(token, { dupOf: '' });
+  return '今回の内容で登録し直しました。';
 }
 
 var RECIPE_NO_LINK_MESSAGE = [
@@ -3496,15 +3575,67 @@ function buildRecipeGroupPrompt_(todo) {
 
 var RECIPE_PIN_MARK = '📌';
 
-/** そのリンクの最新の行の、引き継ぐ値 { pinned, rating, memo }。無ければ null */
-function recipeLinkCarry_(sh, url) {
+// 「非表示」列に入れる印。同じリンクが登録済みで、どちらを残すか本人に聞いている間の行。
+// 画面にも出さず、同じリンクの「最新の行」としても数えない（答えが無ければ追加しなかったことになる）
+var RECIPE_PENDING_MARK = '確認中';
+
+/**
+ * リンクを比べるための鍵。共有のたびに付く ?igsh= などや末尾の / で別物にならないようにする。
+ * Instagram は投稿の短いコードが同じなら同じ投稿なので、/reel/ /reels/ /p/ /tv/ の違いもそろえる。
+ * それ以外（/share/ など中身の分からないもの）は、? と # 以降と末尾の / を落として比べる
+ */
+function recipeUrlKey_(url) {
+  var u = String(url || '').trim();
+  if (!u) return '';
+  var m = /instagram\.com\/(?:reel|reels|p|tv)\/([\w\-]+)/i.exec(u);
+  if (m) return 'ig:' + m[1];
+  // 大文字・小文字をそろえるのはドメインだけ（リンクのコードは大文字小文字で別物）
+  return u.replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/^https?:\/\/(www\.)?/i, '')
+    .replace(/^[^\/]+/, function (host) { return host.toLowerCase(); });
+}
+
+function isRecipePending_(r) {
+  return String(r[RECIPE_COL.HIDDEN - 1] || '') === RECIPE_PENDING_MARK;
+}
+
+/**
+ * 同じリンクで登録済みのレシピ。画面に出る（または消して非表示にした）最新の1行を
+ * { id, title, rating, added, hidden } で返す。無ければ null。
+ * 画面は同じリンクの最新の1行しか出さないので、比べる相手もその1行だけでよい
+ */
+function findRecipeByUrl_(url) {
+  var key = recipeUrlKey_(url);
+  if (!key) return null;
+  var sh = recipeSheet_();
   var last = sh.getLastRow();
   if (last < 2) return null;
 
   var rows = sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues();
   for (var i = rows.length - 1; i >= 0; i--) {
     var r = rows[i];
-    if (String(r[RECIPE_COL.URL - 1] || '') !== url) continue;
+    if (isRecipePending_(r) || recipeUrlKey_(r[RECIPE_COL.URL - 1]) !== key) continue;
+    var at = recipeTime_(r[RECIPE_COL.ADDED - 1]);
+    return {
+      id: String(r[RECIPE_COL.ID - 1]),
+      title: String(r[RECIPE_COL.TITLE - 1] || ''),
+      rating: normalizeRecipeRating_(r[RECIPE_COL.RATING - 1]),
+      added: at ? Utilities.formatDate(new Date(at), 'Asia/Tokyo', 'M/d') : '',
+      hidden: !!r[RECIPE_COL.HIDDEN - 1]
+    };
+  }
+  return null;
+}
+
+/** そのリンクの最新の行の、引き継ぐ値 { pinned, rating, memo }。無ければ null */
+function recipeLinkCarry_(sh, url) {
+  var last = sh.getLastRow();
+  if (last < 2) return null;
+
+  var key = recipeUrlKey_(url);
+  var rows = sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    var r = rows[i];
+    if (isRecipePending_(r) || recipeUrlKey_(r[RECIPE_COL.URL - 1]) !== key) continue;
     var rating = normalizeRecipeRating_(r[RECIPE_COL.RATING - 1]);
     return {
       pinned: r[RECIPE_COL.PINNED - 1] ? RECIPE_PIN_MARK : '',
@@ -5001,6 +5132,16 @@ function handlePostback_(event) {
   // 材料バブルの「外す」。その照合に付いたリンクを、追加済みの品目ごと外す
   if (data.indexOf(LINK_OFF_PREFIX) === 0) {
     replyText_(event.replyToken, detachRecipeLink_(data.substring(LINK_OFF_PREFIX.length)));
+    return;
+  }
+
+  // 同じリンクが登録済みのときの確認。登録済みを使うか、今回の分で登録し直すか
+  if (data.indexOf(DUP_KEEP_PREFIX) === 0) {
+    replyText_(event.replyToken, resolveRecipeDup_(data.substring(DUP_KEEP_PREFIX.length), true));
+    return;
+  }
+  if (data.indexOf(DUP_NEW_PREFIX) === 0) {
+    replyText_(event.replyToken, resolveRecipeDup_(data.substring(DUP_NEW_PREFIX.length), false));
     return;
   }
 
