@@ -118,7 +118,7 @@ body {
 /* ---- 上のひとかたまり（入力欄）は、スクロールしても残す ---- */
 .sticky {
   z-index: 5;
-  background: var(--bg); padding: 12px 12px 10px;
+  background: var(--bg); padding: 8px 12px 8px;
   /* 下の品目が透けて重なって見えないよう、地の色で覆っておく */
 }
 /* 固定部分の下端に地の色をぼかして流し、切れ目が線に見えないようにする */
@@ -126,7 +126,10 @@ body {
   content: ''; position: absolute; left: 0; right: 0; bottom: -14px; height: 14px;
   background: linear-gradient(var(--bg), var(--bg-fade));
   pointer-events: none;
+  /* 先頭（スクロールしていない）ときは出さない。1件目のカードの上の線にかかって薄く見えるため */
+  opacity: 0;
 }
+.sticky.scrolled::after { opacity: 1; }
 .sticky > * { max-width: 640px; margin: 0 auto; }
 /* 下へスクロールした分だけ上のかたまりが隠れ、上へ戻した分だけ出てくる（updateSticky）。
    以前は JS で1コマずつ transform を書き換えていたが、一覧のスクロール（ブラウザが別の流れで描く）より
@@ -208,14 +211,14 @@ body {
   font-size: 15px; line-height: 1; font-family: inherit; cursor: pointer;
 }
 .addbox input, .search input {
-  flex: 1; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+  flex: 1; width: 100%; padding: 9px 14px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--card); color: var(--text); box-shadow: var(--shadow);
   /* 16px 未満だと iOS が入力時に拡大するので、ここは下げない */
   font-size: 16px;
 }
 .addbox input::placeholder, .search input::placeholder { color: var(--sub); }
 /* 左は虫眼鏡、右は ✕ のぶんを空ける（上の共通の padding より後に書くこと） */
-.search input { padding-left: 38px; padding-right: 42px; }
+.search input { padding-left: 38px; padding-right: 42px; text-overflow: ellipsis; }   /* 入りきらない文は「…」で途中だと分かるように */
 
 /* ---- レシピの AI 検索。右端に「✦AI」の切り替え、✕ はその左に寄せる ---- */
 :root {
@@ -300,6 +303,8 @@ body {
 .chip.ok.on { background: var(--ok-bg); border-color: var(--ok-fg); color: var(--ok-fg); }
 
 .sec { font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 2px 4px; }
+/* 上の切り替えボタンのすぐ下の見出し（未購入・期限が近い順）は、ボタンとの間を詰める */
+section > .sec:first-child { margin-top: 6px; }
 /* 料理ごとの見出し。料理名は、その料理の品目の帯と同じ色にして対応を見せる */
 .gsec {
   display: flex; align-items: center; gap: 8px;
@@ -2902,6 +2907,7 @@ function updateSticky() {
   var dy = y - lastScrollY;
   lastScrollY = y;
   if (dy) lastDir = dy > 0 ? 1 : -1;
+  stickyEl.classList.toggle('scrolled', y > 0);   // 下のぼかしはスクロールしたときだけ
 
   if (document.activeElement === activeInput()) {
     if (!stickyFixed) { var h0 = stickyHiddenAt(y); placeSticky(true, 0); slideSticky(-h0); }
@@ -2944,13 +2950,16 @@ function snapSticky(room) {
   // 下へ少しでも動かして止まった → 隠し切る。
   // 先頭付近（欄の高さより上）では、欄だけ消すと上に空きができるので、一覧ごと欄の高さまで送る。
   // 送る間も欄は一覧と一緒に上がっていき、着いたときに隠れ切る
-  if (y < stickyMax && room >= stickyMax) {
-    // ただし先頭のカードがまだ画面から欠けていなければ、そのまま止めておく。
-    // 少し下げただけで勝手に一覧が上へ送られると、見ていた位置がずれて落ち着かないため
+  if (y < stickyMax) {
+    // ただし先頭のカードがまだ画面から欠けていなければ、そのまま止めておく（欄も消さない）。
+    // 少し下げただけで勝手に一覧が上へ送られたり欄が消えたりすると、見ていた位置がずれて落ち着かないため。
+    // 検索で件数が少なく、一覧ごと送れるほどの長さが無いときも同じにする
     var first = firstVisibleCard();
     if (first && first.getBoundingClientRect().top >= 0) return;
-    window.scrollTo({ top: stickyMax, behavior: 'smooth' });
-    return;
+    if (room >= stickyMax) {
+      window.scrollTo({ top: stickyMax, behavior: 'smooth' });
+      return;
+    }
   }
   placeSticky(false, y - stickyMax);
   slideSticky(stickyMax - h);
