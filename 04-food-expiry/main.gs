@@ -5293,9 +5293,9 @@ var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * (RICHMENU_ROWS
  *   cameraRoll … 押すと写真選択画面が開く（レシピ写真を選んで送る用）
  *   webTab     … 押すとブラウザの画面が開く（'shop' = 買い物, 'stock' = 在庫, 'recipe' = レシピ）
  *
- * 最上段の2つはブラウザの画面へ飛ばす。一覧を見て消すだけならトーク内のバブルより
- * 画面のほうが速く、スワイプでの操作もできるため。
- * 材料確認（写真）は毎日は使わないので最下段に置いた。
+ * 右列（買い物リスト・在庫・レシピ）はブラウザの画面へ飛ばす。一覧を見て消すだけなら
+ * トーク内のバブルより画面のほうが速く、スワイプでの操作もできるため。
+ * 左列は登録する系（期限登録・材料登録）と取消。画像では登録する系を薄い青、取消をグレーにしてある。
  *
  * ⚠ webTab の URL には画面トークンが入る。リッチメニューは作った時点の URL を抱えるので、
  * rotateWebToken() でトークンを作り直したら setupRichMenu() も実行し直すこと。
@@ -5309,11 +5309,12 @@ var RICHMENU_LAST_ROW_H = RICHMENU_SIZE.height - RICHMENU_ROW_H * (RICHMENU_ROWS
  * （文字で「買い物リスト削除 牛乳」「使用済 牛乳」と送る経路は残してある）。
  */
 var RICHMENU_CELLS = [
-  { col: 0, row: 0, webTab: 'stock', label: '在庫' },
+  // 左列は登録する系（期限登録・材料登録）と取消。右列は見る系
+  { col: 0, row: 0, fill: '期限登録\n' },
   { col: 0, row: 1, cameraRoll: true, label: '材料登録' },   // 写真の選択画面が開く
   { col: 0, row: 2, send: '取消' },
   { col: 1, row: 0, webTab: 'shop', label: '買い物リスト' },
-  { col: 1, row: 1, fill: '期限登録\n' },
+  { col: 1, row: 1, webTab: 'stock', label: '在庫' },
   // 「買い物リスト追加」はメニューから外し、画面の「レシピ」タブを開くボタンにした。
   // 追加は画面の入力欄で済み、文字で「買い物リスト追加 牛乳」と送る経路も残してある
   { col: 1, row: 2, webTab: 'recipe', label: 'レシピ' }

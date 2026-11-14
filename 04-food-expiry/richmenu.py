@@ -2,7 +2,7 @@
 """リッチメニュー画像を生成する。
 
 2列×3行。1タイル＝角丸のカードで、左に線画アイコン、右に見出し。
-アイコンの色はすべて緑にそろえる（以前は左列が青、取消がグレーだった）。
+アイコンの色：登録する系（期限登録・材料登録）は薄めの青、取消はグレー、ほかは緑。
 
 配色は2通りある。使う人ごとにどちらを貼るかを選べるよう、2枚を別々に作る。
 
@@ -72,6 +72,9 @@ TEXT = pal['text']
 GREEN = pal['green']
 PALE_BLUE = pal['blue']      # 左列。買い物リストと材料確認をひとまとまりに見せる
 GRAY = pal['gray']
+# 登録する系（期限登録・材料登録）の薄めの青。黒地・白地のどちらでも同じ色を使う。
+# タイルとのコントラストは黒地 4.4:1、白地 3.0:1（線画の基準 3:1 を両方で満たす）
+REG_BLUE = (74, 143, 231)    # #4A8FE7
 
 MARGIN = 26                  # タイルどうしの隙間
 RADIUS = 34
@@ -194,11 +197,11 @@ def icon_undo(cx, cy, s, c, lw):
 # (col, row, 見出し, アイコン, 色, 文字色)
 
 CELLS = [
-    (0, 0, "在庫",         icon_box,           GREEN, TEXT),
-    (0, 1, "材料登録",     icon_camera,        GREEN, TEXT),
-    (0, 2, "取消",         icon_undo,          GREEN, TEXT),
+    (0, 0, "期限登録",     icon_calendar_plus, REG_BLUE, TEXT),
+    (0, 1, "材料登録",     icon_camera,        REG_BLUE, TEXT),
+    (0, 2, "取消",         icon_undo,          GRAY,  TEXT),
     (1, 0, "買い物リスト", icon_list,          GREEN, TEXT),
-    (1, 1, "期限登録",     icon_calendar_plus, GREEN, TEXT),
+    (1, 1, "在庫",         icon_box,           GREEN, TEXT),
     (1, 2, "レシピ",       icon_pot,           GREEN, TEXT),
 ]
 
