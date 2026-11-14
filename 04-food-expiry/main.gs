@@ -2708,22 +2708,34 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
 }
 
 // data の文字列は変えないこと。トークに残っている古いバブルが押せなくなる
-var DUP_KEEP_PREFIX = 'recipe_dup_keep:';   // 登録しない（登録済みのほうをピン留めする）
-var DUP_NEW_PREFIX = 'recipe_dup_new:';     // 別のレシピとして登録する
+var DUP_KEEP_PREFIX = 'recipe_dup_keep:';   // 登録済みのほうをピン留めする（今回の分は登録しない）。token:レシピID
+var DUP_NEW_PREFIX = 'recipe_dup_new:';     // 別のレシピとして新規登録する
 
 /**
- * 同じリンクが登録済みのときの確認バブル。登録済みのレシピと今回読んだ料理名を並べ、
- * 「レシピに登録しますか？」に 登録する／登録しない で答えてもらう。
- * 答えなければ今回の分は追加しない
+ * 同じリンクが登録済みのときの確認バブル。
+ * 登録済みのレシピには右に「ピン留め」（今回の分は追加せず、そのレシピをピン留めする）、
+ * 今回読んだ料理には右に「新規登録」を置く。どちらも押さなければ今回の分は追加しない
  */
 function buildRecipeDupBubble_(dups, dish, token) {
   function label(text) {
-    return { type: 'text', text: text, size: 'xs', color: pal_().gray, margin: 'md' };
+    // text には余白を付けられないので box で包む
+    return {
+      type: 'box', layout: 'vertical', paddingStart: '14px', paddingTop: '10px',
+      contents: [{ type: 'text', text: text, size: 'xs', color: pal_().gray }]
+    };
   }
-  function name(text, sub) {
+  // 名前（と下に小さく添え書き）を左、緑のボタンを右に置く1行
+  function row(text, sub, btnLabel, data) {
     var c = [{ type: 'text', text: text, size: 'md', wrap: true, color: pal_().text }];
     if (sub) c.push({ type: 'text', text: sub, size: 'xs', wrap: true, color: pal_().gray });
-    return { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'sm', contents: c };
+    return {
+      type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'md',
+      paddingStart: '14px', paddingEnd: '14px', paddingTop: '8px', paddingBottom: '8px',
+      contents: [
+        { type: 'box', layout: 'vertical', flex: 1, spacing: 'xs', contents: c },
+        bubblePillButton_(btnLabel, { type: 'postback', label: btnLabel, data: data })
+      ]
+    };
   }
 
   var body = [label('登録済み')];
@@ -2732,60 +2744,51 @@ function buildRecipeDupBubble_(dups, dish, token) {
     for (var i = 1; i <= RECIPE_RATING_MAX; i++) stars += i <= d.rating ? '★' : '☆';
     var sub = [d.rating ? stars : '', d.added ? d.added + ' 登録' : '', d.hidden ? '削除済み' : '']
       .filter(function (s) { return s; }).join('　');
-    body.push(name(d.title || '（料理名なし）', sub));
+    // どのレシピをピン留めするかは ID で渡す（同じリンクで複数あるとき用）
+    body.push(row(d.title || '（料理名なし）', sub, 'ピン留め', DUP_KEEP_PREFIX + token + ':' + d.id));
   });
   body.push({ type: 'separator', color: pal_().line, margin: 'md' });
   body.push(label('今回'));
-  body.push(name(dish || '（料理名なし）'));
+  body.push(row(dish || '（料理名なし）', '', '新規登録', DUP_NEW_PREFIX + token));
 
   return {
     type: 'bubble',
     size: 'mega',
     body: {
-      type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none',
+      type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px',
+      paddingBottom: '6px', spacing: 'none',
       contents: [
         {
           type: 'box', layout: 'vertical', backgroundColor: pal_().headerBg,
           paddingAll: '10px', paddingStart: '14px', paddingEnd: '14px',
           contents: [{ type: 'text', size: 'md', wrap: true, color: pal_().text, weight: 'bold', text: 'このリンクは登録済みです' }]
-        },
-        { type: 'box', layout: 'vertical', paddingStart: '14px', paddingEnd: '14px', paddingBottom: '4px', contents: body },
-        {
-          type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'md',
-          contents: [
-            { type: 'text', text: 'レシピに登録しますか？', size: 'md', weight: 'bold', color: pal_().text, align: 'center' },
-            {
-              type: 'box', layout: 'horizontal', spacing: 'md', justifyContent: 'center',
-              contents: [
-                bubblePillButton_('登録する', { type: 'postback', label: '登録する', data: DUP_NEW_PREFIX + token }),
-                bubblePillButton_('登録しない', { type: 'postback', label: '登録しない', data: DUP_KEEP_PREFIX + token }, pal_().gray)
-              ]
-            }
-          ]
         }
-      ]
+      ].concat(body)
     }
   };
 }
 
 /**
  * 確認バブルの答え。返り値は本人に返す文面。
- * 登録しない：今回の行は確認中のまま残し（行は消さない。ID が行番号で決まるため）、
- *   登録済みのいちばん新しいものをピン留めする。
- * 登録する：今回の行に「別レシピ」の印を付けて表に出す。登録済みのものと並んで出る
+ * ピン留め（keep）：今回の行は確認中のまま残し（行は消さない。ID が行番号で決まるため）、
+ *   押されたレシピ（arg の ID。古いバブルで無ければ、いちばん新しい登録済み）をピン留めする。
+ * 新規登録：今回の行に「別レシピ」の印を付けて表に出す。登録済みのものと並んで出る
  */
-function resolveRecipeDup_(token, keep) {
+function resolveRecipeDup_(arg, keep) {
+  var parts = String(arg).split(':');
+  var token = parts[0];
   var set = findAddSet_(token);
   if (!set) return ADD_SET_STALE_MESSAGE;
   if (!set.dupOf) return 'この確認はもう済んでいます。';
 
   if (keep) {
-    // この照合から買い物リストに入れた品目も、登録済みのレシピに付け替える
-    if ((set.shopIds || []).length) shopSetRecipe_(set.shopIds, set.dupOf);
-    recipeSetHidden_(set.dupOf, false);
-    recipeSetCell_(set.dupOf, RECIPE_COL.PINNED, RECIPE_PIN_MARK);
-    updateAddSet_(token, { recipeId: set.dupOf, dupOf: '' });
-    return '登録しませんでした。登録済みのレシピをピン留めしました。';
+    var target = parts[1] || set.dupOf;
+    // この照合から買い物リストに入れた品目も、ピン留めしたレシピに付け替える
+    if ((set.shopIds || []).length) shopSetRecipe_(set.shopIds, target);
+    recipeSetHidden_(target, false);
+    recipeSetCell_(target, RECIPE_COL.PINNED, RECIPE_PIN_MARK);
+    updateAddSet_(token, { recipeId: target, dupOf: '' });
+    return '登録済みのレシピをピン留めしました。今回の分は登録していません。';
   }
 
   if (set.recipeId) {
