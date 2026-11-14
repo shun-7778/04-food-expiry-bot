@@ -726,8 +726,12 @@ function webRecipeRead_(pre) {
     if (String(cell(r, RECIPE_COL.HIDDEN) || '') === RECIPE_PENDING_MARK) continue;
     // ?igsh= の違いなどで同じリールが2つ並ばないよう、そろえた鍵で比べる
     var key = recipeUrlKey_(url);
-    if (!key || seen[key]) continue;
-    seen[key] = true;
+    if (!key) continue;
+    // 「別レシピ」の印がある行は、同じリンクでも別の料理として並べる（1本のリールに複数の料理があるとき）
+    if (!cell(r, RECIPE_COL.SEPARATE)) {
+      if (seen[key]) continue;
+      seen[key] = true;
+    }
 
     if (cell(r, RECIPE_COL.HIDDEN)) continue;
     var at = recipeTime_(cell(r, RECIPE_COL.ADDED));

@@ -207,11 +207,15 @@ var RECIPE_COL = {
   SERVINGS: 11,    // 写真に書かれた何人分か（「2人前」など書かれたまま）。無ければ空
   RATING: 12,      // 評価（星の数 1〜3）。まだ評価していなければ空
   MEMO: 13,        // 料理についてのメモ。画面の「レシピ」タブで書く
-  ORDER_AT: 14     // ピン留めを外した日時（ミリ秒）。「レシピ」タブは、これと登録日時の新しいほうで並べる
+  ORDER_AT: 14,    // ピン留めを外した日時（ミリ秒）。「レシピ」タブは、これと登録日時の新しいほうで並べる
+  // 同じリンクで登録済みのものがあったうえで、別のレシピとして登録したもの。
+  // 1本のリールに複数の料理が載っていることがあるため、同じリンクでも1件にまとめずに並べる
+  SEPARATE: 15
 };
-var RECIPE_COL_COUNT = 14;
+var RECIPE_COL_COUNT = 15;
 
-var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数', '評価', 'メモ', '並び替え日時'];
+var RECIPE_HEADERS = ['レシピID', '登録日時', '料理名', 'URL', '登録者', '非表示', '材料', '作り方', 'ピン留め', '分類', '人数', '評価', 'メモ', '並び替え日時', '別レシピ'];
+var RECIPE_SEPARATE_MARK = '別';
 var RECIPE_RATING_MAX = 3;
 var RECIPE_MEMO_MAX = 1000;   // メモの長さの上限（文字）
 
@@ -974,7 +978,7 @@ function stripTrailingNewlines_(text) {
  */
 function replyRecipeLink_(replyToken, url) {
   saveWaitingLink_(url);
-  replyText_(replyToken, '🔗 リンクを受け取りました。続けてレシピの写真を送ってください。');
+  replyText_(replyToken, 'リンクを受け取りました。続けてレシピの写真を送ってください。');
 }
 
 /**
@@ -2663,8 +2667,9 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
 
   // リンクを写真より先に送っていた場合は、ここで結びつける
   var waiting = takeWaitingLink_();
-  // 同じリンクで登録済みのレシピ。あれば、新しい行は「確認中」にしておき、どちらを残すか聞く
-  var dup = waiting ? findRecipeByUrl_(waiting) : null;
+  // 同じリンクで登録済みのレシピ。あれば、新しい行は「確認中」にしておき、登録するか聞く
+  var dups = waiting ? findRecipesByUrl_(waiting) : [];
+  var dup = dups.length ? dups : null;
   // リンク付きの照合は、材料を1品も足さなくてもレシピ行を作る。
   // 画面の「レシピ」タブは、家にあるものだけで作れた料理も出すため。
   // 材料と作り方もここで書く（写真は残さないので、あとからは読み直せない）
@@ -2677,7 +2682,8 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
     });
     if (dup && newId) {
       recipeSetCell_(newId, RECIPE_COL.HIDDEN, RECIPE_PENDING_MARK);
-      updateAddSet_(token, { dupOf: dup.id });
+      // 「登録しない」のときにピン留めする相手。いちばん新しい登録済みのもの
+      updateAddSet_(token, { dupOf: dups[0].id });
     }
   }
 
@@ -2702,50 +2708,71 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
 }
 
 // data の文字列は変えないこと。トークに残っている古いバブルが押せなくなる
-var DUP_KEEP_PREFIX = 'recipe_dup_keep:';   // 登録済みのほうを使う（今回の分は追加しない）
-var DUP_NEW_PREFIX = 'recipe_dup_new:';     // 今回の分で登録し直す
+var DUP_KEEP_PREFIX = 'recipe_dup_keep:';   // 登録しない（登録済みのほうをピン留めする）
+var DUP_NEW_PREFIX = 'recipe_dup_new:';     // 別のレシピとして登録する
 
 /**
- * 同じリンクが登録済みのときの確認バブル。登録済みの1件と今回読んだ分を並べ、
- * どちらを「レシピ」タブに残すかを選んでもらう。答えなければ今回の分は追加しない
+ * 同じリンクが登録済みのときの確認バブル。登録済みのレシピと今回読んだ料理名を並べ、
+ * 「レシピに登録しますか？」に 登録する／登録しない で答えてもらう。
+ * 答えなければ今回の分は追加しない
  */
-function buildRecipeDupBubble_(dup, dish, token) {
-  var stars = '';
-  for (var i = 1; i <= RECIPE_RATING_MAX; i++) stars += i <= dup.rating ? '★' : '☆';
-  var oldSub = [dup.rating ? stars : '', dup.added ? dup.added + ' 登録' : '', dup.hidden ? '削除済み' : '']
-    .filter(function (s) { return s; }).join('　');
+function buildRecipeDupBubble_(dups, dish, token) {
+  function label(text) {
+    return { type: 'text', text: text, size: 'xs', color: pal_().gray, margin: 'md' };
+  }
+  function name(text, sub) {
+    var c = [{ type: 'text', text: text, size: 'md', wrap: true, color: pal_().text }];
+    if (sub) c.push({ type: 'text', text: sub, size: 'xs', wrap: true, color: pal_().gray });
+    return { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'sm', contents: c };
+  }
 
-  var rows = [
-    {
-      type: 'box', layout: 'vertical', backgroundColor: pal_().headerBg,
-      paddingAll: '10px', paddingStart: '14px', paddingEnd: '14px',
-      contents: [{
-        type: 'text', size: 'md', wrap: true, color: pal_().text, weight: 'bold',
-        text: '⚠ このリンクは登録済みです'
-      }, {
-        type: 'text', size: 'xs', wrap: true, color: pal_().gray, margin: 'xs',
-        text: '選ぶまで、今回の分はレシピに追加しません'
-      }]
-    },
-    bubbleActionRow_(dup.title || '（料理名なし）', 'これを使う',
-      { type: 'postback', label: 'これを使う', data: DUP_KEEP_PREFIX + token },
-      oldSub ? { text: oldSub, color: pal_().gray } : null),
-    { type: 'separator', color: pal_().line },
-    bubbleActionRow_(dish || '今回の写真', '登録し直す',
-      { type: 'postback', label: '登録し直す', data: DUP_NEW_PREFIX + token },
-      { text: '評価・メモ・ピン留めは引き継ぎます', color: pal_().gray }, pal_().gray)
-  ];
+  var body = [label('登録済み')];
+  dups.forEach(function (d) {
+    var stars = '';
+    for (var i = 1; i <= RECIPE_RATING_MAX; i++) stars += i <= d.rating ? '★' : '☆';
+    var sub = [d.rating ? stars : '', d.added ? d.added + ' 登録' : '', d.hidden ? '削除済み' : '']
+      .filter(function (s) { return s; }).join('　');
+    body.push(name(d.title || '（料理名なし）', sub));
+  });
+  body.push({ type: 'separator', color: pal_().line, margin: 'md' });
+  body.push(label('今回'));
+  body.push(name(dish || '（料理名なし）'));
 
   return {
     type: 'bubble',
     size: 'mega',
-    body: { type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none', contents: rows }
+    body: {
+      type: 'box', layout: 'vertical', backgroundColor: pal_().bg, paddingAll: '0px', spacing: 'none',
+      contents: [
+        {
+          type: 'box', layout: 'vertical', backgroundColor: pal_().headerBg,
+          paddingAll: '10px', paddingStart: '14px', paddingEnd: '14px',
+          contents: [{ type: 'text', size: 'md', wrap: true, color: pal_().text, weight: 'bold', text: 'このリンクは登録済みです' }]
+        },
+        { type: 'box', layout: 'vertical', paddingStart: '14px', paddingEnd: '14px', paddingBottom: '4px', contents: body },
+        {
+          type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'md',
+          contents: [
+            { type: 'text', text: 'レシピに登録しますか？', size: 'md', weight: 'bold', color: pal_().text, align: 'center' },
+            {
+              type: 'box', layout: 'horizontal', spacing: 'md', justifyContent: 'center',
+              contents: [
+                bubblePillButton_('登録する', { type: 'postback', label: '登録する', data: DUP_NEW_PREFIX + token }),
+                bubblePillButton_('登録しない', { type: 'postback', label: '登録しない', data: DUP_KEEP_PREFIX + token }, pal_().gray)
+              ]
+            }
+          ]
+        }
+      ]
+    }
   };
 }
 
 /**
- * 確認バブルの答え。keep なら登録済みのほうを使い、今回の行は確認中のまま残す
- * （行は消さない。ID が行番号で決まるため）。返り値は本人に返す文面
+ * 確認バブルの答え。返り値は本人に返す文面。
+ * 登録しない：今回の行は確認中のまま残し（行は消さない。ID が行番号で決まるため）、
+ *   登録済みのいちばん新しいものをピン留めする。
+ * 登録する：今回の行に「別レシピ」の印を付けて表に出す。登録済みのものと並んで出る
  */
 function resolveRecipeDup_(token, keep) {
   var set = findAddSet_(token);
@@ -2756,15 +2783,17 @@ function resolveRecipeDup_(token, keep) {
     // この照合から買い物リストに入れた品目も、登録済みのレシピに付け替える
     if ((set.shopIds || []).length) shopSetRecipe_(set.shopIds, set.dupOf);
     recipeSetHidden_(set.dupOf, false);
-    // 一覧のいちばん上（ピン留めの下）に出す
-    recipeSetCell_(set.dupOf, RECIPE_COL.ORDER_AT, Date.now());
+    recipeSetCell_(set.dupOf, RECIPE_COL.PINNED, RECIPE_PIN_MARK);
     updateAddSet_(token, { recipeId: set.dupOf, dupOf: '' });
-    return '登録済みのレシピを使います。今回の分は追加しませんでした。';
+    return '登録しませんでした。登録済みのレシピをピン留めしました。';
   }
 
-  if (set.recipeId) recipeSetHidden_(set.recipeId, false);
+  if (set.recipeId) {
+    recipeSetCell_(set.recipeId, RECIPE_COL.SEPARATE, RECIPE_SEPARATE_MARK);
+    recipeSetHidden_(set.recipeId, false);
+  }
   updateAddSet_(token, { dupOf: '' });
-  return '今回の内容で登録し直しました。';
+  return 'レシピに登録しました。';
 }
 
 var RECIPE_NO_LINK_MESSAGE = [
@@ -3371,21 +3400,20 @@ function recipeSheet_() {
  * レシピを1行足して、その ID を返す。
  * detail は { ingredients, steps, group, servings }（材料・作り方は改行区切りの文字列）。
  *
- * 同じリンクを送り直したときは、ピン留め・評価・メモを新しい行に引き継ぐ。
- * 画面は同じリンクの最新の1行だけを出すので、引き継がないと消えたように見えるため
+ * 同じリンクで登録済みのものがあっても、ピン留め・評価・メモは引き継がない
+ * （1本のリールに複数の料理が載っていることがあり、別のレシピかもしれないため）
  */
 function recipeAdd_(title, url, detail) {
   var sh = recipeSheet_();
   var last = sh.getLastRow();
   var id = String(last);   // 見出し行があるので、行数がそのまま次の連番になる
-  var carry = (url && recipeLinkCarry_(sh, url)) || { pinned: '', rating: '', memo: '' };
   detail = detail || {};
 
   sh.getRange(last + 1, 1, 1, RECIPE_COL_COUNT).setValues([[
     id, nowStamp_(), title || '', url || '', CURRENT_USER_ || '', '',
-    detail.ingredients || '', detail.steps || '', carry.pinned,
+    detail.ingredients || '', detail.steps || '', '',
     normalizeRecipeGroup_(detail.group), detail.servings || '',
-    carry.rating, recipeSafeText_(carry.memo), ''
+    '', '', '', ''
   ]]);
   return id;
 }
@@ -3598,52 +3626,40 @@ function isRecipePending_(r) {
   return String(r[RECIPE_COL.HIDDEN - 1] || '') === RECIPE_PENDING_MARK;
 }
 
+var RECIPE_DUP_SHOW_MAX = 3;   // 確認バブルに並べる登録済みレシピの数
+
 /**
- * 同じリンクで登録済みのレシピ。画面に出る（または消して非表示にした）最新の1行を
- * { id, title, rating, added, hidden } で返す。無ければ null。
- * 画面は同じリンクの最新の1行しか出さないので、比べる相手もその1行だけでよい
+ * 同じリンクで登録済みのレシピ。画面の「レシピ」タブに並ぶ行（消して非表示にしたものも含む）を
+ * 新しい順に { id, title, rating, added, hidden } の配列で返す。無ければ空。
+ * 画面と同じく、「別レシピ」の印の無い行は同じリンクの最新の1行だけを数える
  */
-function findRecipeByUrl_(url) {
+function findRecipesByUrl_(url) {
   var key = recipeUrlKey_(url);
-  if (!key) return null;
+  if (!key) return [];
   var sh = recipeSheet_();
   var last = sh.getLastRow();
-  if (last < 2) return null;
+  if (last < 2) return [];
 
   var rows = sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues();
-  for (var i = rows.length - 1; i >= 0; i--) {
+  var found = [];
+  var plainSeen = false;
+  for (var i = rows.length - 1; i >= 0 && found.length < RECIPE_DUP_SHOW_MAX; i--) {
     var r = rows[i];
     if (isRecipePending_(r) || recipeUrlKey_(r[RECIPE_COL.URL - 1]) !== key) continue;
+    if (!r[RECIPE_COL.SEPARATE - 1]) {
+      if (plainSeen) continue;
+      plainSeen = true;
+    }
     var at = recipeTime_(r[RECIPE_COL.ADDED - 1]);
-    return {
+    found.push({
       id: String(r[RECIPE_COL.ID - 1]),
       title: String(r[RECIPE_COL.TITLE - 1] || ''),
       rating: normalizeRecipeRating_(r[RECIPE_COL.RATING - 1]),
       added: at ? Utilities.formatDate(new Date(at), 'Asia/Tokyo', 'M/d') : '',
       hidden: !!r[RECIPE_COL.HIDDEN - 1]
-    };
+    });
   }
-  return null;
-}
-
-/** そのリンクの最新の行の、引き継ぐ値 { pinned, rating, memo }。無ければ null */
-function recipeLinkCarry_(sh, url) {
-  var last = sh.getLastRow();
-  if (last < 2) return null;
-
-  var key = recipeUrlKey_(url);
-  var rows = sh.getRange(2, 1, last - 1, RECIPE_COL_COUNT).getValues();
-  for (var i = rows.length - 1; i >= 0; i--) {
-    var r = rows[i];
-    if (isRecipePending_(r) || recipeUrlKey_(r[RECIPE_COL.URL - 1]) !== key) continue;
-    var rating = normalizeRecipeRating_(r[RECIPE_COL.RATING - 1]);
-    return {
-      pinned: r[RECIPE_COL.PINNED - 1] ? RECIPE_PIN_MARK : '',
-      rating: rating || '',
-      memo: String(r[RECIPE_COL.MEMO - 1] || '')
-    };
-  }
-  return null;
+  return found;
 }
 
 /** 評価を 0〜3 の整数にそろえる。0 はまだ評価していない */
@@ -4724,11 +4740,7 @@ function buildRecipeBubble_(missing, have, token, linkNote) {
 /** 「リールに紐づけ中」の帯。料理名が読めていれば併せて出す */
 function recipeLinkBanner_(dish, token) {
   var lines = [{
-    type: 'text', size: 'md', wrap: true,
-    contents: [
-      { type: 'span', text: '🔗 ', color: pal_().blue },
-      { type: 'span', text: 'リンクに紐づけ中', color: pal_().text, weight: 'bold' }
-    ]
+    type: 'text', size: 'md', wrap: true, text: 'リンクに紐づけ中', color: pal_().text, weight: 'bold'
   }];
 
   // 料理名は次の行に落とす。横に並べると、長い名前で「外す」が押しづらくなる
