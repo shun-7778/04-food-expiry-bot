@@ -2710,6 +2710,12 @@ function replyRecipeMatch_(replyToken, items, dish, steps, group, servings) {
 // data の文字列は変えないこと。トークに残っている古いバブルが押せなくなる
 var DUP_KEEP_PREFIX = 'recipe_dup_keep:';   // 登録済みのほうをピン留めする（今回の分は登録しない）。token:レシピID
 var DUP_NEW_PREFIX = 'recipe_dup_new:';     // 別のレシピとして新規登録する
+// 確認バブルで、名前を切らずに登録日をすぐ右に付けられるかの見積もり（実機のスクショから測った値）。
+// 名前と登録日を並べられる幅、名前（md）と登録日（xs）の全角1文字の幅。半角は0.55文字で数える。
+// 少し控えめにしてある（見積もりが外れて登録日が押し出されるより、早めに「…」になるほうがよい）
+var RECIPE_DUP_ROOM_PT = 170;
+var RECIPE_DUP_NAME_PT = 14.7;
+var RECIPE_DUP_SIDE_PT = 10;
 
 /**
  * 同じリンクが登録済みのときの確認バブル。
@@ -2720,19 +2726,29 @@ function buildRecipeDupBubble_(dups, dish, token) {
   function label(text) {
     // text には余白を付けられないので box で包む
     return {
-      type: 'box', layout: 'vertical', paddingStart: '14px', paddingTop: '10px',
+      type: 'box', layout: 'vertical', paddingStart: '14px', paddingTop: '6px',
       contents: [{ type: 'text', text: text, size: 'xs', color: pal_().gray }]
     };
   }
-  // 名前（と下に小さく添え書き）を左、緑のボタンを右に置く1行
-  function row(text, sub, btnLabel, data) {
-    var c = [{ type: 'text', text: text, size: 'md', wrap: true, color: pal_().text }];
-    if (sub) c.push({ type: 'text', text: sub, size: 'xs', wrap: true, color: pal_().gray });
+  // 名前を左、緑のボタンを右に置く1行。side（登録日など）は名前のすぐ右に置き、
+  // 名前が長いときは名前のほうを「…」で切る（side は削らない）
+  function row(text, side, btnLabel, data) {
+    // LINE の flex は flex:0 の文字を縮めてくれない。そこで名前の幅を見積もり、
+    // 収まる長さなら中身の幅（flex:0）にして登録日をすぐ右に付け、
+    // 収まらなければ flex:1 にして名前の末尾を「…」にする（登録日は右に残る）
+    function units(s) {
+      var n = 0;
+      String(s || '').split('').forEach(function (ch) { n += /[\x20-\x7e]/.test(ch) ? 0.55 : 1; });
+      return n;
+    }
+    var fits = !side || units(text) * RECIPE_DUP_NAME_PT <= RECIPE_DUP_ROOM_PT - units(side) * RECIPE_DUP_SIDE_PT;
+    var name = [{ type: 'text', text: text, size: 'md', wrap: false, flex: side && fits ? 0 : 1, color: pal_().text }];
+    if (side) name.push({ type: 'text', text: side, size: 'xs', flex: 0, margin: 'sm', gravity: 'center', color: pal_().gray });
     return {
       type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'md',
-      paddingStart: '14px', paddingEnd: '14px', paddingTop: '8px', paddingBottom: '8px',
+      paddingStart: '14px', paddingEnd: '14px', paddingTop: '2px', paddingBottom: '6px',
       contents: [
-        { type: 'box', layout: 'vertical', flex: 1, spacing: 'xs', contents: c },
+        { type: 'box', layout: 'horizontal', flex: 1, alignItems: 'center', contents: name },
         bubblePillButton_(btnLabel, { type: 'postback', label: btnLabel, data: data })
       ]
     };
@@ -2740,14 +2756,12 @@ function buildRecipeDupBubble_(dups, dish, token) {
 
   var body = [label('登録済み')];
   dups.forEach(function (d) {
-    var stars = '';
-    for (var i = 1; i <= RECIPE_RATING_MAX; i++) stars += i <= d.rating ? '★' : '☆';
-    var sub = [d.rating ? stars : '', d.added ? d.added + ' 登録' : '', d.hidden ? '削除済み' : '']
-      .filter(function (s) { return s; }).join('　');
+    var side = [d.added ? d.added + ' 登録' : '', d.hidden ? '削除済み' : '']
+      .filter(function (s) { return s; }).join('・');
     // どのレシピをピン留めするかは ID で渡す（同じリンクで複数あるとき用）
-    body.push(row(d.title || '（料理名なし）', sub, 'ピン留め', DUP_KEEP_PREFIX + token + ':' + d.id));
+    body.push(row(d.title || '（料理名なし）', side, 'ピン留め', DUP_KEEP_PREFIX + token + ':' + d.id));
   });
-  body.push({ type: 'separator', color: pal_().line, margin: 'md' });
+  body.push({ type: 'separator', color: pal_().line, margin: 'sm' });
   body.push(label('今回'));
   body.push(row(dish || '（料理名なし）', '', '新規登録', DUP_NEW_PREFIX + token));
 
