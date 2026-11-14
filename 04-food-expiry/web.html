@@ -211,7 +211,8 @@ body {
   font-size: 15px; line-height: 1; font-family: inherit; cursor: pointer;
 }
 .addbox input, .search input {
-  flex: 1; width: 100%; padding: 9px 14px; border: 1px solid var(--line); border-radius: 12px;
+  flex: 1; width: 100%; padding: 9px 14px; height: 38px;   /* 下の「個別／料理ごと」と同じ高さ */
+  border: 1px solid var(--line); border-radius: 12px;
   background: var(--card); color: var(--text); box-shadow: var(--shadow);
   /* 16px 未満だと iOS が入力時に拡大するので、ここは下げない */
   font-size: 16px;
@@ -655,7 +656,8 @@ section > .sec:first-child { margin-top: 6px; }
    選んでいない側も品目と同じ白地＋影にして、押せるボタンだと分かるようにする */
 .seg { display: flex; gap: 8px; margin-top: 8px; }
 .seg button {
-  flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 9px 10px;
+  /* 高さは上の入力欄（買い物リストに追加）とそろえる。余白で合わせると端末の字形で数px ずれるので、高さで決める */
+  flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 0 10px; height: 38px;
   /* 選んでいない側は、下のタブ（.tab）と同じ灰色にする */
   background: var(--card); color: var(--sub); box-shadow: var(--shadow);
   font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;   /* レシピの「すべて」（.dd-v）と同じ大きさ */
@@ -786,7 +788,7 @@ section > .sec:first-child { margin-top: 6px; }
 <div class="sticky">
   <div class="head" id="head-shop">
     <div class="addbox">
-      <input id="add-name" type="text" placeholder="品名を追加" autocomplete="off" enterkeyhint="done">
+      <input id="add-name" type="text" placeholder="買い物リストに追加" autocomplete="off" enterkeyhint="done">
     </div>
     <div class="seg">
       <button id="seg-list" class="on">個別</button>
