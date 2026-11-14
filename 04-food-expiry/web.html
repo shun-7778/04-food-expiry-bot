@@ -530,7 +530,8 @@ section > .sec:first-child { margin-top: 6px; }
 .dd { position: relative; flex: 1 1 0; min-width: 0; }
 .dd-btn {
   width: 100%; display: flex; align-items: center; gap: 8px;
-  padding: 7px 12px; border: 1px solid transparent; border-radius: 12px;
+  padding: 0 12px; height: 37px;   /* 買い物の「個別／料理ごと」（.seg button）と同じ高さ */
+  border: 1px solid transparent; border-radius: 12px;
   background: var(--card); color: var(--text); box-shadow: var(--shadow);
   font-family: inherit; cursor: pointer; text-align: left;
 }
@@ -656,8 +657,8 @@ section > .sec:first-child { margin-top: 6px; }
    選んでいない側も品目と同じ白地＋影にして、押せるボタンだと分かるようにする */
 .seg { display: flex; gap: 8px; margin-top: 8px; }
 .seg button {
-  /* 高さは上の入力欄（買い物リストに追加）とそろえる。余白で合わせると端末の字形で数px ずれるので、高さで決める */
-  flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 0 10px; height: 38px;
+  /* 高さはレシピの「カテゴリ」（.dd-btn）とそろえる。余白で合わせると端末の字形で数px ずれるので、高さで決める */
+  flex: 1 1 0; border: 1px solid transparent; border-radius: 12px; padding: 0 10px; height: 37px;
   /* 選んでいない側は、下のタブ（.tab）と同じ灰色にする */
   background: var(--card); color: var(--sub); box-shadow: var(--shadow);
   font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;   /* レシピの「すべて」（.dd-v）と同じ大きさ */
