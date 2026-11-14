@@ -2759,7 +2759,7 @@ function buildRecipeDupBubble_(dups, dish, token) {
         {
           type: 'box', layout: 'vertical', backgroundColor: pal_().headerBg,
           paddingAll: '10px', paddingStart: '14px', paddingEnd: '14px',
-          contents: [{ type: 'text', size: 'md', wrap: true, color: pal_().text, weight: 'bold', text: 'このリンクは登録済みです' }]
+          contents: [{ type: 'text', size: 'md', wrap: true, color: pal_().text, weight: 'bold', text: 'このリンクは登録済みのため、まだ登録していません' }]
         }
       ].concat(body)
     }

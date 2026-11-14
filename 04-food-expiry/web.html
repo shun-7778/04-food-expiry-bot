@@ -2713,6 +2713,13 @@ function updateSticky() {
   snapTimer = setTimeout(function () { snapSticky(room); }, 160);
 }
 
+/** いま開いているタブの、一覧の先頭のカード。無ければ null（隠れたタブのカードは offsetParent が無い） */
+function firstVisibleCard() {
+  var cards = document.querySelectorAll('.card');
+  for (var i = 0; i < cards.length; i++) if (cards[i].offsetParent) return cards[i];
+  return null;
+}
+
 /** 指を止めたとき、半端な位置なら出し切るか隠し切る */
 function snapSticky(room) {
   var y = lastScrollY;
@@ -2728,6 +2735,10 @@ function snapSticky(room) {
   // 先頭付近（欄の高さより上）では、欄だけ消すと上に空きができるので、一覧ごと欄の高さまで送る。
   // 送る間も欄は一覧と一緒に上がっていき、着いたときに隠れ切る
   if (y < stickyMax && room >= stickyMax) {
+    // ただし先頭のカードがまだ画面から欠けていなければ、そのまま止めておく。
+    // 少し下げただけで勝手に一覧が上へ送られると、見ていた位置がずれて落ち着かないため
+    var first = firstVisibleCard();
+    if (first && first.getBoundingClientRect().top >= 0) return;
     window.scrollTo({ top: stickyMax, behavior: 'smooth' });
     return;
   }
