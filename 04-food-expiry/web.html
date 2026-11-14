@@ -222,6 +222,8 @@ body {
   /* ✦（大きい星と小さい星）。AI ボタン・AI モードの左のアイコン・AI の理由の頭で共用 */
   --ai-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M10 4l1.9 5.1L17 11l-5.1 1.9L10 18l-1.9-5.1L3 11l5.1-1.9z'/%3E%3Cpath d='M18.5 2l.85 2.15L21.5 5l-2.15.85L18.5 8l-.85-2.15L15.5 5l2.15-.85z'/%3E%3C/svg%3E");
 }
+/* ブラウザが検索欄に出す既定の ✕ は消す（自前の ✕ と二重になるため） */
+.search input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
 .search.has-ai input { padding-right: 112px; }
 .search.has-ai .clear { right: 76px; }
 .ai-btn {
@@ -396,6 +398,9 @@ body {
 .card .starline { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; }
 .card .starline .stars { flex: 0 0 auto; margin-top: 0; }
 .card .starline .meta { min-width: 0; margin-top: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 開いたレシピの AI の理由は、折り返して全文を出す。星は1行目の高さにそろえる */
+.card .starline.full { align-items: flex-start; }
+.card .starline.full .meta { white-space: normal; overflow: visible; line-height: 1.45; padding-top: 2px; }
 
 /* 開いた中の「メモ」。青い箱の中身で、表示だけ（書き換えは見出しの「編集」から） */
 .detail .memo {
@@ -1617,7 +1622,7 @@ function card(opt) {
       // 星があるカード（レシピ）は、添え書き（検索に当たった材料）を星の右に並べる。
       // 3行目を使うとカードが高くなるため。入りきらない分は … で切る
       var sl = document.createElement('div');
-      sl.className = 'starline';
+      sl.className = 'starline' + (opt.metaFull ? ' full' : '');
       sl.appendChild(stars);
       var sm = document.createElement('span');
       sm.className = 'meta' + (opt.metaHit ? ' hit' : '') + (opt.metaAi ? ' ai' : '');
@@ -2034,7 +2039,8 @@ function recipeCard(it) {
   // 材料名で検索に当たったときだけ、閉じたままでもどの材料で当たったかを添える
   // AI 検索の結果なら、合うと判断した理由を同じ場所に添える
   var meta = '';
-  var aiReason = !open && it.aiReason ? it.aiReason : '';
+  // 閉じているときは1行で「…」まで、開いたときは折り返して全文を出す
+  var aiReason = it.aiReason || '';
   if (aiReason) meta = aiReason;
   else if (it.hits && it.hits.names.length && !open) meta = it.hits.names.join('、');
 
@@ -2044,6 +2050,7 @@ function recipeCard(it) {
     meta: meta,
     metaHit: !!meta && !aiReason,   // 頭に検索欄と同じ虫眼鏡を付ける
     metaAi: !!aiReason,             // AI の理由には ✦ を付ける
+    metaFull: open && !!aiReason,   // 開いたときは理由を折り返して全部見せる
     pin: !!it.pinned,
     waiting: !!waiting[it.id],
     tap: function () { toggleRecipe(it); },
@@ -2624,12 +2631,15 @@ function renderAiChips() {
       b.type = 'button';
       b.className = 'ai-chip';
       b.textContent = text;
-      // 押したら、その文を入れてそのまま問い合わせる（キーボードは出さない）
+      // 押したら、その文を入力欄に入れるだけにする。直してから自分で Enter を押せるよう、
+      // カーソルを文末に置いてキーボードを出す（iPhone は押した操作の中で focus しないと出ない）
       b.addEventListener('click', function () {
-        $('recipe-q').value = text;
+        var q = $('recipe-q');
+        q.value = text;
         $('recipe-clear').hidden = false;
-        $('recipe-q').blur();
-        runAiSearch();
+        renderAiChips();
+        q.focus();
+        try { q.setSelectionRange(text.length, text.length); } catch (e) {}
       });
       box.appendChild(b);
     });
@@ -2638,6 +2648,9 @@ function renderAiChips() {
   if (box.hidden === !show) return;
   box.hidden = !show;
   if (show) box.scrollLeft = 0;
+  // 上の欄の高さが変わるので、一覧の上に空けておく場所も合わせる
+  // （ResizeObserver が拾わない環境があり、一覧の上に空きが残ったため、ここでも測る）
+  measureSticky();
 }
 
 function runAiSearch() {
