@@ -56,7 +56,9 @@
   /* 選んでいるタブ・個別／料理ごとは、塗りつぶしの緑ではなく淡い緑の地に緑の文字。n は件数の丸 */
   --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;  --sel-line: #8cc9a3;   /* line は周りの線 */
   /* レシピの AI 検索（薄紫）。fg は ✦ と文字、line は枠、bg は入力欄の地、pill は「AI」ボタンの地 */
-  --ai-fg: #5b4bc4;  --ai-line: #8b7fe0;  --ai-bg: #f6f4ff;  --ai-pill: #ebe7fc;}
+  --ai-fg: #5b4bc4;  --ai-line: #8b7fe0;  --ai-bg: #f6f4ff;  --ai-pill: #ebe7fc;
+  /* 下のタブのすりガラス。glass は半透明の地、glass-line は縁取り */
+  --glass: rgba(255, 255, 255, .72);  --glass-line: rgba(16, 24, 40, .08);}
 
 /* ---- 端末がダークモードのときだけ、色を差し替える。形と配置はそのまま ---- */
 @media (prefers-color-scheme: dark) {
@@ -95,7 +97,8 @@
     --star: #f5b82e;  --star-off: #4a5565;
 
     --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;
-    --ai-fg: #b3a8ff;  --ai-line: #6c5fc7;  --ai-bg: #1f1c33;  --ai-pill: #2c2752;  }
+    --ai-fg: #b3a8ff;  --ai-line: #6c5fc7;  --ai-bg: #1f1c33;  --ai-pill: #2c2752;
+    --glass: rgba(30, 35, 43, .62);  --glass-line: rgba(255, 255, 255, .09);  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* overscroll-behavior は既定（auto）のままにする。contain にすると、
@@ -147,6 +150,16 @@ body {
   background: var(--card); border-radius: 999px; padding: 6px 10px 6px 6px;
   box-shadow: 0 8px 28px rgba(16, 24, 40, .38);
   transition: opacity .15s, transform .15s;
+}
+/* すりガラス。地を半透明にして後ろの一覧をぼかす。ぼかしに対応していない環境では、上の不透明な地のまま。
+   透けると輪郭が分かりにくくなるので、細い縁取りを足す（内側の影で描き、幅を変えない） */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+            backdrop-filter: blur(18px) saturate(1.6);
+    box-shadow: 0 8px 28px rgba(16, 24, 40, .38), inset 0 0 0 1px var(--glass-line);
+  }
 }
 /* 検索している間は、一覧を隠さないよう下へ逃がす */
 .tabbar.away {
