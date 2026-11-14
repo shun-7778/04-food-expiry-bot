@@ -2635,7 +2635,14 @@ $('recipe-clear').addEventListener('click', function () {
   updateTabbar();
   render();
 });
-$('recipe-ai').addEventListener('click', function () { setAiMode(!aiMode); });
+// 押したら入力欄にカーソルを置き、キーボードを出してすぐ打てるようにする（オン・オフどちらでも）。
+// iPhone は押した操作の中で focus しないとキーボードを出さないので、待たずにその場で呼ぶ。
+// 入力欄からボタンへ一度フォーカスが移るとキーボードが閉じかけてちらつくので、押した瞬間の移動は止める
+$('recipe-ai').addEventListener('pointerdown', function (e) { e.preventDefault(); });
+$('recipe-ai').addEventListener('click', function () {
+  setAiMode(!aiMode);
+  $('recipe-q').focus();
+});
 
 /** 今のタブで文字を打つ入力欄 */
 function activeInput() {
