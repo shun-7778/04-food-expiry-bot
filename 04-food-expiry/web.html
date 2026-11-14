@@ -58,7 +58,7 @@
   /* レシピの AI 検索（薄紫）。fg は ✦ と文字、line は枠、bg は入力欄の地、pill は「AI」ボタンの地 */
   --ai-fg: #5b4bc4;  --ai-line: #8b7fe0;  --ai-bg: #f6f4ff;  --ai-pill: #ebe7fc;
   /* 下のタブのすりガラス。glass は半透明の地、glass-line は縁取り */
-  --glass: rgba(255, 255, 255, .72);  --glass-line: rgba(16, 24, 40, .08);}
+  --glass: rgba(255, 255, 255, .55);  --glass-line: rgba(16, 24, 40, .08);}
 
 /* ---- 端末がダークモードのときだけ、色を差し替える。形と配置はそのまま ---- */
 @media (prefers-color-scheme: dark) {
@@ -98,7 +98,7 @@
 
     --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;
     --ai-fg: #b3a8ff;  --ai-line: #6c5fc7;  --ai-bg: #1f1c33;  --ai-pill: #2c2752;
-    --glass: rgba(30, 35, 43, .62);  --glass-line: rgba(255, 255, 255, .09);  }
+    --glass: rgba(30, 35, 43, .45);  --glass-line: rgba(255, 255, 255, .09);  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* overscroll-behavior は既定（auto）のままにする。contain にすると、
