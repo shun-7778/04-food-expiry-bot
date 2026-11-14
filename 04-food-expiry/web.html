@@ -178,13 +178,25 @@ body {
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E") no-repeat center / contain;
 }
 .search { position: relative; }
-/* 虫眼鏡。絵文字だと色が強いので、細い線の形を地の灰色で描く */
+/* 虫眼鏡。絵文字だと色が強いので、線の形を地の灰色で描く。
+   丸を大きめにし、柄は丸の縁から右下へ短く太く出す。検索欄とレシピの「当たった材料」で共用 */
+:root {
+  --search-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cpath d='M15 15l5 5'/%3E%3C/svg%3E");
+}
 .search::before {
   content: ''; position: absolute; left: 14px; top: 50%; width: 16px; height: 16px;
   transform: translateY(-50%); pointer-events: none; z-index: 1;
   background: var(--sub); opacity: .75;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E") no-repeat center / contain;
-          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E") no-repeat center / contain;
+  -webkit-mask: var(--search-mask) no-repeat center / contain;
+          mask: var(--search-mask) no-repeat center / contain;
+}
+/* レシピで材料名が検索に当たったときの添え書きの頭に付ける虫眼鏡 */
+.meta.hit::before {
+  content: ''; display: inline-block; width: 13px; height: 13px;
+  margin-right: 4px; vertical-align: -2px;
+  background: currentColor;
+  -webkit-mask: var(--search-mask) no-repeat center / contain;
+          mask: var(--search-mask) no-repeat center / contain;
 }
 .search .clear {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
@@ -1528,7 +1540,7 @@ function card(opt) {
       sl.className = 'starline';
       sl.appendChild(stars);
       var sm = document.createElement('span');
-      sm.className = 'meta';
+      sm.className = opt.metaHit ? 'meta hit' : 'meta';
       sm.textContent = opt.meta;
       sl.appendChild(sm);
       body.appendChild(sl);
@@ -1537,7 +1549,7 @@ function card(opt) {
     }
   } else if (opt.meta) {
     var meta = document.createElement('div');
-    meta.className = 'meta';
+    meta.className = opt.metaHit ? 'meta hit' : 'meta';
     meta.textContent = opt.meta;
     body.appendChild(meta);
   }
@@ -1941,12 +1953,13 @@ function recipeCard(it) {
   // 分類（帯の色で分かる）や追加日・追加した人は出さない。
   // 材料名で検索に当たったときだけ、閉じたままでもどの材料で当たったかを添える
   var meta = '';
-  if (it.hits && it.hits.names.length && !open) meta = '🔍 ' + it.hits.names.join('、');
+  if (it.hits && it.hits.names.length && !open) meta = it.hits.names.join('、');
 
   return card({
     level: it.level,
     name: title,
     meta: meta,
+    metaHit: !!meta,   // 頭に検索欄と同じ虫眼鏡を付ける
     pin: !!it.pinned,
     waiting: !!waiting[it.id],
     tap: function () { toggleRecipe(it); },
