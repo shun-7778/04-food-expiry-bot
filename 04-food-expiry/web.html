@@ -281,8 +281,9 @@ body {
 .chips { display: flex; gap: 8px; margin-top: 8px; }
 .chip {
   flex: 1 1 0; min-width: 0;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  border: 1px solid transparent; border-radius: 12px; padding: 8px 10px;
+  /* 見出しと件数を中央にそろえる。高さは上下の余白を詰めて低くする（文字の大きさはそのまま） */
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  border: 1px solid transparent; border-radius: 12px; padding: 5px 10px;
   background: var(--card); color: var(--text);
   font-family: inherit; font-size: 13px; font-weight: 700;
   box-shadow: var(--shadow); cursor: pointer;
@@ -330,6 +331,7 @@ body {
 .empty.lone { margin-top: 14px; }
 /* 「レシピ」タブの一覧の頭。見出しを出さないぶん、料理ごとの見出しと同じだけ空ける */
 .gap { height: 14px; }
+.gap.sm { height: 4px; }
 
 /* ---- 「レシピ」タブ。カードを押すと、その下に材料と作り方が開く ---- */
 .card.tap { cursor: pointer; }
@@ -522,7 +524,7 @@ body {
 .dd { position: relative; flex: 1 1 0; min-width: 0; }
 .dd-btn {
   width: 100%; display: flex; align-items: center; gap: 8px;
-  padding: 11px 12px; border: 1px solid transparent; border-radius: 12px;
+  padding: 7px 12px; border: 1px solid transparent; border-radius: 12px;
   background: var(--card); color: var(--text); box-shadow: var(--shadow);
   font-family: inherit; cursor: pointer; text-align: left;
 }
@@ -1177,8 +1179,8 @@ function renderRecipes() {
     return;
   }
 
-  // 左の帯は分類の色。一覧の先頭には見出しの余白を空ける
-  box.appendChild(document.createElement('div')).className = 'gap';
+  // 左の帯は分類の色。一覧の先頭には見出しの余白を少しだけ空ける（ほかのタブより詰める）
+  box.appendChild(document.createElement('div')).className = 'gap sm';
   items.forEach(function (it) {
     it.level = GROUP_COLOR[it.group] || '';
     box.appendChild(recipeCard(it));
@@ -1296,6 +1298,35 @@ function filterChanged() {
   renderRecipes();
   window.scrollTo(0, 0);   // 切り替えたら先頭から見せる（タブの切り替えと同じ）
 }
+
+// 上の入力欄（品名の追加・在庫の検索・レシピの検索）で文字を打っているとき（キーボードが出ているとき）に
+// 関係のないところを押したら、キーボードを閉じるだけにする。押した先のレシピは開かず、
+// 長押し・横スワイプも始めない。入力欄のまわり（✕・AI ボタン・例のチップ）はそのまま使える
+var kbDismissAt = 0;
+function typingInput() {
+  var a = document.activeElement;
+  return a && (a.id === 'add-name' || a.id === 'stock-q' || a.id === 'recipe-q') ? a : null;
+}
+function nearInput(e) {
+  return !!(e.target.closest && e.target.closest('.search, .addbox, .ai-chips'));
+}
+function dismissKeyboard(e) {
+  var input = typingInput();
+  if (!input || nearInput(e)) return;
+  e.stopPropagation();
+  kbDismissAt = Date.now();
+  input.blur();
+}
+document.addEventListener('touchstart', dismissKeyboard, { capture: true, passive: true });
+document.addEventListener('mousedown', dismissKeyboard, true);
+document.addEventListener('click', function (e) {
+  // キーボードを閉じた直後のクリック（タッチのあとに来る分）は、どこにも届けない
+  if (Date.now() - kbDismissAt > 800) return;
+  kbDismissAt = 0;
+  if (nearInput(e)) return;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
 
 // 一覧が開いているときに外を押したら、閉じるだけにする。
 // 押した先のレシピは開かず、長押し・横スワイプも始めない（取り込み段階で先に受けて止める）
