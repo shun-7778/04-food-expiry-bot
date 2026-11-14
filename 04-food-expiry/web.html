@@ -238,6 +238,9 @@ body {
 }
 .search.ai .ai-btn { background: var(--ai-pill); border-color: var(--ai-line); color: var(--ai-fg); font-weight: 700; }
 .search.ai input { border: 1.5px solid var(--ai-line); background: var(--ai-bg); }
+/* 入力中の枠。ブラウザ既定の青い縁取りはやめ、カテゴリを開いたときと同じ緑にする。AI モードは紫 */
+.addbox input:focus, .search input:focus { outline: none; border-color: var(--green); }
+.search.ai input:focus { border-color: var(--ai-fg); }
 .search.ai::before {
   background: var(--ai-fg); opacity: 1;
   -webkit-mask-image: var(--ai-mask);
