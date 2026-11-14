@@ -283,25 +283,21 @@ body {
 /* ---- 期限ごとの絞り込み。横一列の小さなボタンにして場所を取らない ---- */
 .head { margin-top: 0; }
 .chips { display: flex; gap: 8px; margin-top: 8px; }
+/* 在庫の絞り込み（すべて・期限切れ・7日以内・余裕あり）。「期限切れ 2」のように1行で、件数は大きめ。
+   高さは買い物の「個別」・レシピの「カテゴリ」と同じ 37px。
+   選んでいないものはグレー、選んだものは下のタブ・「個別」と同じ淡い緑の地に緑の文字と緑の線 */
 .chip {
-  flex: 1 1 0; min-width: 0;
-  /* 見出しと件数を中央にそろえる。高さは上下の余白を詰めて低くする（文字の大きさはそのまま） */
-  display: flex; flex-direction: column; align-items: center; gap: 0;
-  border: 1px solid transparent; border-radius: 12px; padding: 5px 10px;
-  background: var(--card); color: var(--text);
+  flex: 1 1 0; min-width: 0; height: 37px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid transparent; border-radius: 12px; padding: 0 4px;
+  background: var(--card); color: var(--sub);
   font-family: inherit; font-size: 13px; font-weight: 700;
-  box-shadow: var(--shadow); cursor: pointer;
+  box-shadow: var(--shadow); cursor: pointer; white-space: nowrap;
 }
-.chip .top { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-.chip .dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
-.chip .cnt { font-size: 17px; font-weight: 800; line-height: 1.1; }
-.chip.over .dot { background: var(--over-fg); }
-.chip.soon .dot { background: var(--soon-mark); }
-.chip.ok .dot { background: var(--ok-fg); }
-.chip.all.on { background: var(--pill); border-color: var(--edge); color: var(--text); }
-.chip.over.on { background: var(--over-bg); border-color: var(--over-fg); color: var(--over-fg); }
-.chip.soon.on { background: var(--soon-bg); border-color: var(--soon-fg); color: var(--soon-fg); }
-.chip.ok.on { background: var(--ok-bg); border-color: var(--ok-fg); color: var(--ok-fg); }
+.chip .top { display: flex; align-items: center; white-space: nowrap; }
+.chip .dot { display: none; }   /* 色の丸は出さない */
+.chip .cnt { font-size: 18px; font-weight: 800; line-height: 1; }
+.chip.on { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-line); }
 
 .sec { font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 2px 4px; }
 /* 上の切り替えボタンのすぐ下の見出し（未購入・期限が近い順）は、ボタンとの間を詰める */
