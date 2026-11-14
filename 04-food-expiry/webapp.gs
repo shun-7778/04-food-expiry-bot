@@ -361,6 +361,140 @@ function webRecipeStock(token, id) {
 
 var RECIPE_STOCK_CACHE_SEC = 6 * 60 * 60;   // 在庫が変われば鍵ごと変わるので、長めでよい
 
+// ---------------------------------------------------------------- レシピの AI 検索
+
+var RECIPE_AI_MAX = 10;          // 返す件数の上限
+var RECIPE_AI_QUERY_MAX = 200;   // 質問の長さの上限（文字）
+var RECIPE_AI_MEMO_MAX = 60;     // 1件ごとに渡すメモの長さ（「前においしかった」等に効かせる程度）
+
+var RECIPE_AI_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      description: '条件に合うレシピ。合う順に最大10件。合うものが無ければ空',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'レシピのID（一覧の先頭の値をそのまま）' },
+          reason: { type: 'string', description: '合うと判断した理由。日本語で15文字程度。例:「酢とみりんでさっぱり」' }
+        },
+        required: ['id', 'reason'],
+        additionalProperties: false
+      }
+    },
+    must_ingredients: {
+      type: 'array',
+      description: '質問で「〇〇を使った」のように、必ず入っていてほしいと指定された材料名。無ければ空。'
+        + '「〇〇を使わない」「〇〇なし」のような除外は入れない',
+      items: { type: 'string' }
+    }
+  },
+  required: ['results', 'must_ingredients'],
+  additionalProperties: false
+};
+
+/**
+ * 「レシピ」タブの AI 検索。「みりんを使ったさっぱりした料理」のような、ざっくりした質問に合う
+ * レシピを、合う順に最大10件 { results: [{ id, reason }] } で返す。
+ *
+ * 画面に出ているレシピ全件（料理名・分類・評価・材料名・メモの頭）と、いまの在庫の品名を渡して選ばせる。
+ * 作り方は渡さない（件数が増えたときに、Haiku の安い単価の範囲（入力10万トークン）に収めるため）。
+ * 「〇〇を使った」と材料を指定された分は、AI の答えをそのまま信じず、材料欄に本当にあるかをここで確かめる
+ */
+function webRecipeAiSearch(token, query) {
+  webAssert_(token);
+  query = String(query || '').trim().substring(0, RECIPE_AI_QUERY_MAX);
+  if (!query) return { query: '', results: [] };
+
+  var recipes = webRecipeRead_().items;
+  if (!recipes.length) return { query: query, results: [] };
+
+  var stockNames = [];
+  currentStockRows_().forEach(function (s) {
+    var n = String(s.name || '').trim();
+    if (n && stockNames.indexOf(n) < 0) stockNames.push(n);
+  });
+
+  var lines = [
+    'あなたは家庭のレシピ帳の検索係です。ユーザーの質問に合うレシピを、下の一覧から選んでください。',
+    '',
+    '質問: ' + query,
+    '',
+    '判断の指針:',
+    '- 料理名・分類・材料から、味（さっぱり・こってり・甘辛など）、調理法、季節感、手軽さなどを推し量って選んでください。',
+    '- 質問が材料を指定しているときは、その材料が材料欄にあるものだけを選んでください（表記ゆれは同じとみなす。例: 醤油/しょうゆ）。',
+    '- 「在庫で」「家にあるもので」などと言われたら、下の在庫の品名で材料をなるべく多くまかなえるものを優先してください。',
+    '  在庫は商品名で書かれていることがあります（例:「ダノンビオ」はヨーグルト）。調味料など常にありそうなものは気にしなくてよいです。',
+    '- 評価（★の数）やメモは、「評価の高い」「おいしかった」などと言われたときの手がかりにしてください。',
+    '- 合うものだけを、合う順に最大' + RECIPE_AI_MAX + '件。無理に件数を埋めないでください。',
+    '- reason は、なぜ合うのかを15文字程度で。',
+    '',
+    'いまの在庫の品名:',
+    stockNames.length ? stockNames.join('、') : '（なし）',
+    '',
+    'レシピ一覧（ID | 料理名 | 分類 | 評価 | 材料 | メモ）:'
+  ];
+  recipes.forEach(function (it) {
+    var ings = [];
+    (it.ingredients || []).forEach(function (g) { if (g.name && ings.indexOf(g.name) < 0) ings.push(g.name); });
+    var memo = String(it.memo || '').replace(/\s+/g, ' ').substring(0, RECIPE_AI_MEMO_MAX);
+    lines.push([it.id, it.title || '（料理名なし）', it.group || '', it.rating ? '★' + it.rating : '',
+      ings.join('、'), memo].join(' | '));
+  });
+
+  var ai = callClaude_([{ type: 'text', text: lines.join('\n') }], RECIPE_AI_SCHEMA, MODEL_TEXT) || {};
+
+  // 返ってきた ID のうち、一覧に実在するものだけを、重ねずに順に拾う
+  var byId = {};
+  recipes.forEach(function (it) { byId[String(it.id)] = it; });
+  // 指定された材料を、言い換え（醤油/しょうゆ など）まで広げた書き方の束にする。
+  // 1文字の語（肉・魚・酢など）は確かめない。「肉」で鶏ももを落とすような取りこぼしが出るため
+  var must = (ai.must_ingredients || []).map(function (m) { return recipeAiVariants_(m); })
+    .filter(function (vs) { return vs.length && vs[0].length >= 2; });
+  var seen = {};
+  var results = [];
+  (ai.results || []).forEach(function (r) {
+    var id = String(r && r.id || '');
+    var it = byId[id];
+    if (!it || seen[id] || results.length >= RECIPE_AI_MAX) return;
+    // 指定された材料が、材料欄に本当にあるか（書き方のどれかが材料名に含まれれば同じとみなす）
+    var ingKeys = (it.ingredients || []).map(function (g) { return foldName_(g.name); });
+    var ok = must.every(function (vs) {
+      return ingKeys.some(function (k) {
+        return k && vs.some(function (v) { return k.indexOf(v) >= 0 || v.indexOf(k) >= 0; });
+      });
+    });
+    if (!ok) return;
+    seen[id] = true;
+    results.push({ id: id, reason: String(r.reason || '').substring(0, 40) });
+  });
+  return { query: query, results: results };
+}
+
+/**
+ * 材料名の書き方の束（foldName_ で均したもの）。先頭が元の語。
+ * 食材の辞書（NAME_SYNONYMS）と、検索の「言い換え」シートの両方から広げる
+ */
+function recipeAiVariants_(name) {
+  var base = foldName_(name);
+  if (!base) return [];
+  var out = [base];
+  function add(v) { v = foldName_(v); if (v && out.indexOf(v) < 0) out.push(v); }
+
+  var map = nameSynonymMap_();
+  var canon = map[base];
+  if (canon) Object.keys(map).forEach(function (k) { if (map[k] === canon) add(k); });
+
+  var aliases = [];
+  try { aliases = webAliases_() || []; } catch (err) { console.warn('言い換えを読めませんでした: ' + err.message); }
+  aliases.forEach(function (group) {
+    var folded = (group || []).map(foldName_);
+    if (folded.indexOf(base) >= 0) folded.forEach(add);
+  });
+  return out;
+}
+
 /**
  * 「レシピ」タブから材料を買い物リストに足す。names は足す材料名（そのレシピの材料にあるものだけ通す）。
  * 分量はレシピから写し、レシピIDを付けるので、買い物タブの「料理ごと」でそのレシピにまとまる。

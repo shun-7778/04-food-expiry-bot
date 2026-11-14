@@ -54,7 +54,9 @@
   --star: #f2a900;  --star-off: #c4ccd6;   /* レシピの評価の星。未評価はグレー */
 
   /* 選んでいるタブ・個別／料理ごとは、塗りつぶしの緑ではなく淡い緑の地に緑の文字。n は件数の丸 */
-  --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;  --sel-line: #8cc9a3;   /* line は周りの線 */}
+  --sel-bg: #e3f3e8;  --sel-fg: #1e7a46;  --sel-n: #c6e6d0;  --sel-line: #8cc9a3;   /* line は周りの線 */
+  /* レシピの AI 検索（薄紫）。fg は ✦ と文字、line は枠、bg は入力欄の地、pill は「AI」ボタンの地 */
+  --ai-fg: #5b4bc4;  --ai-line: #8b7fe0;  --ai-bg: #f6f4ff;  --ai-pill: #ebe7fc;}
 
 /* ---- 端末がダークモードのときだけ、色を差し替える。形と配置はそのまま ---- */
 @media (prefers-color-scheme: dark) {
@@ -92,7 +94,8 @@
     --dash: #3d4552;
     --star: #f5b82e;  --star-off: #4a5565;
 
-    --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;  }
+    --sel-bg: #1c3626;  --sel-fg: #5fcf8e;  --sel-n: #285237;  --sel-line: #2f7a4d;
+    --ai-fg: #b3a8ff;  --ai-line: #6c5fc7;  --ai-bg: #1f1c33;  --ai-pill: #2c2752;  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* overscroll-behavior は既定（auto）のままにする。contain にすると、
@@ -213,6 +216,45 @@ body {
 .addbox input::placeholder, .search input::placeholder { color: var(--sub); }
 /* 左は虫眼鏡、右は ✕ のぶんを空ける（上の共通の padding より後に書くこと） */
 .search input { padding-left: 38px; padding-right: 42px; }
+
+/* ---- レシピの AI 検索。右端に「✦AI」の切り替え、✕ はその左に寄せる ---- */
+:root {
+  /* ✦（大きい星と小さい星）。AI ボタン・AI モードの左のアイコン・AI の理由の頭で共用 */
+  --ai-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M10 4l1.9 5.1L17 11l-5.1 1.9L10 18l-1.9-5.1L3 11l5.1-1.9z'/%3E%3Cpath d='M18.5 2l.85 2.15L21.5 5l-2.15.85L18.5 8l-.85-2.15L15.5 5l2.15-.85z'/%3E%3C/svg%3E");
+}
+.search.has-ai input { padding-right: 112px; }
+.search.has-ai .clear { right: 76px; }
+.ai-btn {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 3px;
+  height: 32px; padding: 0 11px 0 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--sub);
+  font-family: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+}
+.ai-btn::before {
+  content: ''; width: 15px; height: 15px; background: currentColor;
+  -webkit-mask: var(--ai-mask) no-repeat center / contain;
+          mask: var(--ai-mask) no-repeat center / contain;
+}
+.search.ai .ai-btn { background: var(--ai-pill); border-color: var(--ai-line); color: var(--ai-fg); font-weight: 700; }
+.search.ai input { border: 1.5px solid var(--ai-line); background: var(--ai-bg); }
+.search.ai::before {
+  background: var(--ai-fg); opacity: 1;
+  -webkit-mask-image: var(--ai-mask);
+          mask-image: var(--ai-mask);
+}
+/* AI が合うと判断した理由。頭に ✦ を付ける（材料で当たったときの虫眼鏡と同じ置き方） */
+.card .meta.ai { color: var(--ai-fg); }   /* .card .meta の灰色より強く効かせる */
+.meta.ai::before {
+  content: ''; display: inline-block; width: 13px; height: 13px;
+  margin-right: 4px; vertical-align: -2px;
+  background: currentColor;
+  -webkit-mask: var(--ai-mask) no-repeat center / contain;
+          mask: var(--ai-mask) no-repeat center / contain;
+}
+/* 問い合わせ中。文字をゆっくり明滅させる */
+.empty.ai-wait { color: var(--ai-fg); animation: ai-pulse 1.4s ease-in-out infinite; }
+@keyframes ai-pulse { 50% { opacity: .45; } }
 .addbox input { padding-left: 38px; }   /* 左の＋のぶん */
 
 /* ---- 期限ごとの絞り込み。横一列の小さなボタンにして場所を取らない ---- */
@@ -724,9 +766,11 @@ body {
   </div>
 
   <div class="head" id="head-recipe" hidden>
-    <div class="search">
-      <input id="recipe-q" type="search" placeholder="料理名・材料で検索" autocomplete="off">
+    <div class="search has-ai" id="recipe-search">
+      <input id="recipe-q" type="search" placeholder="料理名・材料で検索" autocomplete="off" enterkeyhint="search">
       <button class="clear" id="recipe-clear" hidden>✕</button>
+      <!-- AI モードの切り替え。オンのときは Enter で AI に問い合わせる（webRecipeAiSearch） -->
+      <button class="ai-btn" id="recipe-ai" type="button" aria-pressed="false">AI</button>
     </div>
     <!-- 「カテゴリ」と「評価」の絞り込み。押すとチェックボックスの一覧が開く（renderRecipeFilters） -->
     <div class="filters" id="recipe-filters"></div>
@@ -1062,15 +1106,30 @@ function renderRecipes() {
   var box = $('list-recipe');
   box.textContent = '';
 
-  var terms = searchTerms($('recipe-q').value);
+  // AI 検索：問い合わせ中・失敗はその旨だけを出す。結果があれば、AI の並び順のまま出す
+  var ai = aiMode && aiState.query ? aiState : null;
+  if (ai && (ai.loading || ai.error)) {
+    var w = document.createElement('div');
+    w.className = 'empty lone' + (ai.loading ? ' ai-wait' : '');
+    w.textContent = ai.loading ? 'AIが探しています…' : ai.error;
+    box.appendChild(w);
+    return;
+  }
+  var aiRank = {};
+  if (ai) ai.results.forEach(function (r, i) { aiRank[r.id] = { i: i, reason: r.reason }; });
+
+  var terms = ai ? [] : searchTerms($('recipe-q').value);
   var items = recipeItems().concat(doneRecipe)
     .filter(function (it) {
       if (groupOn && !recipeGroupSel[it.group]) return false;
       if (ratingOn && !recipeRatingSel[String(it.rating || 0)]) return false;
+      it.aiReason = ai && aiRank[it.id] ? aiRank[it.id].reason : '';
+      if (ai) { it.hits = null; return !!aiRank[it.id]; }
       it.hits = terms.length ? recipeHits(it, terms) : null;
       return !terms.length || it.hits;
     })
     .sort(function (a, b) {
+      if (ai) return aiRank[a.id].i - aiRank[b.id].i;   // 合う順
       // 消した行は消したその場に残すので、ピン留めの並びにも元のまま入れておく
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       // 追加した時刻とピン留めを外した時刻の新しいほうが上。同じなら ID の新しい順
@@ -1080,12 +1139,14 @@ function renderRecipes() {
   if (!items.length) {
     var e = document.createElement('div');
     e.className = 'empty lone';
+    var q = ai || terms.length;
     // 絞り込みの条件を「おかず・★★☆」のようにつないで出す
     var conds = [];
     if (groupOn) conds.push(recipeGroups().filter(function (g) { return recipeGroupSel[g]; }).join('・'));
     if (ratingOn) conds.push(RATING_FILTERS.filter(function (n) { return recipeRatingSel[n]; }).map(ratingLabel).join('・'));
     var cond = conds.length ? '「' + conds.join('・') + '」' : '';
-    e.textContent = q ? (cond ? cond + 'に該当するレシピがありません' : '該当するレシピがありません')
+    e.textContent = ai ? (cond ? cond + 'で、条件に合うレシピは見つかりませんでした' : '条件に合うレシピは見つかりませんでした')
+      : q ? (cond ? cond + 'に該当するレシピがありません' : '該当するレシピがありません')
       : cond ? cond + 'のレシピはありません'
       : 'レシピはありません。インスタのリンクを送ってから、レシピの写真を送ると残ります';
     box.appendChild(e);
@@ -1540,7 +1601,7 @@ function card(opt) {
       sl.className = 'starline';
       sl.appendChild(stars);
       var sm = document.createElement('span');
-      sm.className = opt.metaHit ? 'meta hit' : 'meta';
+      sm.className = 'meta' + (opt.metaHit ? ' hit' : '') + (opt.metaAi ? ' ai' : '');
       sm.textContent = opt.meta;
       sl.appendChild(sm);
       body.appendChild(sl);
@@ -1549,7 +1610,7 @@ function card(opt) {
     }
   } else if (opt.meta) {
     var meta = document.createElement('div');
-    meta.className = opt.metaHit ? 'meta hit' : 'meta';
+    meta.className = 'meta' + (opt.metaHit ? ' hit' : '') + (opt.metaAi ? ' ai' : '');
     meta.textContent = opt.meta;
     body.appendChild(meta);
   }
@@ -1952,14 +2013,18 @@ function recipeCard(it) {
   var open = !!openRecipe[it.id];
   // 分類（帯の色で分かる）や追加日・追加した人は出さない。
   // 材料名で検索に当たったときだけ、閉じたままでもどの材料で当たったかを添える
+  // AI 検索の結果なら、合うと判断した理由を同じ場所に添える
   var meta = '';
-  if (it.hits && it.hits.names.length && !open) meta = it.hits.names.join('、');
+  var aiReason = !open && it.aiReason ? it.aiReason : '';
+  if (aiReason) meta = aiReason;
+  else if (it.hits && it.hits.names.length && !open) meta = it.hits.names.join('、');
 
   return card({
     level: it.level,
     name: title,
     meta: meta,
-    metaHit: !!meta,   // 頭に検索欄と同じ虫眼鏡を付ける
+    metaHit: !!meta && !aiReason,   // 頭に検索欄と同じ虫眼鏡を付ける
+    metaAi: !!aiReason,             // AI の理由には ✦ を付ける
     pin: !!it.pinned,
     waiting: !!waiting[it.id],
     tap: function () { toggleRecipe(it); },
@@ -2510,14 +2575,55 @@ $('stock-clear').addEventListener('click', function () {
   render();
 });
 
-// レシピの検索。在庫の検索と同じ動き（打つたびに絞る・Enter でキーボードを閉じる）
+// レシピの検索。在庫の検索と同じ動き（打つたびに絞る・Enter でキーボードを閉じる）。
+// AI モードのときは打っても絞らず、Enter で AI に問い合わせる
+var aiMode = false;
+// AI 検索の状態。query は問い合わせた質問（空なら AI の結果は出さず、全件を出す）
+var aiState = { query: '', loading: false, error: '', results: [] };
+var aiSeq = 0;   // 返事の取り違え防止。古い問い合わせの返事が後から届いても捨てる
+
+function setAiMode(on) {
+  aiMode = on;
+  aiSeq++;
+  aiState = { query: '', loading: false, error: '', results: [] };
+  $('recipe-search').classList.toggle('ai', on);
+  $('recipe-ai').setAttribute('aria-pressed', on ? 'true' : 'false');
+  $('recipe-q').placeholder = on ? 'AIに質問' : '料理名・材料で検索';
+  render();
+}
+
+function runAiSearch() {
+  var q = $('recipe-q').value.trim();
+  if (!q) return;
+  var seq = ++aiSeq;
+  aiState = { query: q, loading: true, error: '', results: [] };
+  window.scrollTo(0, 0);
+  render();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== aiSeq) return;
+      aiState = { query: q, loading: false, error: '', results: (res && res.results) || [] };
+      render();
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== aiSeq) return;
+      aiState = { query: q, loading: false, results: [],
+        error: 'AIで探せませんでした。' + ((err && err.message) || '時間をおいてもう一度試してください') };
+      render();
+    })
+    .webRecipeAiSearch(TOKEN, q);
+}
+
 $('recipe-q').addEventListener('input', function () {
   $('recipe-clear').hidden = !$('recipe-q').value;
   updateTabbar();
-  render();
+  if (!aiMode) render();
 });
 $('recipe-q').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) $('recipe-q').blur();
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+  e.preventDefault();
+  if (aiMode) runAiSearch();
+  $('recipe-q').blur();
 });
 $('recipe-q').addEventListener('focus', noteFocus);
 $('recipe-q').addEventListener('blur', updateTabbar);
@@ -2525,9 +2631,11 @@ $('recipe-clear').addEventListener('click', function () {
   $('recipe-q').value = '';
   $('recipe-clear').hidden = true;
   $('recipe-q').blur();
+  if (aiMode) { aiSeq++; aiState = { query: '', loading: false, error: '', results: [] }; }
   updateTabbar();
   render();
 });
+$('recipe-ai').addEventListener('click', function () { setAiMode(!aiMode); });
 
 /** 今のタブで文字を打つ入力欄 */
 function activeInput() {
