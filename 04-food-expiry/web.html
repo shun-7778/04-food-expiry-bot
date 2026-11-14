@@ -2075,13 +2075,13 @@ function recipeCard(it) {
 
   var open = !!openRecipe[it.id];
   // 分類（帯の色で分かる）や追加日・追加した人は出さない。
-  // 材料名で検索に当たったときだけ、閉じたままでもどの材料で当たったかを添える
+  // 材料名で検索に当たったときだけ、どの材料で当たったかを添える（開いても出したままにする）
   // AI 検索の結果なら、合うと判断した理由を同じ場所に添える
   var meta = '';
   // 閉じているときは1行で「…」まで、開いたときは折り返して全文を出す
   var aiReason = it.aiReason || '';
   if (aiReason) meta = aiReason;
-  else if (it.hits && it.hits.names.length && !open) meta = it.hits.names.join('、');
+  else if (it.hits && it.hits.names.length) meta = it.hits.names.join('、');   // 開いても消さない
 
   return card({
     level: it.level,
