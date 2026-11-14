@@ -713,7 +713,7 @@ section > .sec:first-child { margin-top: 6px; }
 .card.lv-r4 { --tint: var(--r4); }
 .card.lv-over { --tint: var(--over-fg); }
 .card.lv-soon { --tint: var(--soon-mark); }
-.card.lv-ok { --tint: var(--ok-fg); }
+.card.lv-ok { --tint: var(--r4); }   /* 余裕あり：青 */
 .card.slide { transition: transform .22s ease-out, opacity .22s ease-out; }
 .card .bar { flex: 0 0 auto; width: 4px; height: 31px; border-radius: 999px; background: var(--line); }
 .card .bar.shop { background: var(--blue); }
@@ -724,7 +724,7 @@ section > .sec:first-child { margin-top: 6px; }
 .card .bar.r4 { background: var(--r4); }
 .card .bar.over { background: var(--over-fg); }
 .card .bar.soon { background: var(--soon-mark); }
-.card .bar.ok { background: var(--ok-fg); }
+.card .bar.ok { background: var(--r4); }
 .card .body { flex: 1; min-width: 0; }
 /* 品名と分量を1行に。分量は品名と同じ大きさで右端に寄せる
    （下にグレーで添えると小さくて読みにくいため） */
@@ -766,7 +766,7 @@ section > .sec:first-child { margin-top: 6px; }
 }
 .card .days.over { background: var(--over-bg); color: var(--over-fg); }
 .card .days.soon { background: var(--soon-bg); color: var(--soon-fg); }
-.card .days.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.card .days.ok { background: color-mix(in srgb, var(--r4) 13%, var(--card)); color: var(--r4); }
 .card .days .d { font-size: 17px; font-weight: 800; line-height: 1.1; }
 .card .days .u { font-size: 10px; font-weight: 700; line-height: 1.25; }
 /* 済みの行。その場に残したまま、地の色を落として一目で区別できるようにする。
@@ -892,7 +892,8 @@ var who = '';            // この端末を使っている人の呼び名。足�
 var RECIPE_COLORS = 5;   // --r0〜--r4 の数。これを超える料理は色が一巡する
 var order = [];          // 買い物リストを並べる区分の順。サーバーから届く
 // 在庫のカードの帯の色（.card.lv-over など）。スワイプの「買い物リストへ」もこの色にする
-var STOCK_COLOR = { over: 'over-fg', soon: 'soon-mark', ok: 'ok-fg' };
+// 「余裕あり」は青（レシピの「おかず」と同じ --r4）
+var STOCK_COLOR = { over: 'over-fg', soon: 'soon-mark', ok: 'r4' };
 var SOON_DAYS = 7;   // 「期限が近い」とみなす残り日数。絞り込みのボタンの文言と揃えること
 
 // この画面で操作したぶんだけを控える。読み込み直すと消えるので、
@@ -908,8 +909,8 @@ var recipeGroupSel = {};
 var UNKNOWN_DISH = '？';
 // 開いたレシピの材料を在庫と突き合わせた結果（ID → { have: {材料名: true} } / { loading } / { error }）
 var stockInfo = {};
-// 分類ごとの左の帯の色。同じ分類は同じ色にそろえる（おかずはすべて緑）
-var GROUP_COLOR = { 'おかず': 'r0', 'ご飯・麺': 'r2', '汁物': 'r4', 'デザート': 'r3' };
+// 分類ごとの左の帯の色。同じ分類は同じ色にそろえる（おかずは青、汁物は緑）
+var GROUP_COLOR = { 'おかず': 'r4', 'ご飯・麺': 'r2', '汁物': 'r0', 'デザート': 'r3' };
 
 function $(id) { return document.getElementById(id); }
 
